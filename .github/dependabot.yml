@@ -1,0 +1,35 @@
+version: 2
+
+updates:
+  # Backend (Gradle)
+  - package-ecosystem: gradle
+    directory: /backend
+    schedule:
+      interval: weekly
+      day: monday
+    labels: [dependencies, backend]
+    commit-message:
+      prefix: "deps(backend):"
+    open-pull-requests-limit: 10
+
+  # Frontend (npm)
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+      day: monday
+    labels: [dependencies, frontend]
+    commit-message:
+      prefix: "deps(frontend):"
+    open-pull-requests-limit: 10
+
+  # GitHub Actions
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    labels: [dependencies, ci]
+    commit-message:
+      prefix: "deps(ci):"
+    open-pull-requests-limit: 5
