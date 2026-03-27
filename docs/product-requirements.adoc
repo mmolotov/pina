@@ -1,0 +1,1306 @@
+= PINA — Product Requirements Specification
+:author: PINA Team
+:revdate: 2026-03-24
+:version: 0.1.0
+:toc: left
+:toclevels: 3
+:sectnums:
+:icons: font
+:source-highlighter: rouge
+
+== Executive Summary
+
+*PINA* (Private Image Network Archive) is an open-source, self-hosted photo and video management platform.
+It targets communities, families, and organizations that need a private, AI-powered media gallery with first-class group collaboration — something existing solutions do not adequately provide.
+
+=== Vision
+
+A self-hosted Google Photos alternative where groups of people can easily collect, organize, and search their shared photo and video libraries — with full control over their data.
+Media and user data never leave the instance; optional outbound calls are limited to configured identity providers and model registries.
+
+=== Key Differentiators
+
+[cols="1,3"]
+|===
+| Differentiator | Description
+
+| *Group onboarding*
+| Admin posts an invite link in a chat — 100 people join a shared Space in seconds. No manual user management.
+
+| *Hierarchical Spaces*
+| Nested group structure (Space -> Subspace) that mirrors real-world organizations: clubs, families, teams.
+
+| *Pluggable AI*
+| Local-only ML inference with configurable pipeline. All models are free/open-source. No media data leaves the instance (models are downloaded from configured registries on first startup).
+
+| *Telegram-native*
+| Bot auto-collects photos and videos from group chats. Mini App provides a full client inside Telegram.
+
+| *Multi-client*
+| Web app, Telegram Mini App, Telegram Bot, and a versioned REST API for third-party integrations.
+|===
+
+=== Target Audience
+
+* *Communities & clubs* — running clubs, hiking groups, sports teams with subgroups across cities
+* *Families* — shared family photo & video archive with privacy control
+* *Organizations* — event photography, corporate video, internal media libraries
+* *Privacy-conscious individuals* — personal photo & video backup with local AI analysis
+
+== Glossary
+
+[cols="1,3"]
+|===
+| Term | Definition
+
+| *Media Asset*
+| A globally unique file (photo or video) identified by its SHA-256 content hash. Stores the physical file, variants, and metadata. Exists independently of any album or Space. Owned by the uploader.
+
+| *Media Reference*
+| A link from an album or Space to a Media Asset. Adding a photo to a Space album creates a reference, not a copy. Removing a reference does not delete the asset.
+
+| *Media Item*
+| A generic term for any uploaded file — either a Photo or a Video.
+
+| *Photo*
+| An uploaded image file with associated metadata, variants, and ML analysis results.
+
+| *Video*
+| An uploaded video file with associated metadata, transcoded variants, poster thumbnail, and ML analysis results.
+
+| *Variant*
+| A derived version of a Media Item. For photos: original, compressed, thumbnails (SM / MD / LG). For videos: original, transcoded streams (multiple resolutions), poster image, animated thumbnail.
+
+| *Album*
+| A user-curated collection of Media References. Belongs to a Personal Library or a Space. Types: Personal, Space.
+
+| *Favorites*
+| A per-user virtual collection of bookmarked media items and albums. Each user maintains their own independent set of favorites.
+
+| *Space*
+| A collaborative group with its own albums and member roles. Can contain Subspaces. Media is added via references to assets owned by uploaders.
+
+| *Subspace*
+| A child Space nested under a parent Space. Inherits visibility rules by default; overrides are configurable per-subspace.
+
+| *Personal Library*
+| A private, per-user media collection. Separate from Spaces — has no roles, subspaces, or membership model. In the target auth flow it is created automatically on registration; Phase 1 already uses it as the ownership anchor for the active user context. Not visible to others unless explicitly shared.
+
+| *Shared Link*
+| A public, read-only URL granting access to any album or media selection without authentication. Sharing is a capability, not an album type.
+
+| *Invite Link*
+| A URL that allows a new or existing user to join a Space with a preconfigured role.
+
+| *ML Pipeline*
+| A configurable sequence of AI analysis steps applied to each uploaded media item (photos directly, videos via extracted keyframes).
+
+| *Model Registry*
+| A catalog of available ML models with YAML manifests describing inputs, outputs, and capabilities.
+|===
+
+== Functional Requirements
+
+Each requirement is marked with a phase indicator:
+
+* *[MVP]* — required for the first usable release (Phase 1).
+* *[Target]* — planned for Phases 2–4 (Auth, Spaces, ML, Frontend).
+* *[Future]* — Phase 5+ (Telegram, Video, Advanced Features).
+Design is directional, details may change.
+
+=== FR-1: Photo Management [MVP]
+
+==== FR-1.1: Photo Upload
+
+[cols="1,4"]
+|===
+| ID | FR-1.1
+
+| Description
+a|
+* *[MVP]* Users upload photos. The Media Asset belongs to the uploader and is created in the uploader's Personal Library.
+* *[Target]* When Spaces are introduced (Phase 2): if a Space album is specified, a Media Reference is added automatically. The asset still remains in the uploader's Personal Library.
+
+| Input
+| Image file. Direct upload to a target album is [Target]. Supported formats: JPEG, PNG [MVP]; WebP, AVIF, HEIC, GIF [Target — requires ImageIO plugins].
+
+| Processing
+a|
+. Validate file format and size limits (admin-configurable).
+. Compute SHA-256 content hash.
+. Deduplicate: if a photo with the same hash already exists, return the existing Media Asset [MVP]. When Spaces exist and a Space album is targeted, reuse the asset and create a new reference [Target].
+. Store original file (if enabled by admin).
+. Generate compressed version (configurable format, quality, max resolution).
+. Generate three thumbnail variants:
+* *SM* — square crop, 256x256px (for grid views).
+* *MD* — proportional, max width 1280px (for previews).
+* *LG* — proportional, max width 1920px (for full-screen viewing).
+. Extract EXIF metadata: capture date, GPS coordinates, camera settings (exposure, aperture, ISO).
+. Persist photo entity with all metadata and variant references.
+. Dispatch asynchronous ML analysis task (when ML service is available) [Target].
+
+| Output
+| Photo metadata including ID, dimensions, EXIF data, and list of generated variants.
+
+| Acceptance Criteria
+a|
+* Uploading a valid JPEG returns HTTP 201 with photo metadata.
+* Uploading a duplicate (same SHA-256) returns the existing photo, no new file is stored.
+* All three thumbnails are generated and retrievable.
+* EXIF data (date, GPS, camera) is extracted and stored as JSON.
+|===
+
+==== FR-1.2: Photo Retrieval
+
+[cols="1,4"]
+|===
+| ID | FR-1.2
+
+| Description
+| Users can browse their uploaded photos with pagination, retrieve photo metadata, and download specific variants.
+
+| Variants
+| `ORIGINAL` (if stored), `COMPRESSED`, `THUMB_SM`, `THUMB_MD`, `THUMB_LG`.
+
+| Behavior
+| List endpoint returns a paginated response for the active user's uploaded photos. Metadata endpoint returns JSON with photo details and variant list. File endpoint streams the binary with correct Content-Type.
+
+| Acceptance Criteria
+a|
+* `GET /photos?page=&size=&needsTotal=` returns the active user's uploaded photos in reverse chronological order with pagination metadata.
+* `GET /photos/{id}` returns photo metadata with all variant info.
+* `GET /photos/{id}/file?variant=THUMB_SM` returns the small thumbnail with `image/*` content type.
+* Requesting a non-existent variant returns HTTP 404.
+|===
+
+==== FR-1.3: Photo Deletion
+
+[cols="1,4"]
+|===
+| ID | FR-1.3
+
+| Description
+| Users can delete their own photos. Space admins/owners can delete any photo in their Space [Target].
+
+| Behavior
+a|
+*[MVP]:*
+
+* Deleting a photo with no album references removes the photo entity, all variants, and all files from storage.
+* If the photo is still referenced by an album, deletion is rejected and files remain intact until the references are removed.
+* No authorization checks yet — any user can delete any photo (Phase 2 adds ownership verification).
+
+*[Target] — when Spaces are introduced:*
+
+* Removing a photo from a Space album deletes the reference only — the asset remains in the uploader's Personal Library.
+* Deleting a photo from the owner's Personal Library deletes the asset and all files from storage, but only if no other references exist. If references exist, the owner is warned.
+* Space admins/owners can remove any reference from their Space.
+* Non-owners receive HTTP 403 (unless Space admin/owner removing a reference).
+
+| Acceptance Criteria
+a|
+* [MVP] Deleting a photo with no active album references removes all variant files from storage.
+* [MVP] Deleting a photo with active album references returns a conflict and does not remove files.
+* [Target] Removing a photo from a Space album does not delete files.
+* [Target] An asset with active references cannot be silently deleted — the owner is prompted.
+|===
+
+==== FR-1.4: Batch Operations [Target]
+
+[cols="1,4"]
+|===
+| ID | FR-1.4
+
+| Description
+| Users can upload, delete, and organize multiple photos at once.
+
+| Operations
+| Batch upload (multiple files in one request), batch delete, batch add-to-album.
+
+| Acceptance Criteria
+a|
+* Batch upload processes all files and returns individual results (success/failure per file).
+* Partial failures do not roll back successful uploads.
+|===
+
+=== FR-2: Albums [MVP]
+
+==== FR-2.1: Album CRUD
+
+[cols="1,4"]
+|===
+| ID | FR-2.1
+
+| Description
+| Users can create, rename, describe, and delete albums.
+
+| Album Types
+a|
+* *Personal* [MVP] — belongs to a user's Personal Library.
+* *Space* [Target] — belongs to a Space, visible to Space members based on their role.
+
+NOTE: Sharing is not an album type. Any album (Personal or Space) can be made accessible via a Shared Link (see FR-7.1).
+
+| Acceptance Criteria
+a|
+* Users can create albums with a name and optional description.
+* Albums can be renamed and re-described.
+* Deleting an album does not delete the photos in it (only the association).
+|===
+
+==== FR-2.2: Album Photo Management
+
+[cols="1,4"]
+|===
+| ID | FR-2.2
+
+| Description
+| Users can add and remove media items (photos and videos) to/from albums. A media item can belong to multiple albums.
+
+| Behavior
+| Adding a media item to an album records who added it and when. Removing a media item only removes the association.
+
+| Acceptance Criteria
+a|
+* A media item can belong to multiple albums simultaneously.
+* Album listing supports pagination, preserves insertion order, and shows mixed photo/video content.
+* Removing a media item from an album does not delete the media item itself.
+|===
+
+==== FR-2.3: Album Ordering & Covers [Target]
+
+[cols="1,4"]
+|===
+| ID | FR-2.3
+
+| Description
+| Users can set a cover photo for an album and reorder photos within it.
+
+| Acceptance Criteria
+a|
+* Albums have a configurable cover photo (defaults to most recent).
+* Photos within an album can be manually reordered.
+|===
+
+==== FR-2.4: Favorites [Target]
+
+[cols="1,4"]
+|===
+| ID | FR-2.4
+
+| Description
+| Users can mark individual media items (photos/videos) or entire albums as favorites for quick access.
+
+| Behavior
+a|
+* Favorites are per-user — each user has their own independent set of favorites, even within a shared Space.
+* Favoriting a media item adds it to the user's virtual "Favorites" collection.
+* Favoriting an album bookmarks it in the user's album list (does not favorite every item inside it individually).
+* Unfavoriting removes the bookmark; the media item or album itself is unaffected.
+* The "Favorites" collection is accessible from the top-level navigation and via API.
+
+| Use Cases
+a|
+* Quickly find best photos from an event.
+* Bookmark a frequently visited Space album.
+* ML reindexing can prioritize favorites (see FR-5.3).
+
+| Acceptance Criteria
+a|
+* A user can favorite/unfavorite a photo, video, or album with a single action.
+* Favorites list supports filtering by media type (photos, videos, albums) and sorting (date favorited, date taken).
+* Favoriting in a Space does not affect other members' favorites.
+* Favorited state is visible in gallery grid, photo/video viewer, and album list.
+* Deleting a media item or album automatically removes it from all users' favorites.
+|===
+
+=== FR-3: Spaces & Access Control [Target]
+
+==== FR-3.1: Space Management
+
+[cols="1,4"]
+|===
+| ID | FR-3.1
+
+| Description
+| Users can create Spaces for collaborative photo management. Spaces represent groups (clubs, families, teams).
+
+| Attributes
+| Name, description, avatar, visibility (public / private), creation date.
+
+| Visibility
+a|
+* *Private* — not discoverable. Users can only join via invite link or direct invite.
+* *Public* — listed in the Space catalog. Anyone can request to join (auto-approve or admin approval, configurable). Content is still only visible to members — public does not mean open access.
+
+| Acceptance Criteria
+a|
+* Creating a Space makes the creator the Owner.
+* Space has its own albums containing references to Media Assets owned by uploaders.
+* Space can be renamed, described, and deleted by Owner.
+* Deleting a Space removes all memberships, Space albums, and references. Media Assets remain in uploaders' Personal Libraries.
+|===
+
+==== FR-3.2: Subspace Hierarchy
+
+[cols="1,4"]
+|===
+| ID | FR-3.2
+
+| Description
+| Spaces can contain Subspaces forming a tree hierarchy (e.g., "Runners" -> "Runners SPB" -> "SPB Beginners").
+
+| Visibility Rules
+a|
+* Members of a *parent* Space can see albums in child Subspaces by default. This can be restricted per-subspace by an admin.
+* Members of a *child* Subspace can see only their level and below.
+* Roles are inherited downward by default. A subspace admin can override inherited roles for specific members.
+
+| Acceptance Criteria
+a|
+* A Space can have multiple Subspaces.
+* Subspaces can be nested to arbitrary depth.
+* A user who is a Member of "Runners" can browse "Runners SPB" albums.
+* A user who is only a Member of "Runners SPB" cannot see "Runners" root albums.
+|===
+
+==== FR-3.3: Roles & Permissions
+
+[cols="1,4"]
+|===
+| ID | FR-3.3
+
+| Description
+| Each Space membership has a role that determines what the user can do within that Space.
+
+| Roles
+a|
+[cols="1,4"]
+!===
+! Role ! Permissions
+
+! *Owner*
+! Full control: manage members, roles, settings, albums, photos. Delete Space. Transfer ownership.
+
+! *Admin*
+! Manage members (except Owner), manage albums, delete any photo, configure Space settings.
+
+! *Member*
+! Upload photos, create albums, add/remove own photos to/from albums, browse all Space content.
+
+! *Viewer*
+! Browse Space albums and photos. Cannot upload or modify.
+!===
+
+| Acceptance Criteria
+a|
+* A Viewer cannot upload photos to the Space.
+* An Admin can remove a Member but cannot remove the Owner.
+* Role changes take effect immediately.
+|===
+
+==== FR-3.4: Invite Links
+
+[cols="1,4"]
+|===
+| ID | FR-3.4
+
+| Description
+| Space admins can generate invite links for onboarding new members without manual user management.
+
+| Link Parameters
+a|
+* *Default role* — the role assigned to users who join via this link (Member or Viewer).
+* *Expiration* — optional TTL (e.g., 24 hours, 7 days, never).
+* *Usage limit* — optional max number of joins (e.g., 1, 10, unlimited).
+* *Auto-approve* — if true, users join immediately. If false, join requests require admin approval.
+
+| Acceptance Criteria
+a|
+* An invite link with `limit=10` stops working after 10 joins.
+* An expired link returns an appropriate error.
+* The link works for both new and existing users.
+* Admin can revoke an active invite link at any time.
+* Admin can view all active invite links and their usage stats.
+|===
+
+==== FR-3.5: Join Methods
+
+[cols="1,4"]
+|===
+| ID | FR-3.5
+
+| Description
+| Users can join a Space through multiple channels.
+
+| Methods
+a|
+* *Invite link* — URL shared in any messenger or channel.
+* *QR code* — auto-generated from invite link, for offline/event use.
+* *Telegram Bot* — join command in a linked Telegram group.
+* *Direct invite* — admin adds user by email.
+
+| Acceptance Criteria
+a|
+* QR code encodes the invite link URL and is downloadable as an image.
+* All join methods result in the same membership record.
+|===
+
+=== FR-4: Authentication & User Management [Target]
+
+==== FR-4.1: Registration & Login
+
+[cols="1,4"]
+|===
+| ID | FR-4.1
+
+| Description
+| Users can register and authenticate using email/password or external identity providers.
+
+| Methods
+a|
+* Email + password (built-in).
+* OIDC: Google, GitHub (extensible to other providers).
+* Telegram Login Widget.
+
+| Acceptance Criteria
+a|
+* Users can register with email and password.
+* Users can log in via Google or GitHub OAuth.
+* Telegram users are automatically authenticated in the Mini App via WebApp SDK.
+* First-time OIDC/Telegram users get an account created automatically.
+|===
+
+==== FR-4.2: User Profile
+
+[cols="1,4"]
+|===
+| ID | FR-4.2
+
+| Description
+| Users have a profile with basic information.
+
+| Attributes
+| Name, email, avatar, linked accounts (OIDC providers, Telegram), creation date.
+
+| Acceptance Criteria
+a|
+* Users can update their name and avatar.
+* Users can link/unlink OIDC providers.
+* Users can view their Space memberships.
+|===
+
+==== FR-4.3: Personal Library
+
+[cols="1,4"]
+|===
+| ID | FR-4.3
+
+| Description
+| Every user has a private Personal Library — a standalone entity, not a Space. It has no roles, memberships, or subspaces. Phase 1 already uses this model as the ownership anchor for uploaded media.
+
+| Behavior
+| [MVP] The active user context always has a Personal Library, and uploaded media assets are anchored there. Users can create albums inside it. [Target] On registration, each new user gets a Personal Library automatically. It cannot be deleted. Media Assets in the Personal Library can be referenced from Space albums.
+
+| Acceptance Criteria
+a|
+* [MVP] Uploaded photos belong to the active user's Personal Library.
+* [MVP] Users can browse uploaded photos in their Personal Library via a paginated API.
+* [MVP] Users can create albums within their Personal Library.
+* [Target] New users have an empty Personal Library immediately after registration.
+* [Target] Photos in a Personal Library are not visible to other users unless shared through future Space or sharing features.
+|===
+
+=== FR-5: AI / ML Analysis [Target]
+
+==== FR-5.1: ML Pipeline
+
+[cols="1,4"]
+|===
+| ID | FR-5.1
+
+| Description
+| Each uploaded media item is processed by a configurable ML pipeline that runs asynchronously on the server. Photos are analyzed directly; videos are analyzed via extracted keyframes (see FR-11.5).
+
+| Pipeline Steps (configurable, can be enabled/disabled by admin)
+a|
+* *Embedding generation* — CLIP-based vector embedding for semantic search.
+* *Auto-tagging* — scene and object labels (e.g., "beach", "dog", "sunset").
+* *Face detection* — bounding boxes for faces in the photo.
+* *Face recognition* — identity matching against known faces in the Space/library.
+* *Captioning* — natural language description of the photo.
+* *OCR* — text extraction from images (signs, documents, whiteboards).
+* *NSFW detection* — content safety classification.
+* *Aesthetic scoring* — quality/beauty score for ranking and auto-curation.
+* *Geo estimation* — approximate location from visual features (when no GPS in EXIF).
+* *Duplicate detection* — perceptual hashing to find visually similar photos.
+
+| Acceptance Criteria
+a|
+* Admin can enable/disable individual pipeline steps.
+* Pipeline processes photos asynchronously (upload does not block on ML).
+* ML results are stored in the database and associated with the photo.
+* If the ML service is unavailable, photos are still uploaded successfully (ML runs later).
+|===
+
+==== FR-5.2: Model Registry
+
+[cols="1,4"]
+|===
+| ID | FR-5.2
+
+| Description
+| ML models are managed through a registry with YAML manifests.
+
+| Behavior
+a|
+* Each model has a manifest describing: name, version, task type, input/output format, download URL, license.
+* Models are downloaded from HuggingFace on first startup or when a new model is configured.
+* Admin can swap models for each pipeline step (e.g., replace CLIP ViT-B with ViT-L).
+* Admin can upload custom ONNX models with a manifest.
+
+| Constraints
+| *All models must be free/open-source licensed.* No proprietary or cloud-only models.
+
+| Acceptance Criteria
+a|
+* First startup downloads all configured models automatically.
+* Admin can change a model and the system re-downloads if needed.
+* Custom ONNX models can be uploaded and used in the pipeline.
+|===
+
+==== FR-5.3: Reindexing
+
+[cols="1,4"]
+|===
+| ID | FR-5.3
+
+| Description
+| Admin can trigger re-analysis of existing photos with updated models or pipeline configuration.
+
+| Options
+a|
+* *Full reindex* — re-process all photos.
+* *Selective reindex* — by date range, album, Space, or specific pipeline step.
+* *Priority* — newest first, favorites first, or by folder.
+* *Background* — runs as a low-priority background task, does not block normal operations.
+
+| Acceptance Criteria
+a|
+* Reindexing does not duplicate photos or variants.
+* Progress is visible to admin (X of Y photos processed).
+* Reindexing can be paused and resumed.
+|===
+
+=== FR-6: Search [Target]
+
+==== FR-6.1: Text Search
+
+[cols="1,4"]
+|===
+| ID | FR-6.1
+
+| Description
+| Users can search photos and videos by natural language queries.
+
+| Behavior
+| Query is converted to a CLIP embedding and compared against media embeddings using pgvector similarity search. Also searches auto-generated tags, captions, and video transcriptions.
+
+| Examples
+| "sunset at the beach", "group photo with medals", "birthday cake", "marathon finish".
+
+| Acceptance Criteria
+a|
+* Search returns results ranked by relevance, mixing photos and videos.
+* Search respects access control (users only see media they have access to).
+* Search works across Personal library and all accessible Spaces.
+* Video results show poster thumbnail and duration badge.
+|===
+
+==== FR-6.2: Face Search
+
+[cols="1,4"]
+|===
+| ID | FR-6.2
+
+| Description
+| Users can browse photos and videos by person (face clusters).
+
+| Behavior
+| Faces are automatically detected, clustered, and optionally named. Users can merge/split clusters and assign names.
+
+| Acceptance Criteria
+a|
+* System groups similar faces into clusters automatically.
+* Users can name a face cluster (e.g., "Alice").
+* Users can merge two clusters that represent the same person.
+* Users can split a cluster that incorrectly groups different people.
+* Searching by person name returns all photos and videos containing that person.
+|===
+
+==== FR-6.3: Filter & Sort
+
+[cols="1,4"]
+|===
+| ID | FR-6.3
+
+| Description
+| Users can filter and sort media items by metadata.
+
+| Filters
+| Date range, location (map area), camera model, tags, album, Space, media type (photo/video), file type, has-faces, has-GPS, video duration range.
+
+| Sorting
+| By date taken (default), date uploaded, file size, aesthetic score, duration (videos).
+
+| Acceptance Criteria
+a|
+* Filters can be combined (AND logic).
+* Date filter works on EXIF taken-at date, falling back to upload date.
+* Location filter works on GPS coordinates from EXIF or geo estimation.
+|===
+
+=== FR-7: Sharing [Future]
+
+==== FR-7.1: Shared Links
+
+[cols="1,4"]
+|===
+| ID | FR-7.1
+
+| Description
+| Users can create public, read-only links to albums or media selections (photos and videos).
+
+| Parameters
+a|
+* *Expiration* — optional TTL.
+* *Password* — optional access password.
+* *Download allowed* — whether recipients can download originals.
+
+| Acceptance Criteria
+a|
+* Shared link is accessible without authentication.
+* Expired or password-protected links show appropriate UI.
+* Shared link can be revoked by the creator at any time.
+* Download button is hidden when download is disabled.
+|===
+
+=== FR-8: Storage [MVP]
+
+==== FR-8.1: Storage Backends [MVP — local FS; Future — S3, WebDAV]
+
+[cols="1,4"]
+|===
+| ID | FR-8.1
+
+| Description
+| The system supports pluggable storage backends for media files (photos and videos) behind a `StorageProvider` SPI.
+
+| Backends
+a|
+* *Local filesystem* [MVP] — default, stores files on the server's disk.
+* *S3-compatible* [Future] — Amazon S3, MinIO, Backblaze B2, etc.
+* *WebDAV* [Future] — for NAS devices (Synology, TrueNAS).
+
+| Acceptance Criteria
+a|
+* [MVP] Local FS backend supports all operations: store, retrieve, delete, exists, stats.
+* [MVP] Admin selects the storage backend in configuration.
+* [Future] S3 and WebDAV backends pass the same acceptance criteria as local FS.
+* [Future] Migration tool allows switching backends without re-uploading.
+|===
+
+==== FR-8.2: Storage Policies [Future]
+
+[cols="1,4"]
+|===
+| ID | FR-8.2
+
+| Description
+| Admin can configure retention and compression policies to manage storage usage.
+
+| Policies
+a|
+* *Store originals (photos)* — toggle per instance. When disabled, only compressed + thumbnails are kept.
+* *Store originals (videos)* — toggle per instance. When disabled, only transcoded variants are kept after transcoding completes.
+* *Photo compression format* — JPEG (default), WebP, AVIF (requires ImageIO plugin). Configurable quality (1-100) and max resolution.
+* *Video transcoding profiles* — configurable resolutions and codecs (see FR-11.2).
+* *Thumbnail sizes* — configurable dimensions for SM, MD, LG (applies to both photo and video poster thumbnails).
+* *Retention* — auto-delete media older than N days from trash.
+* *Quota* — per-user or per-Space storage limits (optional).
+
+| Acceptance Criteria
+a|
+* Changing compression settings applies to new uploads only (existing photos unchanged unless reprocessed).
+* Storage usage is visible per user and per Space.
+* When quota is exceeded, uploads are rejected with a clear error message.
+|===
+
+=== FR-9: Telegram Integration [Future]
+
+==== FR-9.1: Telegram Bot
+
+[cols="1,4"]
+|===
+| ID | FR-9.1
+
+| Description
+| A Telegram bot that auto-collects photos and videos from linked group chats into PINA.
+
+| Features
+a|
+* *Link chat to Space* — admin connects a Telegram group to a PINA Space. All photos and videos posted in the group are automatically uploaded to the Space.
+* *Album mapping* — configurable: all media to one album, or auto-create albums by date/topic.
+* *Media types* — collects photos, documents (uncompressed photos), video messages, video files, and grouped media albums.
+* *Commands*:
+** `/browse` — list recent media (inline gallery).
+** `/search <query>` — semantic search across accessible media.
+** `/link <space>` — link current chat to a Space.
+** `/unlink` — unlink current chat.
+** `/status` — show link status and stats.
+
+| Acceptance Criteria
+a|
+* Photos and videos sent to a linked Telegram group appear in the corresponding PINA Space within seconds.
+* Bot correctly handles photos, documents (uncompressed photos), video messages, video files, and grouped media messages.
+* Bot ignores non-media messages (stickers, text, voice messages).
+* Unlinking a chat stops collection but does not delete already collected media.
+|===
+
+==== FR-9.2: Telegram Mini App
+
+[cols="1,4"]
+|===
+| ID | FR-9.2
+
+| Description
+| A full PINA client inside Telegram as a Mini App (WebApp).
+
+| Features
+a|
+* Browse personal library and Space albums (photos and videos).
+* Upload photos and videos from device.
+* View photos (swipe, zoom) and play videos (inline player).
+* Search (text, faces, tags).
+* Join Spaces via invite links within Telegram.
+
+| Authentication
+| Uses Telegram WebApp SDK for seamless auth — no separate login required.
+
+| Acceptance Criteria
+a|
+* Mini App opens within Telegram without requiring separate authentication.
+* All core browse/upload/search functionality works within the Mini App.
+* UI is optimized for mobile viewport.
+|===
+
+=== FR-10: Administration [Target]
+
+==== FR-10.1: Admin Panel
+
+[cols="1,4"]
+|===
+| ID | FR-10.1
+
+| Description
+| Instance administrators have a web-based admin panel for system management.
+
+| Features
+a|
+* *User management* — list, search, deactivate, change roles.
+* *Space management* — view all Spaces, usage stats, force-delete.
+* *ML pipeline configuration* — enable/disable steps, select models, trigger reindexing.
+* *Storage monitoring* — total/used/available space, per-user breakdown.
+* *System health* — service status (backend, ML, database), queue depth, processing stats.
+* *Instance settings* — storage backend, compression defaults, registration mode (open / invite-only / closed).
+
+| Acceptance Criteria
+a|
+* Only users with the instance-level admin role can access the admin panel.
+* Admin panel is part of the main web frontend (not a separate app).
+|===
+
+=== FR-11: Video Support [Future]
+
+==== FR-11.1: Video Upload
+
+[cols="1,4"]
+|===
+| ID | FR-11.1
+
+| Description
+| Users can upload videos with an optional target album (Personal or Space). The Media Asset is always created in the uploader's Personal Library. If a Space album is specified, a reference is added automatically.
+
+| Input
+| Video file (MP4, MOV, MKV, WebM, AVI), optional album target.
+
+| Processing
+a|
+. Validate container format and size limits (admin-configurable max file size, default 2 GB).
+. Compute SHA-256 content hash.
+. Deduplicate globally: if a Media Asset with the same hash already exists, reuse it (create a new reference, not a new file).
+. Store original file.
+. Extract metadata: duration, resolution, frame rate, codec, audio codec, bitrate, creation date, GPS (if embedded).
+. Generate poster image — a representative frame (configurable: first keyframe, frame at 25%, or auto-selected by aesthetic score).
+. Generate animated thumbnail — short (3–5 second) looping preview (GIF or muted WebM), used in gallery grid on hover.
+. Generate three poster thumbnails (SM / MD / LG) from the poster image, same as photo thumbnails.
+. Dispatch transcoding task (asynchronous, see FR-11.2).
+. Dispatch ML analysis task on extracted keyframes (asynchronous).
+
+| Output
+| Video metadata including ID, duration, resolution, codec info, and list of generated variants.
+
+| Acceptance Criteria
+a|
+* Uploading a valid MP4 returns HTTP 201 with video metadata.
+* Poster image and animated thumbnail are available immediately after upload completes.
+* Video is playable via streaming even before transcoding finishes (if original format is browser-compatible).
+|===
+
+==== FR-11.2: Video Transcoding
+
+[cols="1,4"]
+|===
+| ID | FR-11.2
+
+| Description
+| Uploaded videos are transcoded into web-friendly streaming formats asynchronously.
+
+| Transcoding Profiles (admin-configurable)
+a|
+[cols="1,1,1,1"]
+!===
+! Profile ! Resolution ! Video Codec ! Use Case
+
+! *360p*
+! 640x360
+! H.264
+! Mobile on slow network
+
+! *720p*
+! 1280x720
+! H.264
+! Default playback
+
+! *1080p*
+! 1920x1080
+! H.264
+! High quality
+
+! *Original resolution*
+! Source
+! H.265 / AV1 (optional)
+! Archival, max quality
+!===
+
+| Behavior
+a|
+* Transcoding runs as a background task with configurable priority and concurrency.
+* Each profile generates a separate variant stored via the Storage SPI.
+* Admin can enable/disable individual profiles.
+* If the original video is already in a browser-compatible format (H.264 MP4) and within resolution thresholds, transcoding for that profile is skipped.
+* Hardware acceleration (VAAPI, NVENC, VideoToolbox) is used when available.
+
+| Tooling
+| FFmpeg (bundled in Docker image or system dependency).
+
+| Acceptance Criteria
+a|
+* Transcoding happens asynchronously — upload returns immediately.
+* Transcoding progress is queryable via API (percent complete).
+* If transcoding fails, the original video remains accessible.
+* Admin can re-trigger transcoding for a video.
+|===
+
+==== FR-11.3: Video Playback
+
+[cols="1,4"]
+|===
+| ID | FR-11.3
+
+| Description
+| Users can play videos directly in the browser and mobile clients.
+
+| Behavior
+a|
+* Adaptive streaming: client selects the best available transcoded profile based on network conditions and viewport size.
+* Seek support: HTTP range requests for instant seeking without downloading the entire file.
+* Poster image displayed before playback starts.
+* Animated thumbnail plays on hover in gallery grid view.
+* Playback controls: play/pause, seek, volume, fullscreen, playback speed (0.5x–2x).
+
+| Acceptance Criteria
+a|
+* Video plays without full download (streaming via range requests).
+* Seeking to an arbitrary position works instantly for transcoded variants.
+* If only the original (non-transcoded) variant exists, it is served directly (graceful degradation).
+|===
+
+==== FR-11.4: Video Metadata
+
+[cols="1,4"]
+|===
+| ID | FR-11.4
+
+| Description
+| The system extracts and stores comprehensive video metadata.
+
+| Extracted Fields
+a|
+* *Duration* — total length in seconds.
+* *Resolution* — width x height.
+* *Frame rate* — FPS.
+* *Video codec* — H.264, H.265, VP9, AV1, etc.
+* *Audio codec* — AAC, Opus, etc. (or "no audio").
+* *Bitrate* — total and per-stream.
+* *File size* — in bytes.
+* *Creation date* — from container metadata, falling back to file system date.
+* *GPS* — from embedded metadata (common in phone recordings).
+* *Camera/device* — from metadata if available.
+
+| Acceptance Criteria
+a|
+* All listed fields are extracted and stored (null if not available in source).
+* Duration and resolution are always populated for valid video files.
+|===
+
+==== FR-11.5: Video in ML Pipeline
+
+[cols="1,4"]
+|===
+| ID | FR-11.5
+
+| Description
+| Videos are analyzed by the ML pipeline using extracted keyframes.
+
+| Behavior
+a|
+* Keyframes are extracted at configurable intervals (default: 1 frame per 5 seconds, plus scene changes).
+* Each keyframe is processed through the photo ML pipeline (embedding, tagging, face detection, etc.).
+* Results are aggregated at the video level:
+** *Tags* — union of tags from all keyframes, weighted by frequency.
+** *Faces* — all unique faces detected across keyframes, with timestamps of first/last appearance.
+** *Embedding* — average of keyframe embeddings (for semantic search).
+** *Caption* — generated from the most representative keyframe.
+* Audio transcription (speech-to-text) is an optional pipeline step for searchable spoken content.
+
+| Acceptance Criteria
+a|
+* Searching "birthday party" finds videos tagged from keyframe analysis.
+* Face search returns videos containing the person, with approximate timestamp.
+* ML analysis of videos does not block upload or transcoding.
+|===
+
+==== FR-11.6: Video Storage Policies
+
+[cols="1,4"]
+|===
+| ID | FR-11.6
+
+| Description
+| Admin can configure video-specific storage and processing policies.
+
+| Policies
+a|
+* *Store originals* — toggle (default: true). When disabled, only transcoded variants are kept after transcoding completes.
+* *Max upload size* — per-file limit (default: 2 GB, admin-configurable).
+* *Transcoding profiles* — which resolutions to generate (enable/disable per profile).
+* *Hardware acceleration* — enable/disable, select backend (VAAPI, NVENC, VideoToolbox, auto).
+* *Transcoding concurrency* — max simultaneous transcoding tasks.
+* *Animated thumbnail duration* — 3–10 seconds (default: 4).
+* *Poster frame selection* — first keyframe, percentage, or aesthetic auto-select.
+
+| Acceptance Criteria
+a|
+* Changing transcoding profiles applies to new uploads only (admin can trigger re-transcode for existing videos).
+* Storage usage reports distinguish photo vs. video storage.
+|===
+
+== Non-Functional Requirements
+
+=== NFR-1: Privacy & Security
+
+[cols="1,4"]
+|===
+| ID | NFR-1
+
+| Requirement
+a|
+* No media data, user analytics, or telemetry leaves the instance. Outbound calls are permitted only to explicitly configured identity providers (OIDC) and model registries (HuggingFace).
+* All ML models must be free/open-source licensed and run locally on the instance.
+* Media is served through the backend API (not directly from storage) to enforce access control.
+* Passwords are hashed with bcrypt (or Quarkus default).
+* API authentication via JWT tokens with configurable expiration.
+* CORS is configurable per instance.
+|===
+
+=== NFR-2: Performance
+
+[cols="1,4"]
+|===
+| ID | NFR-2
+
+| Requirement
+a|
+Benchmarks assume a mid-range self-hosted setup: 4-core CPU, 8 GB RAM, SSD storage, gigabit LAN.
+
+* Photo upload response time < 3 seconds for a 10 MB JPEG (excluding ML processing).
+* Video upload response time < 10 seconds for a 100 MB MP4 (excluding transcoding and ML processing).
+* Gallery grid loads first page (50 thumbnails) in < 1 second on local network.
+* Semantic search returns results in < 500ms for libraries up to 100,000 media items.
+* ML pipeline and video transcoding process asynchronously — upload is never blocked.
+* Thumbnail and poster delivery should leverage HTTP caching headers (ETag, Cache-Control).
+* Video streaming supports HTTP range requests for instant seeking.
+|===
+
+=== NFR-3: Scalability
+
+[cols="1,4"]
+|===
+| ID | NFR-3
+
+| Requirement
+a|
+* Single instance supports up to 1,000 users and 1,000,000 media items (photos + videos).
+* ML service supports horizontal scaling: multiple workers across GPU/CPU.
+* Storage backend is abstracted — scaling storage is independent of the application.
+* Database uses PostgreSQL — can be scaled vertically or via read replicas.
+|===
+
+=== NFR-4: Deployment
+
+[cols="1,4"]
+|===
+| ID | NFR-4
+
+| Requirement
+a|
+* [MVP] `docker compose up` starts backend + PostgreSQL. Configuration via environment variables.
+* [MVP] Automatic database migration on startup (Flyway).
+* [Target] `docker compose up` starts the full stack (backend, frontend, ML, database).
+* [Target] All configuration via environment variables — no config files needed at deploy time.
+* [Future] Kubernetes-ready: Helm chart or plain manifests for production deployment.
+* [Future] Zero-downtime upgrades via rolling deployment (stateless backend).
+|===
+
+=== NFR-5: Extensibility
+
+[cols="1,4"]
+|===
+| ID | NFR-5
+
+| Requirement
+a|
+* Storage backends: pluggable via SPI. Adding a new backend requires implementing one interface.
+* ML models: pluggable via Model Registry. Adding a new model requires a YAML manifest + ONNX file.
+* Auth providers: extensible via Quarkus OIDC configuration.
+* API: versioned (`/api/v1/`) to support multiple client versions.
+* Clients: any HTTP client can integrate via the OpenAPI spec.
+|===
+
+== Appendix A: User Journeys
+
+=== A.1: Running Club Coordinator
+
+____
+Maria runs a running club with 200 members across three cities (Moscow, SPB, Kazan).
+Each city has its own subgroup.
+She wants a shared photo archive where members upload race photos, organized by event.
+____
+
+. Maria deploys PINA on her VPS via Docker Compose.
+. She creates a Space "Runners" with Subspaces "MSK", "SPB", "KZN".
+. For each Subspace, she generates an invite link with `role=Member`, `auto-approve=true`, `limit=100`.
+. She posts each link in the corresponding city's Telegram group.
+. Members tap the link, join in one click, and start uploading race photos and finish-line videos.
+. AI auto-tags media ("running", "medal", "group photo", "finish line").
+. Members search "finish line SPB marathon 2026" and find their photos and videos instantly.
+. Maria connects the Telegram groups to PINA via the bot — now photos and videos posted in chat are automatically collected.
+
+=== A.2: Family Photo Archive
+
+____
+Alex wants to consolidate family photos from multiple devices into one private archive with AI-powered search.
+____
+
+. Alex deploys PINA at home on a NAS (Docker Compose + local storage; WebDAV backend planned for future).
+. He creates accounts for family members and invites them via email.
+. Each family member uploads their phone photos and videos (batch upload).
+. AI detects and clusters faces — Alex names them ("Mom", "Dad", "Kids").
+. Searching "kids at the beach" returns all relevant photos and videos from all family members.
+. Alex creates a Shared Link for the vacation album and sends it to grandparents — they can view without an account.
+
+=== A.3: Event Photographer
+
+____
+A photographer covers a corporate event and needs to deliver 500+ photos to the client with a professional gallery.
+____
+
+. Photographer uploads all event photos to PINA.
+. AI auto-tags and scores photos by aesthetic quality.
+. Photographer creates a "Best Of" album sorted by aesthetic score, adds top photos.
+. Creates a Shared Link with download enabled and sends to the client.
+. Client browses the gallery, downloads favorites — no account required.
+
+== Appendix B: API Overview
+
+All endpoints under `/api/v1/` prefix.
+Full specification available via OpenAPI at `/q/swagger-ui`.
+
+=== Photos [MVP]
+
+[cols="1,2,3"]
+|===
+| Method | Path | Description
+
+| `GET` | `/api/v1/photos` | List current user's uploaded photos (paginated response with `items`, `page`, `size`, `hasNext`; `needsTotal=true` also includes `totalItems` and `totalPages`)
+| `POST` | `/api/v1/photos` | Upload photo (multipart/form-data)
+| `GET` | `/api/v1/photos/{id}` | Photo metadata
+| `GET` | `/api/v1/photos/{id}/file?variant=` | Download variant file
+| `DELETE` | `/api/v1/photos/{id}` | Delete photo
+| `POST` | `/api/v1/photos/batch` | Batch upload [Target]
+| `DELETE` | `/api/v1/photos/batch` | Batch delete [Target]
+|===
+
+=== Albums [MVP]
+
+[cols="1,2,3"]
+|===
+| Method | Path | Description
+
+| `POST` | `/api/v1/albums` | Create album
+| `GET` | `/api/v1/albums` | List albums
+| `PUT` | `/api/v1/albums/{id}` | Update album
+| `DELETE` | `/api/v1/albums/{id}` | Delete album
+| `GET` | `/api/v1/albums/{id}/photos` | List album photos (paginated response with `items`, `page`, `size`, `hasNext`; `needsTotal=true` also includes `totalItems` and `totalPages`)
+| `POST` | `/api/v1/albums/{id}/photos/{photoId}` | Add photo reference to album
+| `DELETE` | `/api/v1/albums/{id}/photos/{photoId}` | Remove photo reference from album
+|===
+
+Album photo listing response contract:
+
+[source,json]
+----
+{
+  "items": [{ "...": "PhotoDto" }],
+  "page": 0,
+  "size": 50,
+  "hasNext": true,
+  "totalItems": 137,
+  "totalPages": 3
+}
+----
+
+Notes:
+
+* `needsTotal=false` by default; in that case `totalItems` and `totalPages` are omitted.
+* Server-side page size is capped at `100`.
+
+=== Auth [Target]
+
+[cols="1,2,3"]
+|===
+| Method | Path | Description
+
+| `POST` | `/api/v1/auth/register` | Email/password registration
+| `POST` | `/api/v1/auth/login` | Email/password login
+| `GET` | `/api/v1/auth/oidc/{provider}` | OIDC redirect
+| `GET` | `/api/v1/auth/me` | Current user profile
+| `PUT` | `/api/v1/auth/me` | Update profile
+|===
+
+=== Spaces [Target]
+
+[cols="1,2,3"]
+|===
+| Method | Path | Description
+
+| `POST` | `/api/v1/spaces` | Create Space
+| `GET` | `/api/v1/spaces` | List user's Spaces
+| `GET` | `/api/v1/spaces/{id}` | Space details
+| `PUT` | `/api/v1/spaces/{id}` | Update Space
+| `DELETE` | `/api/v1/spaces/{id}` | Delete Space
+| `GET` | `/api/v1/spaces/{id}/members` | List members
+| `POST` | `/api/v1/spaces/{id}/members` | Add member
+| `PUT` | `/api/v1/spaces/{id}/members/{userId}` | Change role
+| `DELETE` | `/api/v1/spaces/{id}/members/{userId}` | Remove member
+| `GET` | `/api/v1/spaces/{id}/subspaces` | List Subspaces
+| `POST` | `/api/v1/spaces/{id}/subspaces` | Create Subspace
+| `POST` | `/api/v1/spaces/{id}/invites` | Generate invite link
+| `GET` | `/api/v1/spaces/{id}/invites` | List active invite links
+| `DELETE` | `/api/v1/spaces/{id}/invites/{inviteId}` | Revoke invite link
+| `POST` | `/api/v1/invites/{code}/join` | Join via invite link
+|===
+
+=== Favorites [Target]
+
+[cols="1,2,3"]
+|===
+| Method | Path | Description
+
+| `GET` | `/api/v1/favorites` | List user's favorites (photos, videos, albums — filterable)
+| `POST` | `/api/v1/favorites` | Add to favorites (`{type: "photo"|"video"|"album", id: ...}`)
+| `DELETE` | `/api/v1/favorites/{type}/{id}` | Remove from favorites
+| `GET` | `/api/v1/favorites/check?type=&id=` | Check if item is favorited
+|===
+
+=== Search [Target]
+
+[cols="1,2,3"]
+|===
+| Method | Path | Description
+
+| `GET` | `/api/v1/search?q=` | Semantic text search
+| `GET` | `/api/v1/search/faces` | List face clusters
+| `GET` | `/api/v1/search/faces/{clusterId}` | Photos by face cluster
+| `PUT` | `/api/v1/search/faces/{clusterId}` | Name / merge face cluster
+|===
+
+=== Sharing [Future]
+
+[cols="1,2,3"]
+|===
+| Method | Path | Description
+
+| `POST` | `/api/v1/shares` | Create shared link
+| `GET` | `/api/v1/shares` | List user's shared links
+| `DELETE` | `/api/v1/shares/{id}` | Revoke shared link
+| `GET` | `/api/v1/s/{code}` | Access shared content (public, no auth)
+|===
+
+=== Videos [Future]
+
+[cols="1,2,3"]
+|===
+| Method | Path | Description
+
+| `POST` | `/api/v1/videos` | Upload video (multipart/form-data)
+| `GET` | `/api/v1/videos/{id}` | Video metadata (duration, resolution, codecs, variants)
+| `GET` | `/api/v1/videos/{id}/stream?profile=` | Stream transcoded video (720p default)
+| `GET` | `/api/v1/videos/{id}/poster?variant=` | Poster image (THUMB_SM / THUMB_MD / THUMB_LG)
+| `GET` | `/api/v1/videos/{id}/animated-thumbnail` | Animated preview (short loop)
+| `GET` | `/api/v1/videos/{id}/transcode-status` | Transcoding progress
+| `POST` | `/api/v1/videos/{id}/retranscode` | Re-trigger transcoding (admin)
+| `DELETE` | `/api/v1/videos/{id}` | Delete video
+| `POST` | `/api/v1/videos/batch` | Batch upload
+| `DELETE` | `/api/v1/videos/batch` | Batch delete
+|===
+
+=== Admin [Target]
+
+[cols="1,2,3"]
+|===
+| Method | Path | Description
+
+| `GET` | `/api/v1/admin/users` | List all users
+| `PUT` | `/api/v1/admin/users/{id}` | Update user (deactivate, change role)
+| `GET` | `/api/v1/admin/spaces` | List all Spaces
+| `GET` | `/api/v1/admin/storage` | Storage usage stats
+| `GET` | `/api/v1/admin/ml/pipeline` | Current ML pipeline config
+| `PUT` | `/api/v1/admin/ml/pipeline` | Update ML pipeline config
+| `POST` | `/api/v1/admin/ml/reindex` | Trigger reindexing
+| `GET` | `/api/v1/admin/ml/reindex` | Reindexing progress
+| `GET` | `/api/v1/admin/transcode/queue` | Transcoding queue status
+| `PUT` | `/api/v1/admin/transcode/config` | Update transcoding config (profiles, concurrency, HW accel)
+| `GET` | `/api/v1/admin/health` | System health (all services)
+|===

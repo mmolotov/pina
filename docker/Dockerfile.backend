@@ -1,0 +1,20 @@
+FROM eclipse-temurin:25-jre-alpine
+
+RUN addgroup -S pina && adduser -S pina -G pina
+
+ARG APP_DIR=/app
+
+WORKDIR ${APP_DIR}
+
+COPY backend/build/quarkus-app/ ${APP_DIR}/
+
+RUN chown -R pina:pina ${APP_DIR}
+
+USER pina
+
+EXPOSE 8080
+
+HEALTHCHECK --interval=10s --timeout=5s --retries=5 \
+  CMD wget -qO- http://localhost:8080/q/health/ready || exit 1
+
+ENTRYPOINT ["java", "-jar", "quarkus-run.jar"]

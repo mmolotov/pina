@@ -1,0 +1,422 @@
+= PINA — Architecture Decision Records
+:author: PINA Team
+:revdate: 2026-03-26
+:toc: left
+:toclevels: 3
+:sectnums:
+:icons: font
+
+Log of architectural decisions for the PINA project.
+Each record follows a fixed structure: Status, Date, Context, Decision, Alternatives considered, Consequences, and Review trigger.
+
+Statuses: *Accepted* (agreed, not yet in code) · *Implemented* (in code and tested) · *Planned* (intent declared, details open) · *Deprecated* · *Superseded*
+
+== Language & Runtime
+
+=== LANG-001: Java 25 as backend language
+
+Status:: Implemented
+Date:: 2026-03-25
+
+==== Context
+
+The backend needs a language with strong typing, mature tooling, and long-term vendor support.
+The project targets self-hosters, so native-image compilation and low memory footprint matter.
+
+==== Decision
+
+Use Java 25 (LTS release, September 2025) with the Temurin distribution.
+Only finalized language features are used (records, sealed interfaces, pattern matching, unnamed variables) — no preview flags.
+
+==== Alternatives considered
+
+- **Kotlin** — better syntax ergonomics but adds a compiler dependency and narrows the contributor pool.
+- **Go** — fast builds, small binaries, but weaker ORM ecosystem and no equivalent to Quarkus Dev Services.
+
+==== Consequences
+
+- Access to the full JVM ecosystem (Quarkus, Hibernate, Flyway, Thumbnailator, metadata-extractor).
+- Requires JDK 25 on CI and developer machines.
+
+==== Review trigger
+
+When the next Java LTS is released — evaluate migration.
+
+=== LANG-002: Quarkus as application framework
+
+Status:: Implemented
+Date:: 2026-03-25
+
+==== Context
+
+The backend framework must support REST, CDI, ORM, DB migrations, health checks, and OpenAPI out of the box.
+Fast startup and low memory are important for self-hosted deployments on modest hardware (Raspberry Pi, NAS, small VPS).
+
+==== Decision
+
+Use Quarkus with extensions: REST, Hibernate ORM Panache, Flyway, SmallRye OpenAPI, SmallRye Health, Dev Services.
+
+==== Alternatives considered
+
+- **Spring Boot** — larger community but higher memory footprint and slower startup.
+No equivalent of Dev Services built-in.
+- **Micronaut** — similar goals to Quarkus but smaller extension ecosystem, especially around Panache and Dev Services.
+
+==== Consequences
+
+- Hot reload via `quarkusDev` keeps the feedback loop tight.
+- Dev Services auto-start PostgreSQL in dev/test mode — no manual DB setup needed.
+- Ties the project to the Quarkus release cadence.
+
+==== Review trigger
+
+If Quarkus drops a critical extension or a competing framework offers a significant advantage for our use case.
+
+=== LANG-003: TypeScript + React + Vite frontend
+
+Status:: Implemented
+Date:: 2026-03-25
+Implementation notes:: Skeleton only — routing and build setup, no gallery UI yet.
+
+==== Context
+
+The frontend needs to handle media-heavy UIs: virtual scrolling, lazy image loading, gesture support, responsive grid layouts.
+
+==== Decision
+
+TypeScript SPA with React, React Router 7 (file-based routing), Vite, and Tailwind CSS.
+
+==== Alternatives considered
+
+- **Vue + Nuxt** — good DX but smaller ecosystem for media-heavy components.
+- **Svelte + SvelteKit** — excellent performance but less mature library ecosystem for complex UIs.
+
+==== Consequences
+
+- Access to the largest ecosystem of media/gallery components.
+- Vite provides instant HMR.
+- Adds a Node.js dependency to the development toolchain.
+
+==== Review trigger
+
+Before Phase 4 (Frontend) — validate that the chosen libraries cover virtual scroll and gesture requirements.
+
+=== LANG-004: Separate Python ML service with gRPC
+
+Status:: Accepted
+Date:: 2026-03-25
+
+==== Context
+
+ML inference (tagging, face recognition, embeddings, captioning) requires Python-native model runtimes (ONNX, TensorRT).
+The ML workload should scale independently from the API backend and crash without taking it down.
+
+==== Decision
+
+ML is a separate Python service.
+Backend communicates with it over gRPC.
+Proto definitions live in `proto/` and are shared between backend and ML.
+FastAPI serves as the admin/health endpoint for the ML service.
+
+==== Alternatives considered
+
+- **REST for backend↔ML** — simpler, but gRPC is significantly more efficient for binary transfer of image data and embedding vectors.
+- **Embedding ML in the backend (JVM)** — possible via ONNX Runtime Java bindings, but limits model ecosystem and complicates GPU management.
+
+==== Consequences
+
+- Independent scaling: ML workers can run on GPU machines while the backend runs on CPU.
+- Adds operational complexity: two services to deploy and monitor.
+- Proto definitions must be kept in sync.
+
+==== Review trigger
+
+When ML service implementation begins (Phase 3).
+
+== Data Layer
+
+=== DATA-001: PostgreSQL with pgvector
+
+Status:: Implemented
+Date:: 2026-03-25
+
+==== Context
+
+The application needs relational storage (users, albums, photos), JSONB (EXIF metadata), and vector similarity search (ML embeddings) — all in one database to keep self-hosted deployment simple.
+
+==== Decision
+
+PostgreSQL 17 is the sole database.
+The pgvector extension is enabled from day one.
+
+==== Alternatives considered
+
+- **PostgreSQL + separate vector DB (Milvus, Qdrant)** — better vector performance at scale, but doubles operational burden for self-hosters.
+- **SQLite** — zero-setup, but lacks pgvector, concurrent write support, and extensions.
+
+==== Consequences
+
+- Single database covers all storage needs.
+- pgvector with HNSW indexes provides sufficient ANN search performance for personal/community-scale libraries (up to millions of photos).
+- Self-hosters need only one database to back up and maintain.
+
+==== Review trigger
+
+If vector search latency becomes a bottleneck at scale — consider a dedicated vector store.
+
+=== DATA-002: Flyway for schema management
+
+Status:: Implemented
+Date:: 2026-03-25
+
+==== Context
+
+Schema changes must be versioned, reviewable, and reproducible across environments.
+The schema includes PostgreSQL-specific features (pgvector extension, custom types) that ORM auto-DDL cannot handle.
+
+==== Decision
+
+Database schema is managed exclusively by Flyway migrations.
+Hibernate auto-DDL is disabled.
+Migrations run at application startup (`migrate-at-start=true`).
+
+==== Alternatives considered
+
+- **Hibernate hbm2ddl** — convenient for prototyping, but cannot handle data migrations, index changes, or `CREATE EXTENSION vector`.
+- **Liquibase** — more powerful than Flyway (rollback support), but added complexity is not justified at this stage.
+
+==== Consequences
+
+- Every schema change is a numbered SQL file in `db/migration/`.
+- Rollbacks must be written manually if needed.
+
+==== Review trigger
+
+If rollback automation becomes critical — consider Liquibase.
+
+=== DATA-003: Media Asset + Reference ownership model
+
+Status:: Accepted
+Date:: 2026-03-26
+
+==== Context
+
+The system needs a clear ownership model for media that works across Personal Libraries and shared Spaces.
+Key scenarios: deduplication, deletion, Space removal, quotas, and access control all depend on who owns the physical file vs who can see it.
+
+==== Decision
+
+Global asset + scoped references:
+
+* *Media Asset* — a globally unique file identified by SHA-256 hash.
+Owned by the uploader.
+Physical files and variants belong to the asset.
+* *Media Reference* — a link from a Space album to a Media Asset.
+Adding media to a Space creates a reference, not a copy.
+* Upload always creates the asset in the uploader's Personal Library.
+If a Space album is specified, a reference is added automatically.
+* Deduplication is global (by content hash).
+* Deleting a reference from a Space does not delete the asset.
+* Deleting an asset from Personal Library deletes files only if no references exist elsewhere.
+
+==== Alternatives considered
+
+* **Per-scope copies** — simpler mental model, but wastes storage and breaks dedup across Spaces.
+* **Global asset without Personal Library ownership** — complicates deletion (who can delete?) and quotas (who pays for storage?).
+
+==== Consequences
+
+* Clear deletion semantics: reference removal is cheap, asset deletion is gated by reference count.
+* Quotas can be attributed to the asset owner.
+* Requires a reference-counting mechanism before allowing asset deletion.
+
+==== Review trigger
+
+When implementing Phase 2 (Spaces) — validate that the reference model handles all edge cases (concurrent delete, Space removal, user deactivation).
+
+== Storage
+
+=== STOR-001: Pluggable storage SPI
+
+Status:: Implemented
+Date:: 2026-03-25
+Implementation notes:: Local FS provider is production-ready.
+S3 and WebDAV are stubbed.
+
+==== Context
+
+Self-hosted users have different storage setups: local disk, NAS (WebDAV), S3-compatible object storage (MinIO, Backblaze B2).
+The storage layer must be swappable without touching business logic.
+
+==== Decision
+
+`StorageProvider` interface with implementations selected at runtime via a CDI `@Produces` method and a config property (`pina.storage.provider=local|s3|webdav`).
+
+==== Alternatives considered
+
+- **CDI `@Alternative` / `@IfBuildProfile`** — locks the choice at build time, not at runtime.
+- **Spring-style `@ConditionalOnProperty`** — Quarkus equivalent exists but CDI Producer is more idiomatic.
+
+==== Consequences
+
+- Adding a new storage backend = one class implementing `StorageProvider`.
+- S3 and WebDAV implementations are stubbed, not yet production-ready.
+
+==== Review trigger
+
+Before S3/WebDAV providers are completed — validate the interface covers all required operations.
+
+=== STOR-002: Content-addressable file storage
+
+Status:: Implemented
+Date:: 2026-03-25
+
+==== Context
+
+Users may upload the same photo multiple times (from different devices, or multiple users in a shared Space).
+Files need stable, collision-resistant names independent of the original filename.
+
+==== Decision
+
+Files are named by their SHA-256 content hash.
+The hash serves as the deduplication key (unique DB constraint).
+Storage paths are date-partitioned: `{category}/{YYYY}/{MM}/{hash}.{ext}`.
+
+==== Alternatives considered
+
+- **UUID filenames** — simpler, but no deduplication without a separate lookup.
+- **Flat directory structure** — degrades on filesystems with >10k entries per directory (ext4, XFS).
+
+==== Consequences
+
+- Deduplication is automatic: duplicate uploads resolve to the same file.
+- Date partitioning keeps directory sizes manageable and simplifies backup by time range.
+- Concurrent upload of the same file is safe: the second insert fails with a constraint violation and returns the existing photo.
+
+==== Review trigger
+
+If a hash collision is ever observed (astronomically unlikely with SHA-256).
+
+== API Design
+
+=== API-001: REST + OpenAPI for client-facing APIs
+
+Status:: Implemented
+Date:: 2026-03-25
+
+==== Context
+
+The backend serves multiple clients: web frontend, Telegram Mini App, Telegram Bot, and potentially third-party integrations.
+
+==== Decision
+
+All client-facing endpoints live under `/api/v1/` with OpenAPI documentation auto-generated by SmallRye.
+gRPC is reserved for the backend↔ML boundary.
+
+==== Alternatives considered
+
+- **GraphQL** — flexible for frontend queries, but adds complexity (schema stitching, N+1 protection) that is not justified for our API surface.
+- **gRPC everywhere** — efficient, but poor browser support and harder to debug.
+
+==== Consequences
+
+- Swagger UI available at `/q/swagger-ui` for development and integration testing.
+- URL-based versioning (`/v1/`) is explicit and easy to reason about.
+
+==== Review trigger
+
+If the API surface grows beyond ~30 endpoints and clients need flexible field selection — reconsider GraphQL.
+
+== Infrastructure
+
+=== INFRA-001: Monorepo
+
+Status:: Implemented
+Date:: 2026-03-25
+Implementation notes:: CI with path-scoped triggers exists only for backend.
+Other components do not have CI workflows yet.
+
+==== Context
+
+The project has six components (backend, frontend, ML, proto, tg-bot, tg-mini-app) that share API contracts and proto definitions.
+
+==== Decision
+
+All components live in a single Git repository with per-component build configs.
+CI workflows are added per component as they mature, with path-scoped triggers to avoid unnecessary rebuilds.
+
+==== Alternatives considered
+
+- **Multi-repo** — stronger build isolation, but cross-component changes (e.g., proto update) require coordinated PRs across repos.
+
+==== Consequences
+
+- Atomic cross-component changes in a single PR.
+- Single place for issues, documentation, and CI configuration.
+- CI must use path filters to avoid rebuilding everything on every push.
+
+==== Review trigger
+
+If the team grows beyond 5 contributors and CI contention becomes a problem.
+
+=== INFRA-002: Docker Compose as primary deployment target
+
+Status:: Accepted
+Date:: 2026-03-25
+
+==== Context
+
+The primary audience is self-hosters running PINA on a home server, NAS, or small VPS.
+They need a single command to start the entire stack.
+
+==== Decision
+
+Docker Compose is the primary deployment method.
+Kubernetes manifests may be added later but are not a prerequisite.
+
+==== Alternatives considered
+
+- **Kubernetes-first** — production-grade, but overkill for the target audience and raises the barrier to entry.
+- **Bare-metal install scripts** — fragile across OS/distro variations.
+
+==== Consequences
+
+- Target state: `docker compose up` starts the entire stack (backend, frontend, ML, PostgreSQL).
+Currently only backend + PostgreSQL are wired.
+- Each component will have its own Dockerfile with multi-stage builds.
+
+==== Review trigger
+
+If a managed hosting offering or paid tier is considered — evaluate Kubernetes support.
+
+== Testing
+
+=== TEST-001: Integration tests with real PostgreSQL
+
+Status:: Implemented
+Date:: 2026-03-25
+
+==== Context
+
+Database mocking hides SQL bugs, migration errors, and Hibernate mapping issues — the exact problems that break in production.
+
+==== Decision
+
+All tests run against a real PostgreSQL instance with pgvector via Quarkus Dev Services (Testcontainers).
+No database mocking.
+
+==== Alternatives considered
+
+- **H2 in-memory database** — fast, but does not support pgvector, PostgreSQL-specific types, or advanced SQL features.
+- **Mocked repositories** — fastest, but gives false confidence.
+Prior incidents in other projects confirmed this risk.
+
+==== Consequences
+
+- Tests are slower but catch real issues.
+- Docker is required on developer machines and CI.
+- Flyway migrations are validated on every test run.
+
+==== Review trigger
+
+If test suite execution time exceeds 5 minutes — consider test parallelization or selective test profiles.

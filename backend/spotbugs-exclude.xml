@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<FindBugsFilter>
+    <!--
+        EI_EXPOSE_REP/EI_EXPOSE_REP2: Records and DTOs intentionally expose mutable arrays
+        (e.g. ProcessedImage.data() returns byte[]).  Defensive copies would negate the
+        purpose of these lightweight transfer objects that live within a single request scope.
+    -->
+    <Match>
+        <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
+        <Class name="~dev\.pina\.backend\.(api\.dto|service)\..*"/>
+    </Match>
+    <!-- DLS false positive: cappedSize is used in the following method call chain -->
+    <Match>
+        <Class name="~dev\.pina\.backend\.service\.(PhotoService|AlbumService)"/>
+        <Bug pattern="DLS_DEAD_LOCAL_STORE"/>
+    </Match>
+    <!-- LocalStorageProvider: Path.getParent() won't be null for our constructed paths -->
+    <Match>
+        <Class name="dev.pina.backend.storage.LocalStorageProvider"/>
+        <Bug pattern="NP_NULL_ON_SOME_PATH_FROM_RETURN_VALUE"/>
+    </Match>
+</FindBugsFilter>
