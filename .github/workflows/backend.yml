@@ -72,7 +72,7 @@ jobs:
           QUARKUS_DATASOURCE_PASSWORD: ${{ secrets.CI_POSTGRES_PASSWORD || 'pina' }}
 
       - name: Test report
-        uses: dorny/test-reporter@v2
+        uses: dorny/test-reporter@v3
         if: always() && steps.build.outcome != 'skipped'
         with:
           name: Test Results
