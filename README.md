@@ -42,7 +42,7 @@ docker compose -f docker/docker-compose.yml up --build
 | Frontend  | React, React Router 7, Vite, Tailwind CSS |
 | Database  | PostgreSQL 17 + pgvector                  |
 | Storage   | Local FS implemented; S3/WebDAV stubbed   |
-| ML        | Planned for Phase 3                       |
+| ML        | Planned for Phase 4                       |
 | Telegram  | Planned for Phase 5                       |
 | Auth      | JWT + refresh tokens; Google OIDC implemented |
 | Deploy    | Compose for backend + PostgreSQL today    |

@@ -99,7 +99,7 @@ TypeScript SPA with React, React Router 7 (file-based routing), Vite, and Tailwi
 
 ==== Review trigger
 
-Before Phase 4 (Frontend) — validate that the chosen libraries cover virtual scroll and gesture requirements.
+Before Phase 3 (Frontend) — validate that the chosen libraries cover virtual scroll and gesture requirements.
 
 === LANG-004: Separate Python ML service with gRPC
 
@@ -131,7 +131,7 @@ FastAPI serves as the admin/health endpoint for the ML service.
 
 ==== Review trigger
 
-When ML service implementation begins (Phase 3).
+When ML service implementation begins (Phase 4).
 
 == Data Layer
 

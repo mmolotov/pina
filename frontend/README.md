@@ -2,7 +2,7 @@
 
 SPA client for PINA built with React, React Router 7, Vite, and Tailwind CSS.
 Current repository status: the repository is in Phase 2, while the frontend itself remains a minimal
-Phase 1-style skeleton pending Phase 4 feature work.
+Phase 1-style skeleton pending Phase 3 feature work.
 
 ## Development
 

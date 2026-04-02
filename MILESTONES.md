@@ -40,7 +40,19 @@ Legend: ✅ done · 🔲 todo
 - ✅ Subspace role inheritance (inherited roles from parent, per-member overrides, max depth 5)
 - ✅ Favorites: per-user favorite photos and albums (videos pending Phase 7)
 
-## Phase 3: ML Service (basic)
+## Phase 3: Frontend
+
+- ✅ Framework selection: React + React Router 7 + Vite + Tailwind CSS
+- 🔲 Gallery view (grid, timeline) — mixed photos & videos
+- 🔲 Photo viewer (zoom, swipe, EXIF panel)
+- 🔲 Video player (inline, adaptive streaming, playback controls)
+- 🔲 Upload UI (drag & drop, progress, batch) — photos & videos
+- 🔲 Album management
+- 🔲 Search: text, faces, tags
+- 🔲 Admin panel: Space management, users, invite links, ML pipeline config, transcoding config, storage stats, system health dashboard
+- 🔲 Responsive / mobile-friendly
+
+## Phase 4: ML Service (basic)
 
 - 🔲 gRPC contract (proto definitions)
 - 🔲 Python service scaffold: FastAPI (admin) + gRPC server
@@ -54,18 +66,6 @@ Legend: ✅ done · 🔲 todo
 - 🔲 Search by tags
 - 🔲 Face clustering and grouping
 - 🔲 Video keyframe extraction for ML analysis
-
-## Phase 4: Frontend
-
-- ✅ Framework selection: React + React Router 7 + Vite + Tailwind CSS
-- 🔲 Gallery view (grid, timeline) — mixed photos & videos
-- 🔲 Photo viewer (zoom, swipe, EXIF panel)
-- 🔲 Video player (inline, adaptive streaming, playback controls)
-- 🔲 Upload UI (drag & drop, progress, batch) — photos & videos
-- 🔲 Album management
-- 🔲 Search: text, faces, tags
-- 🔲 Admin panel: Space management, users, invite links, ML pipeline config, transcoding config, storage stats, system health dashboard
-- 🔲 Responsive / mobile-friendly
 
 ## Phase 5: Telegram
 

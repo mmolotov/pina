@@ -104,7 +104,7 @@ Media and user data never leave the instance; optional outbound calls are limite
 Each requirement is marked with a phase indicator:
 
 * *[MVP]* — required for the first usable release (Phase 1).
-* *[Target]* — planned for Phases 2–4 (Auth, Spaces, ML, Frontend).
+* *[Target]* — planned for Phases 2–4 (Auth, Spaces, Frontend, ML).
 * *[Future]* — Phase 5+ (Telegram, Video, Advanced Features).
 Design is directional, details may change.
 
