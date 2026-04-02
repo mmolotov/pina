@@ -41,6 +41,34 @@ class FavoriteResourceTest {
 				.statusCode(201).extract().path("id"));
 	}
 
+	private static UUID createSpace(String token, String name) {
+		return UUID.fromString(authAs(token).body("{\"name\":\"" + name + "\"}").when().post("/api/v1/spaces").then()
+				.statusCode(201).extract().path("id"));
+	}
+
+	private static UUID createSpaceAlbum(String token, UUID spaceId, String name) {
+		return UUID.fromString(authAs(token).body("{\"name\":\"" + name + "\"}").when()
+				.post("/api/v1/spaces/" + spaceId + "/albums").then().statusCode(201).extract().path("id"));
+	}
+
+	private static UUID currentUserId(String token) {
+		return UUID.fromString(authAs(token).when().get("/api/v1/auth/me").then().statusCode(200).extract().path("id"));
+	}
+
+	private static void addMember(String ownerToken, UUID spaceId, UUID userId, String role) {
+		authAs(ownerToken).body("{\"userId\":\"" + userId + "\",\"role\":\"" + role + "\"}").when()
+				.post("/api/v1/spaces/" + spaceId + "/members").then().statusCode(201);
+	}
+
+	private static void removeMember(String actorToken, UUID spaceId, UUID userId) {
+		authAs(actorToken).when().delete("/api/v1/spaces/" + spaceId + "/members/" + userId).then().statusCode(204);
+	}
+
+	private static void addPhotoToSpaceAlbum(String token, UUID spaceId, UUID albumId, UUID photoId) {
+		authAs(token).when().post("/api/v1/spaces/" + spaceId + "/albums/" + albumId + "/photos/" + photoId).then()
+				.statusCode(201);
+	}
+
 	private static Path createJpegImage(String prefix) throws IOException {
 		Path image = Files.createTempFile(prefix, ".jpg");
 		BufferedImage img = new BufferedImage(50, 50, BufferedImage.TYPE_INT_RGB);
@@ -189,5 +217,50 @@ class FavoriteResourceTest {
 		authAs(token).when().get("/api/v1/favorites").then().statusCode(200).body("$", hasSize(0));
 		authAs(token).when().get("/api/v1/favorites/check?targetType=ALBUM&targetId=" + albumId).then().statusCode(200)
 				.body("favorited", equalTo(false));
+	}
+
+	@Test
+	void favoritesListHidesTargetsAfterSpaceAccessIsRevoked() throws IOException {
+		String ownerToken = registerUser("revoke-access-owner");
+		String memberToken = registerUser("revoke-access-member");
+		UUID memberId = currentUserId(memberToken);
+		UUID spaceId = createSpace(ownerToken, "Hidden Favorites Space");
+		addMember(ownerToken, spaceId, memberId, "MEMBER");
+
+		UUID photoId = uploadPhoto(ownerToken);
+		UUID albumId = createSpaceAlbum(ownerToken, spaceId, "Hidden Favorites Album");
+		addPhotoToSpaceAlbum(ownerToken, spaceId, albumId, photoId);
+
+		authAs(memberToken).body("{\"targetType\":\"PHOTO\",\"targetId\":\"" + photoId + "\"}").when()
+				.post("/api/v1/favorites").then().statusCode(201);
+		authAs(memberToken).body("{\"targetType\":\"ALBUM\",\"targetId\":\"" + albumId + "\"}").when()
+				.post("/api/v1/favorites").then().statusCode(201);
+
+		removeMember(ownerToken, spaceId, memberId);
+
+		authAs(memberToken).when().get("/api/v1/favorites").then().statusCode(200).body("$", hasSize(0));
+		authAs(memberToken).when().get("/api/v1/favorites/check?targetType=PHOTO&targetId=" + photoId).then()
+				.statusCode(200).body("favorited", equalTo(false));
+		authAs(memberToken).when().get("/api/v1/favorites/check?targetType=ALBUM&targetId=" + albumId).then()
+				.statusCode(200).body("favorited", equalTo(false));
+	}
+
+	@Test
+	void memberOwnedSpaceAlbumFavoriteIsHiddenAfterSpaceRemoval() {
+		String ownerToken = registerUser("space-owner-loss-owner");
+		String memberToken = registerUser("space-owner-loss-member");
+		UUID memberId = currentUserId(memberToken);
+		UUID spaceId = createSpace(ownerToken, "Owned Space Album Visibility");
+		addMember(ownerToken, spaceId, memberId, "MEMBER");
+
+		UUID memberOwnedAlbumId = createSpaceAlbum(memberToken, spaceId, "Member-Owned Space Album");
+		authAs(memberToken).body("{\"targetType\":\"ALBUM\",\"targetId\":\"" + memberOwnedAlbumId + "\"}").when()
+				.post("/api/v1/favorites").then().statusCode(201);
+
+		removeMember(ownerToken, spaceId, memberId);
+
+		authAs(memberToken).when().get("/api/v1/favorites?type=ALBUM").then().statusCode(200).body("$", hasSize(0));
+		authAs(memberToken).when().get("/api/v1/favorites/check?targetType=ALBUM&targetId=" + memberOwnedAlbumId).then()
+				.statusCode(200).body("favorited", equalTo(false));
 	}
 }

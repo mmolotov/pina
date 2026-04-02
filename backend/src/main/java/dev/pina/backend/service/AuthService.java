@@ -10,6 +10,7 @@ import io.smallrye.jwt.build.Jwt;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.persistence.EntityManager;
+import jakarta.persistence.LockModeType;
 import jakarta.persistence.PersistenceException;
 import jakarta.transaction.Transactional;
 import java.nio.charset.StandardCharsets;
@@ -32,6 +33,9 @@ public class AuthService {
 
 	@Inject
 	EntityManager em;
+
+	@Inject
+	TransactionalLockService lockService;
 
 	@ConfigProperty(name = "pina.auth.bcrypt.cost", defaultValue = "12")
 	int bcryptCost;
@@ -111,7 +115,16 @@ public class AuthService {
 		user.name = googleToken.name() != null ? googleToken.name() : "Google User";
 		user.email = googleToken.email();
 		user.avatarUrl = googleToken.picture();
-		user.persistAndFlush();
+		try {
+			user.persistAndFlush();
+		} catch (PersistenceException e) {
+			User.getEntityManager().clear();
+			if (googleToken.email() != null && User.count("email", googleToken.email()) > 0) {
+				throw new EmailAlreadyExistsException(
+						"Email already in use by another account; sign in first and link Google from profile settings");
+			}
+			throw new IllegalStateException("Failed to create Google-authenticated user", e);
+		}
 
 		LinkedAccount account = new LinkedAccount();
 		account.user = user;
@@ -172,22 +185,15 @@ public class AuthService {
 	@Transactional
 	public Optional<TokenPair> refresh(String rawRefreshToken) {
 		String hash = hashToken(rawRefreshToken);
-		RefreshToken existing = RefreshToken.find("tokenHash = ?1", hash).firstResult();
+		RefreshToken existing = findRefreshTokenForMutation(hash);
 		if (existing == null || existing.revoked || existing.expiresAt.isBefore(OffsetDateTime.now())) {
 			return Optional.empty();
 		}
 
-		// Revoke old token
 		existing.revoked = true;
 		existing.persistAndFlush();
 
-		// Load user
-		User user = User.findById(existing.user.id);
-		if (user == null) {
-			return Optional.empty();
-		}
-
-		// Issue new pair
+		User user = existing.user;
 		String newAccessToken = generateAccessToken(user);
 		String newRefreshToken = createRefreshToken(user);
 		return Optional.of(new TokenPair(newAccessToken, newRefreshToken, user));
@@ -196,7 +202,7 @@ public class AuthService {
 	@Transactional
 	public boolean logout(String rawRefreshToken) {
 		String hash = hashToken(rawRefreshToken);
-		RefreshToken existing = RefreshToken.find("tokenHash = ?1", hash).firstResult();
+		RefreshToken existing = findRefreshTokenForMutation(hash);
 		if (existing == null || existing.revoked) {
 			return false;
 		}
@@ -219,7 +225,14 @@ public class AuthService {
 	}
 
 	private void lockLinkedAccount(AuthProvider provider, String providerAccountId) {
-		em.createNativeQuery("SELECT pg_advisory_xact_lock(hashtext(CAST(?1 AS text)))")
-				.setParameter(1, provider.name() + ":" + providerAccountId).getSingleResult();
+		lockService.lock("linked-account", provider.name() + ":" + providerAccountId);
+	}
+
+	private RefreshToken findRefreshTokenForMutation(String tokenHash) {
+		return em
+				.createQuery("SELECT rt FROM RefreshToken rt JOIN FETCH rt.user WHERE rt.tokenHash = :tokenHash",
+						RefreshToken.class)
+				.setParameter("tokenHash", tokenHash).setLockMode(LockModeType.PESSIMISTIC_WRITE).getResultStream()
+				.findFirst().orElse(null);
 	}
 }

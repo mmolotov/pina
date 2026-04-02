@@ -13,10 +13,10 @@ import dev.pina.backend.storage.StorageProvider;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.persistence.EntityManager;
+import jakarta.persistence.LockModeType;
 import jakarta.persistence.PersistenceException;
 import jakarta.transaction.Transactional;
 import java.awt.image.BufferedImage;
-import java.io.BufferedInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -32,9 +32,15 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import org.hibernate.Hibernate;
 
 @ApplicationScoped
 public class PhotoService {
+
+	private static final Logger LOG = Logger.getLogger(PhotoService.class.getName());
+	private static final String FAVORITE_TARGET_LOCK_NAMESPACE = "favorite-target-photo";
 
 	@Inject
 	StorageProvider storage;
@@ -56,6 +62,12 @@ public class PhotoService {
 
 	@Inject
 	EntityManager em;
+
+	@Inject
+	TransactionCallbacks transactionCallbacks;
+
+	@Inject
+	TransactionalLockService lockService;
 
 	record IngestedFile(Path tempFile, String contentHash, long size) {
 	}
@@ -113,19 +125,19 @@ public class PhotoService {
 
 	@Transactional
 	public DeleteResult delete(UUID id) {
-		Optional<Photo> photo = Photo.findByIdOptional(id);
-		if (photo.isEmpty()) {
+		lockService.lock(FAVORITE_TARGET_LOCK_NAMESPACE, id);
+		Photo photo = findByIdForDelete(id);
+		if (photo == null) {
 			return DeleteResult.NOT_FOUND;
 		}
 		if (AlbumPhoto.find("photo.id", id).count() > 0) {
 			return DeleteResult.HAS_REFERENCES;
 		}
-		Photo p = photo.get();
+		List<String> storagePaths = photo.variants.stream().map(variant -> variant.storagePath).toList();
 		favoriteService.removeForTarget(dev.pina.backend.domain.FavoriteTargetType.PHOTO, id);
-		for (PhotoVariant variant : p.variants) {
-			storage.delete(new StoragePath(variant.storagePath));
-		}
-		p.delete();
+		photo.delete();
+		em.flush();
+		transactionCallbacks.afterCommit(() -> deleteStoredVariants(storagePaths));
 		return DeleteResult.DELETED;
 	}
 
@@ -191,18 +203,11 @@ public class PhotoService {
 	}
 
 	private AnalyzedImage analyzeImage(Path tempFile, String mimeType) throws IOException {
-		BufferedImage image;
-		try (var in = new BufferedInputStream(Files.newInputStream(tempFile))) {
-			image = imageProcessor.readImage(in);
-		}
+		BufferedImage image = imageProcessor.readImage(tempFile);
 		if (image == null) {
 			throw new IllegalArgumentException("Unsupported image format: " + mimeType);
 		}
-
-		ExifExtractor.ExifResult exif;
-		try (var in = new BufferedInputStream(Files.newInputStream(tempFile))) {
-			exif = exifExtractor.extract(in);
-		}
+		ExifExtractor.ExifResult exif = exifExtractor.extract(tempFile);
 
 		return new AnalyzedImage(image, exif);
 	}
@@ -238,6 +243,24 @@ public class PhotoService {
 			return HexFormat.of().formatHex(digest.digest());
 		} catch (NoSuchAlgorithmException _) {
 			throw new AssertionError("SHA-256 must be available");
+		}
+	}
+
+	private Photo findByIdForDelete(UUID id) {
+		Photo photo = em.find(Photo.class, id, LockModeType.PESSIMISTIC_WRITE);
+		if (photo != null) {
+			Hibernate.initialize(photo.variants);
+		}
+		return photo;
+	}
+
+	private void deleteStoredVariants(List<String> storagePaths) {
+		for (String storagePath : storagePaths) {
+			try {
+				storage.delete(new StoragePath(storagePath));
+			} catch (RuntimeException e) {
+				LOG.log(Level.WARNING, "Failed to delete stored variant after transaction commit: " + storagePath, e);
+			}
 		}
 	}
 }

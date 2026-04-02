@@ -174,6 +174,29 @@ class FavoriteServiceTest {
 
 	@Test
 	@Transactional
+	void spaceAlbumFavoriteIsHiddenAfterOwnerLeavesSpace() {
+		var owner = TestUserHelper.createUser("fav-space-leave-owner");
+		var member = TestUserHelper.createUser("fav-space-leave-member");
+		var space = spaceService.create("Leaver Space", null, SpaceVisibility.PRIVATE, owner);
+		spaceService.addMember(space.id, member.id, SpaceRole.MEMBER);
+
+		Album memberOwnedSpaceAlbum = new Album();
+		memberOwnedSpaceAlbum.name = "Member-Owned Space Album";
+		memberOwnedSpaceAlbum.owner = member;
+		memberOwnedSpaceAlbum.space = space;
+		memberOwnedSpaceAlbum.persistAndFlush();
+
+		assertEquals(FavoriteService.AddResult.CREATED,
+				favoriteService.add(FavoriteTargetType.ALBUM, memberOwnedSpaceAlbum.id, member));
+		assertTrue(favoriteService.isFavorited(member.id, FavoriteTargetType.ALBUM, memberOwnedSpaceAlbum.id));
+
+		assertEquals(SpaceService.RemoveMemberResult.REMOVED, spaceService.removeMember(space.id, owner.id, member.id));
+		assertFalse(favoriteService.isFavorited(member.id, FavoriteTargetType.ALBUM, memberOwnedSpaceAlbum.id));
+		assertTrue(favoriteService.listByUser(member.id, FavoriteTargetType.ALBUM).isEmpty());
+	}
+
+	@Test
+	@Transactional
 	void canFavoritePhotoInInheritedSubspaceAlbum() {
 		var owner = TestUserHelper.createUser("fav-subspace-owner");
 		var member = TestUserHelper.createUser("fav-subspace-member");
@@ -196,6 +219,36 @@ class FavoriteServiceTest {
 
 		assertEquals(FavoriteService.AddResult.CREATED,
 				favoriteService.add(FavoriteTargetType.PHOTO, photo.id, member));
+	}
+
+	@Test
+	@Transactional
+	void parentAlbumFavoriteIsHiddenAfterParentMembershipRemovalEvenWithDirectChildMembership() {
+		var owner = TestUserHelper.createUser("fav-parent-child-owner");
+		var member = TestUserHelper.createUser("fav-parent-child-member");
+		var parent = spaceService.create("Parent Favorite Space", null, SpaceVisibility.PRIVATE, owner);
+		var child = spaceService.createSubspace(parent.id, "Child Favorite Space", null, SpaceVisibility.PRIVATE,
+				owner);
+		spaceService.addMember(parent.id, member.id, SpaceRole.MEMBER);
+
+		Album parentAlbum = new Album();
+		parentAlbum.name = "Parent Album";
+		parentAlbum.owner = owner;
+		parentAlbum.space = parent;
+		parentAlbum.persistAndFlush();
+
+		assertEquals(FavoriteService.AddResult.CREATED,
+				favoriteService.add(FavoriteTargetType.ALBUM, parentAlbum.id, member));
+		assertEquals(SpaceService.RemoveMemberResult.REMOVED,
+				spaceService.removeMember(parent.id, owner.id, member.id));
+
+		var updateChild = spaceService.update(child.id, child.name, child.description, child.visibility, false);
+		assertTrue(updateChild.isPresent());
+		assertEquals(SpaceService.AddMemberResult.CREATED,
+				spaceService.addMember(child.id, member.id, SpaceRole.VIEWER));
+
+		assertFalse(favoriteService.isFavorited(member.id, FavoriteTargetType.ALBUM, parentAlbum.id));
+		assertTrue(favoriteService.listByUser(member.id, FavoriteTargetType.ALBUM).isEmpty());
 	}
 
 	@Test

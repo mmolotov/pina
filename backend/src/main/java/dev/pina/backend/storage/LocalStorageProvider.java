@@ -36,6 +36,21 @@ public class LocalStorageProvider implements StorageProvider {
 	}
 
 	@Override
+	public void store(StoragePath path, Path source, StoreMeta meta) {
+		try {
+			Path target = resolve(path);
+			Files.createDirectories(target.getParent());
+			try {
+				Files.move(source, target, StandardCopyOption.REPLACE_EXISTING);
+			} catch (IOException moveError) {
+				Files.copy(source, target, StandardCopyOption.REPLACE_EXISTING);
+			}
+		} catch (IOException e) {
+			throw new UncheckedIOException("Failed to store file: " + path.path(), e);
+		}
+	}
+
+	@Override
 	public InputStream retrieve(StoragePath path) {
 		try {
 			return Files.newInputStream(resolve(path));

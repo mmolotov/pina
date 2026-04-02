@@ -30,6 +30,10 @@ class SpaceResourceTest {
 		return given().header("Authorization", "Bearer " + token).contentType(ContentType.JSON);
 	}
 
+	private static String currentUserId(String token) {
+		return authAs(token).when().get("/api/v1/auth/me").then().statusCode(200).extract().path("id");
+	}
+
 	// ── Create ────────────────────────────────────────────────────────────
 
 	@Test
@@ -341,6 +345,34 @@ class SpaceResourceTest {
 
 		authAs(memberToken).body("{\"name\": \"Not Allowed\"}").when().post("/api/v1/spaces/{id}/subspaces", parentId)
 				.then().statusCode(404);
+	}
+
+	@Test
+	void listSubspacesIncludesInheritedAndDirectAccessOnly() {
+		String ownerToken = registerUser("sub-visible-owner");
+		String memberToken = registerUser("sub-visible-member");
+		String parentId = authAs(ownerToken).body("{\"name\": \"Sub Visible Parent\"}").when().post("/api/v1/spaces")
+				.then().statusCode(201).extract().path("id");
+		String inheritedChildId = authAs(ownerToken).body("{\"name\": \"Inherited Child\"}").when()
+				.post("/api/v1/spaces/{id}/subspaces", parentId).then().statusCode(201).extract().path("id");
+		String hiddenChildId = authAs(ownerToken).body("{\"name\": \"Hidden Child\"}").when()
+				.post("/api/v1/spaces/{id}/subspaces", parentId).then().statusCode(201).extract().path("id");
+		String directChildId = authAs(ownerToken).body("{\"name\": \"Direct Child\"}").when()
+				.post("/api/v1/spaces/{id}/subspaces", parentId).then().statusCode(201).extract().path("id");
+
+		String memberId = currentUserId(memberToken);
+		authAs(ownerToken).body("{\"userId\": \"" + memberId + "\", \"role\": \"MEMBER\"}").when()
+				.post("/api/v1/spaces/{id}/members", parentId).then().statusCode(201);
+		authAs(ownerToken).body("{\"name\": \"Hidden Child\", \"inheritMembers\": false}").when()
+				.put("/api/v1/spaces/{id}", hiddenChildId).then().statusCode(200);
+		authAs(ownerToken).body("{\"name\": \"Direct Child\", \"inheritMembers\": false}").when()
+				.put("/api/v1/spaces/{id}", directChildId).then().statusCode(200);
+		authAs(ownerToken).body("{\"userId\": \"" + memberId + "\", \"role\": \"VIEWER\"}").when()
+				.post("/api/v1/spaces/{id}/members", directChildId).then().statusCode(201);
+
+		authAs(memberToken).when().get("/api/v1/spaces/{id}/subspaces", parentId).then().statusCode(200)
+				.body("$", hasSize(2)).body("id", org.hamcrest.Matchers.hasItems(inheritedChildId, directChildId))
+				.body("id", org.hamcrest.Matchers.not(org.hamcrest.Matchers.hasItem(hiddenChildId)));
 	}
 
 	// ── Non-existent space ────────────────────────────────────────────────

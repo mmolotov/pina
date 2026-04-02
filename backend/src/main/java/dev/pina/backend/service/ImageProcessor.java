@@ -7,10 +7,11 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Observes;
 import jakarta.inject.Inject;
 import java.awt.image.BufferedImage;
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Set;
 import javax.imageio.ImageIO;
 import net.coobird.thumbnailator.Thumbnails;
@@ -36,6 +37,10 @@ public class ImageProcessor {
 		return ImageIO.read(input);
 	}
 
+	public BufferedImage readImage(Path source) throws IOException {
+		return ImageIO.read(source.toFile());
+	}
+
 	public ProcessedImage compress(BufferedImage source) throws IOException {
 		int maxRes = config.compression().maxResolution();
 		String format = outputFormat();
@@ -44,21 +49,24 @@ public class ImageProcessor {
 		int targetW = (int) (source.getWidth() * scale);
 		int targetH = (int) (source.getHeight() * scale);
 
-		var baos = new ByteArrayOutputStream();
-		Thumbnails.of(source).size(targetW, targetH).outputFormat(format)
-				.outputQuality((double) config.compression().quality() / 100).toOutputStream(baos);
-
-		return new ProcessedImage(baos.toByteArray(), targetW, targetH, format, baos.size());
+		Path tempFile = createTempFile(format);
+		try (OutputStream out = Files.newOutputStream(tempFile)) {
+			Thumbnails.of(source).size(targetW, targetH).outputFormat(format)
+					.outputQuality((double) config.compression().quality() / 100).toOutputStream(out);
+		}
+		return new ProcessedImage(tempFile, targetW, targetH, format, Files.size(tempFile));
 	}
 
 	public ProcessedImage thumbnailSm(BufferedImage source) throws IOException {
 		int targetSize = config.thumbnails().smSize();
 		BufferedImage square = centerCropSquare(source);
 		String format = outputFormat();
-		var baos = new ByteArrayOutputStream();
-		Thumbnails.of(square).forceSize(targetSize, targetSize).outputFormat(format).outputQuality(0.8)
-				.toOutputStream(baos);
-		return new ProcessedImage(baos.toByteArray(), targetSize, targetSize, format, baos.size());
+		Path tempFile = createTempFile(format);
+		try (OutputStream out = Files.newOutputStream(tempFile)) {
+			Thumbnails.of(square).forceSize(targetSize, targetSize).outputFormat(format).outputQuality(0.8)
+					.toOutputStream(out);
+		}
+		return new ProcessedImage(tempFile, targetSize, targetSize, format, Files.size(tempFile));
 	}
 
 	public ProcessedImage thumbnailMd(BufferedImage source) throws IOException {
@@ -77,15 +85,15 @@ public class ImageProcessor {
 
 	private ProcessedImage thumbnail(BufferedImage source, int maxW, int maxH) throws IOException {
 		String format = outputFormat();
-		var baos = new ByteArrayOutputStream();
-		Thumbnails.of(source).size(maxW, maxH).outputFormat(format).outputQuality(0.8).toOutputStream(baos);
-
-		// Read back actual dimensions
-		var thumb = ImageIO.read(new ByteArrayInputStream(baos.toByteArray()));
+		Path tempFile = createTempFile(format);
+		try (OutputStream out = Files.newOutputStream(tempFile)) {
+			Thumbnails.of(source).size(maxW, maxH).outputFormat(format).outputQuality(0.8).toOutputStream(out);
+		}
+		var thumb = ImageIO.read(tempFile.toFile());
 		if (thumb == null) {
 			throw new IOException("Failed to read back generated thumbnail");
 		}
-		return new ProcessedImage(baos.toByteArray(), thumb.getWidth(), thumb.getHeight(), format, baos.size());
+		return new ProcessedImage(tempFile, thumb.getWidth(), thumb.getHeight(), format, Files.size(tempFile));
 	}
 
 	private String outputFormat() {
@@ -105,5 +113,9 @@ public class ImageProcessor {
 			return 1.0;
 		}
 		return (double) maxDimension / longestSide;
+	}
+
+	private Path createTempFile(String format) throws IOException {
+		return Files.createTempFile("pina-processed-", "." + format);
 	}
 }

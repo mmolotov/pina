@@ -1,6 +1,6 @@
-# Phase 2 API Manual Test Scenarios
+# Backend API Manual Test Scenarios
 
-This file describes manual API test scenarios for the current Phase 2 backend.
+This file describes manual API test scenarios for the current backend.
 Each scenario contains:
 
 - what to prepare
@@ -9,6 +9,11 @@ Each scenario contains:
 - expected result
 
 All examples assume the backend is running locally on `http://localhost:8080`.
+
+For a reproducible end-to-end smoke run of this document, use
+`../scripts/manual-phase2-smoke.sh`. The script exercises the same backend API flow with generated
+test users and automatic assertions. It is intended for local release/smoke verification, not as a
+replacement for automated integration tests in `../src/test`.
 
 ## Preconditions
 
@@ -393,7 +398,7 @@ Expected result:
 
 ## Scenario 9. Subspace Inheritance Visibility
 
-Description: verify that inherited access is reflected both in `/spaces` and `/subspaces`.
+Description: verify that inherited access is reflected both in `/spaces` and `/subspaces`, and that direct child membership still works when inheritance is disabled on a subspace.
 
 Step 1. Create a subspace under the main Space.
 
@@ -441,6 +446,53 @@ Expected result:
 
 - HTTP status is `200 OK`
 - response contains the subspace with `id == SUBSPACE_ID`
+
+Step 4. Disable inheritance on the subspace while keeping direct membership possible.
+
+```bash
+curl -sS -i \
+  -H "$JSON_HEADER" \
+  -H "Authorization: Bearer $USER_A_ACCESS_TOKEN" \
+  -X PUT "$BASE_URL/spaces/$SUBSPACE_ID" \
+  -d '{
+    "name": "Manual Subspace",
+    "description": "Direct membership test",
+    "inheritMembers": false
+  }'
+```
+
+Expected result:
+
+- HTTP status is `200 OK`
+- response body contains `"inheritMembers":false`
+
+Step 5. Re-add user B directly to the subspace as a viewer.
+
+```bash
+curl -sS -i \
+  -H "$JSON_HEADER" \
+  -H "Authorization: Bearer $USER_A_ACCESS_TOKEN" \
+  -X POST "$BASE_URL/spaces/$SUBSPACE_ID/members" \
+  -d "{\"userId\":\"$USER_B_ID\",\"role\":\"VIEWER\"}"
+```
+
+Expected result:
+
+- HTTP status is `201 Created` or `200 OK` if the direct membership already exists
+
+Step 6. List subspaces under the parent as user B again.
+
+```bash
+curl -sS -i \
+  -H "Authorization: Bearer $USER_B_ACCESS_TOKEN" \
+  "$BASE_URL/spaces/$SPACE_ID/subspaces"
+```
+
+Expected result:
+
+- HTTP status is `200 OK`
+- response still contains the subspace with `id == SUBSPACE_ID`
+- this confirms that direct child membership is sufficient even when inherited visibility is disabled for that child
 
 ## Scenario 10. Space Album Permissions
 
@@ -673,6 +725,35 @@ Expected result:
 
 - HTTP status is `404 Not Found`
 
+Step 7. Create an already-expired invite and verify that preview is hidden.
+
+```bash
+curl -sS -i \
+  -H "$JSON_HEADER" \
+  -H "Authorization: Bearer $USER_A_ACCESS_TOKEN" \
+  -X POST "$BASE_URL/spaces/$SPACE_ID/invites" \
+  -d '{
+    "defaultRole": "VIEWER",
+    "expiration": "2000-01-01T00:00:00Z"
+  }'
+```
+
+Expected result:
+
+- HTTP status is `201 Created`
+- copy the returned `code` into `INVITE_CODE`
+
+Then preview it:
+
+```bash
+curl -sS -i "$BASE_URL/invites/$INVITE_CODE"
+```
+
+Expected result:
+
+- HTTP status is `404 Not Found`
+- expired invites must not expose preview metadata
+
 ## Scenario 12. Favorites
 
 Description: verify add, list, check, duplicate add, and delete behavior for favorites.
@@ -746,6 +827,60 @@ Expected result:
 - HTTP status is `204 No Content`
 
 Step 6. Check favorite status again.
+
+```bash
+curl -sS -i \
+  -H "Authorization: Bearer $USER_B_ACCESS_TOKEN" \
+  "$BASE_URL/favorites/check?targetType=ALBUM&targetId=$SPACE_ALBUM_ID"
+```
+
+Expected result:
+
+- HTTP status is `200 OK`
+- response body contains `"favorited":false`
+
+Step 7. Add the Space album to favorites again.
+
+```bash
+curl -sS -i \
+  -H "$JSON_HEADER" \
+  -H "Authorization: Bearer $USER_B_ACCESS_TOKEN" \
+  -X POST "$BASE_URL/favorites" \
+  -d "{\"targetType\":\"ALBUM\",\"targetId\":\"$SPACE_ALBUM_ID\"}"
+```
+
+Expected result:
+
+- HTTP status is `201 Created`
+
+Step 8. Remove user B from the parent Space as user A.
+
+```bash
+curl -sS -i \
+  -H "Authorization: Bearer $USER_A_ACCESS_TOKEN" \
+  -X DELETE "$BASE_URL/spaces/$SPACE_ID/members/$USER_B_ID"
+```
+
+Expected result:
+
+- HTTP status is `204 No Content`
+
+Step 9. List favorites again as user B.
+
+```bash
+curl -sS -i \
+  -H "Authorization: Bearer $USER_B_ACCESS_TOKEN" \
+  "$BASE_URL/favorites?type=ALBUM"
+```
+
+Expected result:
+
+- HTTP status is `200 OK`
+- the response does not include the Space album favorite anymore because user B lost access to that Space
+- this remains true even if the album was originally created by user B
+- direct membership in a child subspace does not keep a parent-Space album favorite visible
+
+Step 10. Check favorite status for the same album as user B.
 
 ```bash
 curl -sS -i \

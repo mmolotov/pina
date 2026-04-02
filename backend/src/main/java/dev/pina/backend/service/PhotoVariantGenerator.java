@@ -10,9 +10,8 @@ import dev.pina.backend.storage.StoreMeta;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import java.awt.image.BufferedImage;
-import java.io.BufferedInputStream;
-import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.logging.Level;
@@ -32,11 +31,6 @@ public class PhotoVariantGenerator {
 	@Inject
 	PhotoConfig photoConfig;
 
-	// Note: each ProcessedImage holds a byte[] in memory. With concurrent uploads
-	// of large photos,
-	// this can create memory pressure. If this becomes an issue, consider writing
-	// variants to temp
-	// files instead of holding byte arrays, or limiting upload concurrency.
 	public void generateAll(Photo photo, BufferedImage image, Path tempFile, String contentHash, String prefix)
 			throws IOException {
 		try {
@@ -67,27 +61,29 @@ public class PhotoVariantGenerator {
 		String ext = MimeTypes.extensionFrom(photo.mimeType);
 		long fileSize = Files.size(tempFile);
 		StoragePath path = storagePath(photo, VariantType.ORIGINAL, prefix, ext);
-		try (var in = new BufferedInputStream(Files.newInputStream(tempFile))) {
-			storage.store(path, in, new StoreMeta(photo.mimeType, fileSize, contentHash));
-		}
+		storage.store(path, tempFile, new StoreMeta(photo.mimeType, fileSize, contentHash));
 		addVariant(photo, VariantType.ORIGINAL, path, ext, null, photo.width, photo.height, fileSize);
 	}
 
 	private void storeCompressed(Photo photo, BufferedImage image, String prefix) throws IOException {
-		var compressed = imageProcessor.compress(image);
-		StoragePath path = storagePath(photo, VariantType.COMPRESSED, prefix, compressed.format());
-		storage.store(path, new ByteArrayInputStream(compressed.data()),
-				new StoreMeta(MimeTypes.mimeForFormat(compressed.format()), compressed.sizeBytes(), null));
-		addVariant(photo, VariantType.COMPRESSED, path, compressed.format(), photoConfig.compression().quality(),
-				compressed.width(), compressed.height(), compressed.sizeBytes());
+		try (ProcessedImage compressed = imageProcessor.compress(image); InputStream stream = compressed.openStream()) {
+			StoragePath path = storagePath(photo, VariantType.COMPRESSED, prefix, compressed.format());
+			storage.store(path, stream,
+					new StoreMeta(MimeTypes.mimeForFormat(compressed.format()), compressed.sizeBytes(), null));
+			addVariant(photo, VariantType.COMPRESSED, path, compressed.format(), photoConfig.compression().quality(),
+					compressed.width(), compressed.height(), compressed.sizeBytes());
+		}
 	}
 
-	private void storeThumbnail(Photo photo, VariantType type, ProcessedImage processed, String prefix) {
-		StoragePath path = storagePath(photo, type, prefix, processed.format());
-		storage.store(path, new ByteArrayInputStream(processed.data()),
-				new StoreMeta(MimeTypes.mimeForFormat(processed.format()), processed.sizeBytes(), null));
-		addVariant(photo, type, path, processed.format(), null, processed.width(), processed.height(),
-				processed.sizeBytes());
+	private void storeThumbnail(Photo photo, VariantType type, ProcessedImage processed, String prefix)
+			throws IOException {
+		try (processed; InputStream stream = processed.openStream()) {
+			StoragePath path = storagePath(photo, type, prefix, processed.format());
+			storage.store(path, stream,
+					new StoreMeta(MimeTypes.mimeForFormat(processed.format()), processed.sizeBytes(), null));
+			addVariant(photo, type, path, processed.format(), null, processed.width(), processed.height(),
+					processed.sizeBytes());
+		}
 	}
 
 	private StoragePath storagePath(Photo photo, VariantType type, String prefix, String ext) {

@@ -8,6 +8,7 @@ import static org.hamcrest.Matchers.notNullValue;
 import io.quarkus.test.junit.QuarkusTest;
 import io.restassured.http.ContentType;
 import io.restassured.specification.RequestSpecification;
+import java.time.OffsetDateTime;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
@@ -120,6 +121,31 @@ class InviteLinkResourceTest {
 	}
 
 	@Test
+	void previewExpiredInviteReturns404() {
+		String token = registerUser("preview-expired");
+		String spaceId = createSpace(token, "Expired Preview Space");
+
+		String code = authAs(token).body("{\"expiration\":\"" + OffsetDateTime.now().minusMinutes(5) + "\"}").when()
+				.post("/api/v1/spaces/" + spaceId + "/invites").then().statusCode(201).extract().path("code");
+
+		given().when().get("/api/v1/invites/" + code).then().statusCode(404);
+	}
+
+	@Test
+	void previewUsageLimitExhaustedInviteReturns404() {
+		String ownerToken = registerUser("preview-limit-owner");
+		String spaceId = createSpace(ownerToken, "Exhausted Preview Space");
+
+		String code = authAs(ownerToken).body("{\"usageLimit\":1}").when()
+				.post("/api/v1/spaces/" + spaceId + "/invites").then().statusCode(201).extract().path("code");
+
+		String joinerToken = registerUser("preview-limit-joiner");
+		authAs(joinerToken).when().post("/api/v1/invites/" + code + "/join").then().statusCode(200);
+
+		given().when().get("/api/v1/invites/" + code).then().statusCode(404);
+	}
+
+	@Test
 	void joinSpaceViaInviteLink() {
 		String ownerToken = registerUser("join-owner");
 		String spaceId = createSpace(ownerToken, "Join Space");
@@ -136,7 +162,7 @@ class InviteLinkResourceTest {
 	}
 
 	@Test
-	void joinAlreadyMemberReturns200() {
+	void joinAlreadyMemberReturns200WithoutConsumingInvite() {
 		String ownerToken = registerUser("already-owner");
 		String spaceId = createSpace(ownerToken, "Already Space");
 
@@ -145,6 +171,9 @@ class InviteLinkResourceTest {
 
 		// Owner tries to join their own space
 		authAs(ownerToken).when().post("/api/v1/invites/" + code + "/join").then().statusCode(200);
+
+		authAs(ownerToken).when().get("/api/v1/spaces/" + spaceId + "/invites").then().statusCode(200)
+				.body("$", hasSize(1)).body("[0].usageCount", equalTo(0));
 	}
 
 	@Test

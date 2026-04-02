@@ -12,6 +12,7 @@ import dev.pina.backend.pagination.PageResult;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.persistence.EntityManager;
+import jakarta.persistence.LockModeType;
 import jakarta.persistence.PersistenceException;
 import jakarta.transaction.Transactional;
 import java.util.LinkedHashMap;
@@ -24,6 +25,8 @@ import java.util.UUID;
 public class AlbumService {
 
 	private static final int MAX_PAGE_SIZE = 100;
+	private static final String FAVORITE_TARGET_LOCK_NAMESPACE = "favorite-target-album";
+	private static final String SPACE_CONTENT_LOCK_NAMESPACE = "space-content";
 
 	public enum AddPhotoResult {
 		CREATED, ALREADY_EXISTS, NOT_FOUND, PHOTO_NOT_ACCESSIBLE
@@ -42,6 +45,9 @@ public class AlbumService {
 	@Inject
 	FavoriteService favoriteService;
 
+	@Inject
+	TransactionalLockService lockService;
+
 	@Transactional
 	public Album create(String name, String description, User owner) {
 		PersonalLibrary personalLibrary = personalLibraryService.getOrCreate(owner);
@@ -57,6 +63,7 @@ public class AlbumService {
 
 	@Transactional
 	public Album createSpaceAlbum(String name, String description, Space space, User owner) {
+		lockService.lock(SPACE_CONTENT_LOCK_NAMESPACE, space.id);
 		Album album = new Album();
 		album.name = name;
 		album.description = description;
@@ -79,13 +86,14 @@ public class AlbumService {
 
 	@Transactional
 	public boolean delete(UUID id) {
-		Optional<Album> album = Album.findByIdOptional(id);
-		if (album.isEmpty()) {
+		Album album = em.find(Album.class, id, LockModeType.PESSIMISTIC_WRITE);
+		if (album == null) {
 			return false;
 		}
+		lockService.lock(FAVORITE_TARGET_LOCK_NAMESPACE, id);
 		favoriteService.removeForTarget(FavoriteTargetType.ALBUM, id);
 		AlbumPhoto.delete("album.id", id);
-		album.get().delete();
+		album.delete();
 		return true;
 	}
 

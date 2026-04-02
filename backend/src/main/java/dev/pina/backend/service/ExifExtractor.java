@@ -13,6 +13,8 @@ import jakarta.json.Json;
 import jakarta.json.JsonObjectBuilder;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.Date;
@@ -61,6 +63,15 @@ public class ExifExtractor {
 			var built = json.build();
 			return new ExifResult(built.isEmpty() ? null : built.toString(), takenAt);
 		} catch (ImageProcessingException | IOException e) {
+			LOG.log(Level.FINE, "EXIF extraction failed (best-effort, continuing without metadata)", e);
+			return new ExifResult(null, null);
+		}
+	}
+
+	public ExifResult extract(Path file) {
+		try (InputStream input = Files.newInputStream(file)) {
+			return extract(input);
+		} catch (IOException e) {
 			LOG.log(Level.FINE, "EXIF extraction failed (best-effort, continuing without metadata)", e);
 			return new ExifResult(null, null);
 		}

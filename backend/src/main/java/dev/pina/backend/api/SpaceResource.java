@@ -180,9 +180,7 @@ public class SpaceResource {
 	public Response listSubspaces(@PathParam("id") UUID id) {
 		var user = userResolver.currentUser();
 		return requireMember(id, user.id).map(role -> {
-			var accessibleSpaceIds = spaceService.listAccessibleSpaceIds(user.id);
-			var subspaces = spaceService.listSubspaces(id).stream().filter(sub -> accessibleSpaceIds.contains(sub.id))
-					.map(SpaceDto::from).toList();
+			var subspaces = spaceService.listAccessibleSubspaces(id, user.id).stream().map(SpaceDto::from).toList();
 			return Response.ok(subspaces).build();
 		}).orElse(ApiErrors.notFound("Space not found"));
 	}

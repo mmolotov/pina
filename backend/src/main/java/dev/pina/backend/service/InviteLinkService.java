@@ -6,6 +6,7 @@ import dev.pina.backend.domain.SpaceRole;
 import dev.pina.backend.domain.User;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
+import jakarta.persistence.LockModeType;
 import jakarta.transaction.Transactional;
 import java.security.SecureRandom;
 import java.time.OffsetDateTime;
@@ -63,6 +64,11 @@ public class InviteLinkService {
 				.setParameter("code", code).getResultStream().findFirst();
 	}
 
+	public Optional<InviteLink> findPreviewableByCode(String code) {
+		OffsetDateTime now = OffsetDateTime.now();
+		return findByCode(code).filter(link -> isValid(link, now));
+	}
+
 	@Transactional
 	public boolean revoke(UUID inviteId, UUID spaceId) {
 		return InviteLink.<InviteLink>findByIdOptional(inviteId)
@@ -75,46 +81,47 @@ public class InviteLinkService {
 
 	@Transactional
 	public JoinResult join(String code, User user) {
-		Optional<InviteLink> optLink = findByCode(code);
+		OffsetDateTime now = OffsetDateTime.now();
+		Optional<InviteLink> optLink = findByCodeForJoin(code);
 		if (optLink.isEmpty()) {
 			return JoinResult.INVALID;
 		}
 
 		InviteLink link = optLink.get();
-		if (!isValid(link)) {
+		if (!isValid(link, now)) {
 			return JoinResult.INVALID;
 		}
 
-		// Effective access already exists either directly or via inherited membership.
 		if (spaceService.getEffectiveRole(link.space.id, user.id).isPresent()) {
 			return JoinResult.ALREADY_MEMBER;
 		}
 
-		// Atomic increment first — if limit is exhausted, no membership is created.
-		int updated = InviteLink.getEntityManager().createQuery(
-				"UPDATE InviteLink il SET il.usageCount = il.usageCount + 1 WHERE il.id = :id AND il.active = true AND (il.usageLimit IS NULL OR il.usageCount < il.usageLimit) AND (il.expiration IS NULL OR il.expiration > :now)")
-				.setParameter("id", link.id).setParameter("now", OffsetDateTime.now()).executeUpdate();
-		if (updated == 0) {
-			return JoinResult.INVALID;
-		}
-
-		// Add member after successful usage count increment.
 		SpaceService.AddMemberResult memberResult = spaceService.addMember(link.space.id, user.id, link.defaultRole);
-		if (memberResult == SpaceService.AddMemberResult.ALREADY_EXISTS) {
-			return JoinResult.ALREADY_MEMBER;
-		}
-		if (memberResult == SpaceService.AddMemberResult.USER_NOT_FOUND) {
-			return JoinResult.INVALID;
+		switch (memberResult) {
+			case ALREADY_EXISTS :
+				return JoinResult.ALREADY_MEMBER;
+			case USER_NOT_FOUND :
+				return JoinResult.INVALID;
+			case CREATED :
+				link.usageCount++;
+				link.persistAndFlush();
+				return JoinResult.JOINED;
 		}
 
-		return JoinResult.JOINED;
+		return JoinResult.INVALID;
 	}
 
-	private boolean isValid(InviteLink link) {
+	private Optional<InviteLink> findByCodeForJoin(String code) {
+		return InviteLink.getEntityManager()
+				.createQuery("SELECT il FROM InviteLink il JOIN FETCH il.space WHERE il.code = :code", InviteLink.class)
+				.setParameter("code", code).setLockMode(LockModeType.PESSIMISTIC_WRITE).getResultStream().findFirst();
+	}
+
+	private boolean isValid(InviteLink link, OffsetDateTime now) {
 		if (!link.active) {
 			return false;
 		}
-		if (link.expiration != null && link.expiration.isBefore(OffsetDateTime.now())) {
+		if (link.expiration != null && !link.expiration.isAfter(now)) {
 			return false;
 		}
 		if (link.usageLimit != null && link.usageCount >= link.usageLimit) {

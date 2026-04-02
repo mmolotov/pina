@@ -71,6 +71,33 @@ Once running:
 - Swagger UI: `http://localhost:8080/q/swagger-ui`
 - Health: `http://localhost:8080/q/health`
 
+### Manual API Smoke Script
+
+The repository also includes a reproducible smoke runner for the backend API manual suite:
+
+```bash
+./scripts/manual-phase2-smoke.sh
+```
+
+Requirements:
+
+- backend already running locally in dev mode or from a packaged build
+- `curl`, `jq`, and `base64` available in `PATH`
+
+Useful environment overrides:
+
+```bash
+BASE_URL=http://127.0.0.1:8080/api/v1 ./scripts/manual-phase2-smoke.sh
+RUN_ID=phase2_rc1 ./scripts/manual-phase2-smoke.sh
+PHOTO_FILE=/absolute/path/to/local-test-image.png ./scripts/manual-phase2-smoke.sh
+```
+
+Behavior notes:
+
+- the script is a smoke/integration helper, not part of `./gradlew build`
+- it covers the same end-to-end flow described in `./docs/api-manual-test-scenarios.md`
+- if `PHOTO_FILE` is not provided, the script generates a temporary 1x1 PNG and removes it on exit
+
 ## Stack
 
 | Dependency         | Version | Notes                                                          |

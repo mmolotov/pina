@@ -28,7 +28,7 @@ public class InviteLinkResource {
 	@GET
 	@Path("/{code}")
 	public Response preview(@PathParam("code") String code) {
-		return inviteLinkService.findByCode(code).filter(link -> link.active)
+		return inviteLinkService.findPreviewableByCode(code)
 				.map(link -> Response.ok(InviteLinkInfoDto.from(link)).build())
 				.orElse(ApiErrors.notFound("Invite not found"));
 	}

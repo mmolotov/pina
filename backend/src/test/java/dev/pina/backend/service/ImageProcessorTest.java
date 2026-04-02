@@ -40,57 +40,63 @@ class ImageProcessorTest {
 	@Test
 	void compressReturnsDownscaledImage() throws IOException {
 		BufferedImage source = createTestBufferedImage(4000, 3000);
-		ProcessedImage result = imageProcessor.compress(source);
-		assertNotNull(result);
-		assertTrue(result.width() <= 2560);
-		assertTrue(result.height() <= 2560);
-		assertTrue(result.sizeBytes() > 0);
-		assertEquals("jpeg", result.format());
+		try (ProcessedImage result = imageProcessor.compress(source)) {
+			assertNotNull(result);
+			assertTrue(result.width() <= 2560);
+			assertTrue(result.height() <= 2560);
+			assertTrue(result.sizeBytes() > 0);
+			assertEquals("jpeg", result.format());
+		}
 	}
 
 	@Test
 	void compressDoesNotUpscaleSmallImage() throws IOException {
 		BufferedImage source = createTestBufferedImage(100, 80);
-		ProcessedImage result = imageProcessor.compress(source);
-		assertEquals(100, result.width());
-		assertEquals(80, result.height());
+		try (ProcessedImage result = imageProcessor.compress(source)) {
+			assertEquals(100, result.width());
+			assertEquals(80, result.height());
+		}
 	}
 
 	@Test
 	void thumbnailSmIsSquareConstrained() throws IOException {
 		BufferedImage source = createTestBufferedImage(800, 600);
-		ProcessedImage thumb = imageProcessor.thumbnailSm(source);
-		assertNotNull(thumb);
-		assertEquals(256, thumb.width());
-		assertEquals(256, thumb.height());
-		assertTrue(thumb.sizeBytes() > 0);
+		try (ProcessedImage thumb = imageProcessor.thumbnailSm(source)) {
+			assertNotNull(thumb);
+			assertEquals(256, thumb.width());
+			assertEquals(256, thumb.height());
+			assertTrue(thumb.sizeBytes() > 0);
+		}
 	}
 
 	@Test
 	void thumbnailMdRespectsMaxWidth() throws IOException {
 		BufferedImage source = createTestBufferedImage(3000, 2000);
-		ProcessedImage thumb = imageProcessor.thumbnailMd(source);
-		assertNotNull(thumb);
-		assertTrue(thumb.width() <= 1280);
-		assertTrue(thumb.sizeBytes() > 0);
+		try (ProcessedImage thumb = imageProcessor.thumbnailMd(source)) {
+			assertNotNull(thumb);
+			assertTrue(thumb.width() <= 1280);
+			assertTrue(thumb.sizeBytes() > 0);
+		}
 	}
 
 	@Test
 	void thumbnailLgRespectsMaxWidth() throws IOException {
 		BufferedImage source = createTestBufferedImage(3000, 2000);
-		ProcessedImage thumb = imageProcessor.thumbnailLg(source);
-		assertNotNull(thumb);
-		assertTrue(thumb.width() <= 1920);
-		assertTrue(thumb.sizeBytes() > 0);
+		try (ProcessedImage thumb = imageProcessor.thumbnailLg(source)) {
+			assertNotNull(thumb);
+			assertTrue(thumb.width() <= 1920);
+			assertTrue(thumb.sizeBytes() > 0);
+		}
 	}
 
 	@Test
 	void thumbnailSmallImageStaysWithinBounds() throws IOException {
 		BufferedImage source = createTestBufferedImage(100, 80);
-		ProcessedImage thumb = imageProcessor.thumbnailSm(source);
-		assertEquals(256, thumb.width());
-		assertEquals(256, thumb.height());
-		assertTrue(thumb.sizeBytes() > 0);
+		try (ProcessedImage thumb = imageProcessor.thumbnailSm(source)) {
+			assertEquals(256, thumb.width());
+			assertEquals(256, thumb.height());
+			assertTrue(thumb.sizeBytes() > 0);
+		}
 	}
 
 	private BufferedImage createTestBufferedImage(int width, int height) {

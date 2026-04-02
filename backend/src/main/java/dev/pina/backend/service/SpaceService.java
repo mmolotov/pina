@@ -10,10 +10,13 @@ import dev.pina.backend.domain.User;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.persistence.EntityManager;
+import jakarta.persistence.LockModeType;
 import jakarta.persistence.PersistenceException;
 import jakarta.transaction.Transactional;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -22,12 +25,17 @@ import java.util.UUID;
 public class SpaceService {
 
 	private static final int MAX_DEPTH = 5;
+	private static final String FAVORITE_TARGET_LOCK_NAMESPACE = "favorite-target-album";
+	private static final String SPACE_CONTENT_LOCK_NAMESPACE = "space-content";
 
 	@Inject
 	EntityManager em;
 
 	@Inject
 	FavoriteService favoriteService;
+
+	@Inject
+	TransactionalLockService lockService;
 
 	public enum AddMemberResult {
 		CREATED, ALREADY_EXISTS, USER_NOT_FOUND
@@ -69,26 +77,24 @@ public class SpaceService {
 	}
 
 	public Set<UUID> listAccessibleSpaceIds(UUID userId) {
-		List<UUID> directMemberships = em
-				.createQuery("SELECT sm.space.id FROM SpaceMembership sm WHERE sm.user.id = :userId", UUID.class)
-				.setParameter("userId", userId).getResultList();
-		if (directMemberships.isEmpty()) {
-			return Set.of();
-		}
-
-		Set<UUID> accessible = new LinkedHashSet<>(directMemberships);
-		Set<UUID> frontier = new LinkedHashSet<>(directMemberships);
-		for (int depth = 0; depth < MAX_DEPTH && !frontier.isEmpty(); depth++) {
-			List<UUID> inheritedChildren = em
-					.createQuery("SELECT s.id FROM Space s WHERE s.parent.id IN :parentIds AND s.inheritMembers = true",
-							UUID.class)
-					.setParameter("parentIds", frontier).getResultList();
-			frontier = new LinkedHashSet<>();
-			for (UUID childId : inheritedChildren) {
-				if (accessible.add(childId)) {
-					frontier.add(childId);
-				}
-			}
+		List<?> rows = em.createNativeQuery("""
+				WITH RECURSIVE accessible(id, depth) AS (
+				    SELECT sm.space_id, 0
+				    FROM space_memberships sm
+				    WHERE sm.user_id = :userId
+				  UNION
+				    SELECT s.id, accessible.depth + 1
+				    FROM spaces s
+				    JOIN accessible ON s.parent_id = accessible.id
+				    WHERE s.inherit_members = true
+				      AND accessible.depth < :maxDepth
+				)
+				SELECT DISTINCT id
+				FROM accessible
+				""").setParameter("userId", userId).setParameter("maxDepth", MAX_DEPTH).getResultList();
+		Set<UUID> accessible = new LinkedHashSet<>();
+		for (Object row : rows) {
+			accessible.add(toUuid(row));
 		}
 		return accessible;
 	}
@@ -112,15 +118,17 @@ public class SpaceService {
 
 	@Transactional
 	public boolean delete(UUID id) {
+		lockService.lock(SPACE_CONTENT_LOCK_NAMESPACE, id);
 		if (Space.count("id", id) == 0) {
 			return false;
 		}
 
-		var spaceIds = collectSpaceTreeIds(id);
+		var spaceIds = lockSpaceTree(id);
 		if (!spaceIds.isEmpty()) {
 			List<UUID> albumIds = em.createQuery("SELECT a.id FROM Album a WHERE a.space.id IN :spaceIds", UUID.class)
 					.setParameter("spaceIds", spaceIds).getResultList();
 			if (!albumIds.isEmpty()) {
+				lockService.lockAll(FAVORITE_TARGET_LOCK_NAMESPACE, albumIds);
 				favoriteService.removeForTargets(FavoriteTargetType.ALBUM, albumIds);
 			}
 			Album.delete("space.id in ?1", spaceIds);
@@ -138,6 +146,7 @@ public class SpaceService {
 	@Transactional
 	public Space createSubspace(UUID parentId, String name, String description, SpaceVisibility visibility,
 			User creator) {
+		lockService.lock(SPACE_CONTENT_LOCK_NAMESPACE, parentId);
 		Space parent = Space.findById(parentId);
 		if (parent == null) {
 			throw new IllegalArgumentException("Parent space not found: " + parentId);
@@ -165,6 +174,25 @@ public class SpaceService {
 		return Space.list("parent.id", parentId);
 	}
 
+	public List<Space> listAccessibleSubspaces(UUID parentId, UUID userId) {
+		return em.createQuery("""
+				SELECT s
+				FROM Space s
+				LEFT JOIN FETCH s.creator
+				LEFT JOIN FETCH s.parent
+				WHERE s.parent.id = :parentId
+				  AND (
+				      s.inheritMembers = true
+				      OR EXISTS (
+				          SELECT 1
+				          FROM SpaceMembership sm
+				          WHERE sm.space.id = s.id AND sm.user.id = :userId
+				      )
+				  )
+				ORDER BY s.createdAt
+				""", Space.class).setParameter("parentId", parentId).setParameter("userId", userId).getResultList();
+	}
+
 	// ── Membership ────────────────────────────────────────────────────────
 
 	public Optional<SpaceRole> getUserRole(UUID spaceId, UUID userId) {
@@ -173,26 +201,25 @@ public class SpaceService {
 	}
 
 	public Optional<SpaceRole> getEffectiveRole(UUID spaceId, UUID userId) {
-		Optional<SpaceRole> direct = getUserRole(spaceId, userId);
-		if (direct.isPresent()) {
-			return direct;
+		List<SpaceLineageNode> lineage = loadLineage(spaceId);
+		if (lineage.isEmpty()) {
+			return Optional.empty();
+		}
+		Map<UUID, SpaceRole> rolesBySpaceId = loadRolesBySpaceId(userId,
+				lineage.stream().map(SpaceLineageNode::id).toList());
+		SpaceRole directRole = rolesBySpaceId.get(lineage.getFirst().id());
+		if (directRole != null) {
+			return Optional.of(directRole);
 		}
 
-		// Walk up the parent chain (max depth 5)
-		UUID currentId = spaceId;
-		for (int i = 0; i < MAX_DEPTH; i++) {
-			Space current = Space.findById(currentId);
-			if (current == null || current.parent == null) {
+		for (int i = 0; i < lineage.size() - 1; i++) {
+			SpaceLineageNode current = lineage.get(i);
+			if (!current.inheritMembers()) {
 				return Optional.empty();
 			}
-			// If this space does not inherit members, stop walking
-			if (!current.inheritMembers) {
-				return Optional.empty();
-			}
-			currentId = current.parent.id;
-			Optional<SpaceRole> parentRole = getUserRole(currentId, userId);
-			if (parentRole.isPresent()) {
-				return parentRole;
+			SpaceRole inheritedRole = rolesBySpaceId.get(lineage.get(i + 1).id());
+			if (inheritedRole != null) {
+				return Optional.of(inheritedRole);
 			}
 		}
 		return Optional.empty();
@@ -286,8 +313,11 @@ public class SpaceService {
 			return RemoveMemberResult.NOT_FOUND;
 		}
 
-		Optional<SpaceMembership> targetMembership = SpaceMembership
-				.find("space.id = ?1 and user.id = ?2", spaceId, targetUserId).firstResultOptional();
+		Optional<SpaceMembership> targetMembership = em
+				.createQuery("SELECT sm FROM SpaceMembership sm WHERE sm.space.id = :spaceId AND sm.user.id = :userId",
+						SpaceMembership.class)
+				.setParameter("spaceId", spaceId).setParameter("userId", targetUserId)
+				.setLockMode(LockModeType.PESSIMISTIC_WRITE).getResultStream().findFirst();
 		if (targetMembership.isEmpty()) {
 			return RemoveMemberResult.NOT_FOUND;
 		}
@@ -323,6 +353,52 @@ public class SpaceService {
 		membership.persistAndFlush();
 	}
 
+	private record SpaceLineageNode(UUID id, UUID parentId, boolean inheritMembers) {
+	}
+
+	private List<SpaceLineageNode> loadLineage(UUID spaceId) {
+		List<?> rows = em.createNativeQuery("""
+				WITH RECURSIVE lineage(id, parent_id, inherit_members, depth) AS (
+				    SELECT s.id, s.parent_id, s.inherit_members, 0
+				    FROM spaces s
+				    WHERE s.id = :spaceId
+				  UNION ALL
+				    SELECT parent.id, parent.parent_id, parent.inherit_members, lineage.depth + 1
+				    FROM spaces parent
+				    JOIN lineage ON lineage.parent_id = parent.id
+				    WHERE lineage.depth < :maxDepth
+				)
+				SELECT id, parent_id, inherit_members
+				FROM lineage
+				ORDER BY depth
+				""").setParameter("spaceId", spaceId).setParameter("maxDepth", MAX_DEPTH).getResultList();
+		return rows.stream().map(Object[].class::cast).map(
+				row -> new SpaceLineageNode(toUuid(row[0]), row[1] == null ? null : toUuid(row[1]), toBoolean(row[2])))
+				.toList();
+	}
+
+	private Map<UUID, SpaceRole> loadRolesBySpaceId(UUID userId, List<UUID> spaceIds) {
+		if (spaceIds.isEmpty()) {
+			return Map.of();
+		}
+		List<Object[]> rows = em.createQuery(
+				"SELECT sm.space.id, sm.role FROM SpaceMembership sm WHERE sm.user.id = :userId AND sm.space.id IN :spaceIds",
+				Object[].class).setParameter("userId", userId).setParameter("spaceIds", spaceIds).getResultList();
+		Map<UUID, SpaceRole> rolesBySpaceId = new LinkedHashMap<>();
+		for (Object[] row : rows) {
+			rolesBySpaceId.put((UUID) row[0], (SpaceRole) row[1]);
+		}
+		return rolesBySpaceId;
+	}
+
+	private UUID toUuid(Object value) {
+		return value instanceof UUID uuid ? uuid : UUID.fromString(value.toString());
+	}
+
+	private boolean toBoolean(Object value) {
+		return value instanceof Boolean bool ? bool : Boolean.parseBoolean(value.toString());
+	}
+
 	private Set<UUID> collectSpaceTreeIds(UUID rootId) {
 		Set<UUID> allIds = new LinkedHashSet<>();
 		Set<UUID> frontier = new LinkedHashSet<>(Set.of(rootId));
@@ -338,5 +414,18 @@ public class SpaceService {
 			}
 		}
 		return allIds;
+	}
+
+	private Set<UUID> lockSpaceTree(UUID rootId) {
+		Set<UUID> lockedIds = new LinkedHashSet<>();
+		while (true) {
+			Set<UUID> currentTreeIds = collectSpaceTreeIds(rootId);
+			List<UUID> newIds = currentTreeIds.stream().filter(id -> !lockedIds.contains(id)).toList();
+			if (newIds.isEmpty()) {
+				return currentTreeIds;
+			}
+			lockService.lockAll(SPACE_CONTENT_LOCK_NAMESPACE, newIds);
+			lockedIds.addAll(newIds);
+		}
 	}
 }
