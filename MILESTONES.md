@@ -14,7 +14,7 @@ Legend: ✅ done · 🔲 todo
 - ✅ Temporary dev user context with auto-created Personal Library
 - ✅ DB schema V1: users, personal_libraries, photos, photo_variants, albums, album_photos (Flyway)
 - ✅ Storage SPI + local FS implementation
-- ✅ Photo upload pipeline: validate → SHA-256 dedup → compress → 3 thumbnails → EXIF extraction (JPEG/PNG only)
+- ✅ Photo upload pipeline: validate → per-uploader SHA-256 dedup → compress → 3 thumbnails → EXIF extraction (JPEG/PNG only)
 - ✅ Media Asset model: uploaded photos belong to uploader and are anchored in Personal Library
 - ✅ Album reference model: albums point to existing photos via references, not copies
 - ✅ REST API: photo upload/get/file/delete, album create/list/update/delete, add/remove photo references, health
@@ -26,16 +26,19 @@ Legend: ✅ done · 🔲 todo
 
 ## Phase 2: Auth + Spaces
 
-- 🔲 Quarkus Security: email/password registration & login
-- 🔲 OIDC providers: Google, GitHub
-- 🔲 Replace hardcoded temp user with authenticated user context
-- 🔲 Space entity + Subspace hierarchy
-- 🔲 SpaceMembership: roles (Owner, Admin, Member, Viewer)
-- 🔲 Invite link generation, validation, join flow
-- 🔲 Extend asset/reference model from Personal Library albums to Space albums
-- 🔲 Space albums (shared access via references to uploader-owned assets)
-- 🔲 Favorites: per-user favorite photos, videos, and albums
-- 🔲 DB migration V2: spaces, space_memberships, invite_links, favorites
+- ✅ Consolidated Flyway core schema now includes auth and Spaces tables: linked_accounts, spaces, space_memberships, invite_links, favorites, refresh_tokens
+- ✅ JWT authentication: username/password registration & login (SmallRye JWT + BCrypt)
+- ✅ Replace hardcoded temp user with authenticated user context (JWT-based UserResolver)
+- ✅ Ownership enforcement: users can only access their own photos/albums (404 for non-owners)
+- ✅ Space entity + Subspace hierarchy (adjacency list, max depth 5)
+- ✅ SpaceMembership: roles (Owner, Admin, Member, Viewer) with role-based authorization
+- ✅ Space CRUD + member management REST API (11 endpoints)
+- ✅ OIDC providers: Google login + account linking (jose4j JWKS verification)
+- ✅ Invite link generation, validation, join flow (atomic usage tracking, expiration, usage limits)
+- ✅ Space albums (shared access via references to uploader-owned assets, role-based access)
+- ✅ Subspace visibility restrictions (inheritMembers flag, per-subspace admin overrides)
+- ✅ Subspace role inheritance (inherited roles from parent, per-member overrides, max depth 5)
+- ✅ Favorites: per-user favorite photos and albums (videos pending Phase 7)
 
 ## Phase 3: ML Service (basic)
 

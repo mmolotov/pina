@@ -10,4 +10,4 @@ Planned responsibilities:
 - Upload media from Telegram
 - Join Spaces and open shared content flows
 
-Current repository phase is still Phase 1, so there is no Mini App code here yet.
+Current repository phase is Phase 2. Telegram Mini App work starts in Phase 5, so there is no Mini App code here yet.

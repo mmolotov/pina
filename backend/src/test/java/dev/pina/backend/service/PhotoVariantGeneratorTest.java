@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import dev.pina.backend.TestUserHelper;
 import dev.pina.backend.domain.Photo;
 import dev.pina.backend.domain.User;
 import dev.pina.backend.domain.VariantType;
@@ -16,6 +17,7 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.Set;
+import java.util.UUID;
 import java.util.stream.Collectors;
 import javax.imageio.ImageIO;
 import org.junit.jupiter.api.Test;
@@ -26,13 +28,10 @@ class PhotoVariantGeneratorTest {
 	@Inject
 	PhotoService photoService;
 
-	@Inject
-	UserResolver userResolver;
-
 	@Test
 	@Transactional
 	void generateAllCreatesAllFiveVariants() throws IOException {
-		User user = userResolver.currentUser();
+		User user = TestUserHelper.createUser("variant-gen");
 		Photo photo = photoService.upload(jpegStream(Color.CYAN, 200, 150), "gen-all.jpg", "image/jpeg", user);
 
 		// storeOriginal is true by default, so we expect 5 variants
@@ -49,20 +48,21 @@ class PhotoVariantGeneratorTest {
 	@Test
 	@Transactional
 	void variantsHaveValidStoragePaths() throws IOException {
-		User user = userResolver.currentUser();
+		User user = TestUserHelper.createUser("variant-gen");
 		Photo photo = photoService.upload(jpegStream(Color.GREEN, 100, 80), "paths.jpg", "image/jpeg", user);
 
 		for (var variant : photo.variants) {
 			assertNotNull(variant.storagePath);
 			assertTrue(variant.storagePath.length() > 0);
 			assertTrue(variant.storagePath.contains("/"));
+			assertTrue(variant.storagePath.contains(photo.id.toString()));
 		}
 	}
 
 	@Test
 	@Transactional
 	void variantsHaveCorrectDimensions() throws IOException {
-		User user = userResolver.currentUser();
+		User user = TestUserHelper.createUser("variant-gen");
 		Photo photo = photoService.upload(jpegStream(Color.RED, 3000, 2000), "dims.jpg", "image/jpeg", user);
 
 		for (var variant : photo.variants) {
@@ -88,7 +88,7 @@ class PhotoVariantGeneratorTest {
 	@Test
 	@Transactional
 	void originalVariantPreservesSourceDimensions() throws IOException {
-		User user = userResolver.currentUser();
+		User user = TestUserHelper.createUser("variant-gen");
 		Photo photo = photoService.upload(jpegStream(Color.BLUE, 500, 300), "orig.jpg", "image/jpeg", user);
 
 		var original = photo.variants.stream().filter(v -> v.variantType == VariantType.ORIGINAL).findFirst()
@@ -101,7 +101,7 @@ class PhotoVariantGeneratorTest {
 	@Test
 	@Transactional
 	void smallImageIsNotUpscaled() throws IOException {
-		User user = userResolver.currentUser();
+		User user = TestUserHelper.createUser("variant-gen");
 		Photo photo = photoService.upload(jpegStream(Color.GRAY, 100, 80), "small.jpg", "image/jpeg", user);
 
 		var compressed = photo.variants.stream().filter(v -> v.variantType == VariantType.COMPRESSED).findFirst()
@@ -116,6 +116,16 @@ class PhotoVariantGeneratorTest {
 		var g = image.createGraphics();
 		g.setColor(color);
 		g.fillRect(0, 0, width, height);
+		// Paint a larger deterministic-noise patch so JPEG compression cannot collapse
+		// different fixtures to the same byte stream across test classes.
+		var seed = UUID.randomUUID().toString();
+		for (int x = 0; x < Math.min(width, 16); x++) {
+			for (int y = 0; y < Math.min(height, 16); y++) {
+				int ch = seed.charAt((x * 16 + y) % seed.length());
+				Color patchColor = new Color((ch * 53) & 0xFF, (ch * 97) & 0xFF, (ch * 193) & 0xFF);
+				image.setRGB(x, y, patchColor.getRGB());
+			}
+		}
 		g.dispose();
 		ByteArrayOutputStream out = new ByteArrayOutputStream();
 		ImageIO.write(image, "jpg", out);

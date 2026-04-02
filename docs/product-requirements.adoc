@@ -54,7 +54,7 @@ Media and user data never leave the instance; optional outbound calls are limite
 | Term | Definition
 
 | *Media Asset*
-| A globally unique file (photo or video) identified by its SHA-256 content hash. Stores the physical file, variants, and metadata. Exists independently of any album or Space. Owned by the uploader.
+| An uploader-owned file (photo or video) identified within that uploader's library by its SHA-256 content hash. Stores the physical file, variants, and metadata. Exists independently of any album or Space. Different users may upload identical files as separate assets.
 
 | *Media Reference*
 | A link from an album or Space to a Media Asset. Adding a photo to a Space album creates a reference, not a copy. Removing a reference does not delete the asset.
@@ -90,7 +90,7 @@ Media and user data never leave the instance; optional outbound calls are limite
 | A public, read-only URL granting access to any album or media selection without authentication. Sharing is a capability, not an album type.
 
 | *Invite Link*
-| A URL that allows a new or existing user to join a Space with a preconfigured role.
+| A URL that allows a user to join a Space with a preconfigured role. In Phase 2 this works for existing authenticated users; new-user onboarding via invite remains a future extension.
 
 | *ML Pipeline*
 | A configurable sequence of AI analysis steps applied to each uploaded media item (photos directly, videos via extracted keyframes).
@@ -128,7 +128,7 @@ a|
 a|
 . Validate file format and size limits (admin-configurable).
 . Compute SHA-256 content hash.
-. Deduplicate: if a photo with the same hash already exists, return the existing Media Asset [MVP]. When Spaces exist and a Space album is targeted, reuse the asset and create a new reference [Target].
+. Deduplicate per uploader: if the same uploader uploads a photo with the same hash again, return the existing Media Asset [MVP]. Different users may upload identical files independently. When Spaces exist and a Space album is targeted, reuse the uploader-owned asset and create a new reference [Target].
 . Store original file (if enabled by admin).
 . Generate compressed version (configurable format, quality, max resolution).
 . Generate three thumbnail variants:
@@ -145,7 +145,7 @@ a|
 | Acceptance Criteria
 a|
 * Uploading a valid JPEG returns HTTP 201 with photo metadata.
-* Uploading a duplicate (same SHA-256) returns the existing photo, no new file is stored.
+* Uploading a duplicate (same SHA-256) by the same uploader returns the existing photo, no new file is stored.
 * All three thumbnails are generated and retrievable.
 * EXIF data (date, GPS, camera) is extracted and stored as JSON.
 |===
@@ -282,14 +282,14 @@ a|
 * Photos within an album can be manually reordered.
 |===
 
-==== FR-2.4: Favorites [Target]
+==== FR-2.4: Favorites [Implemented for photos/albums; videos are future]
 
 [cols="1,4"]
 |===
 | ID | FR-2.4
 
 | Description
-| Users can mark individual media items (photos/videos) or entire albums as favorites for quick access.
+| Users can mark individual photos or entire albums as favorites for quick access. Video favorites are planned for a later phase.
 
 | Behavior
 a|
@@ -307,8 +307,9 @@ a|
 
 | Acceptance Criteria
 a|
-* A user can favorite/unfavorite a photo, video, or album with a single action.
-* Favorites list supports filtering by media type (photos, videos, albums) and sorting (date favorited, date taken).
+* [Implemented] A user can favorite/unfavorite a photo or album with a single action.
+* [Implemented] Favorites list supports filtering by target type.
+* [Future] Video favorites and richer sort options (date favorited, date taken).
 * Favoriting in a Space does not affect other members' favorites.
 * Favorited state is visible in gallery grid, photo/video viewer, and album list.
 * Deleting a media item or album automatically removes it from all users' favorites.
@@ -331,7 +332,7 @@ a|
 | Visibility
 a|
 * *Private* — not discoverable. Users can only join via invite link or direct invite.
-* *Public* — listed in the Space catalog. Anyone can request to join (auto-approve or admin approval, configurable). Content is still only visible to members — public does not mean open access.
+* *Public* — listed in the Space catalog. Join-request moderation is a future extension; current Phase 2 access control is membership-based. Content is still only visible to members — public does not mean open access.
 
 | Acceptance Criteria
 a|
@@ -352,16 +353,17 @@ a|
 
 | Visibility Rules
 a|
-* Members of a *parent* Space can see albums in child Subspaces by default. This can be restricted per-subspace by an admin.
-* Members of a *child* Subspace can see only their level and below.
-* Roles are inherited downward by default. A subspace admin can override inherited roles for specific members.
+* [Implemented] Subspaces use adjacency list with `parent_id` + `depth` column. Maximum nesting depth is 5.
+* [Implemented] Members of a *parent* Space can see albums in child Subspaces by default. This can be restricted per-subspace by an admin (`inheritMembers` flag).
+* [Implemented] Members of a *child* Subspace can see only their level and below.
+* [Implemented] Roles are inherited downward by default. A subspace admin can override inherited roles for specific members via direct membership.
 
 | Acceptance Criteria
 a|
 * A Space can have multiple Subspaces.
-* Subspaces can be nested to arbitrary depth.
-* A user who is a Member of "Runners" can browse "Runners SPB" albums.
-* A user who is only a Member of "Runners SPB" cannot see "Runners" root albums.
+* Subspaces can be nested up to depth 5.
+* [Implemented] A user who is a Member of "Runners" can browse "Runners SPB" albums (when `inheritMembers=true`).
+* [Implemented] A user who is only a Member of "Runners SPB" cannot see "Runners" root albums.
 |===
 
 ==== FR-3.3: Roles & Permissions
@@ -413,13 +415,15 @@ a|
 * *Default role* — the role assigned to users who join via this link (Member or Viewer).
 * *Expiration* — optional TTL (e.g., 24 hours, 7 days, never).
 * *Usage limit* — optional max number of joins (e.g., 1, 10, unlimited).
-* *Auto-approve* — if true, users join immediately. If false, join requests require admin approval.
+* [Implemented] Invite links auto-approve immediately.
+* [Future] Manual approval mode for invite links.
 
 | Acceptance Criteria
 a|
 * An invite link with `limit=10` stops working after 10 joins.
 * An expired link returns an appropriate error.
-* The link works for both new and existing users.
+* [Implemented] The link works for existing authenticated users.
+* [Target] The link works for new users as part of onboarding.
 * Admin can revoke an active invite link at any time.
 * Admin can view all active invite links and their usage stats.
 |===
@@ -455,17 +459,17 @@ a|
 | ID | FR-4.1
 
 | Description
-| Users can register and authenticate using email/password or external identity providers.
+| Users can register and authenticate using username/password or external identity providers.
 
 | Methods
 a|
-* Email + password (built-in).
+* Username + password (built-in).
 * OIDC: Google, GitHub (extensible to other providers).
 * Telegram Login Widget.
 
 | Acceptance Criteria
 a|
-* Users can register with email and password.
+* Users can register with username and password.
 * Users can log in via Google or GitHub OAuth.
 * Telegram users are automatically authenticated in the Mini App via WebApp SDK.
 * First-time OIDC/Telegram users get an account created automatically.
@@ -481,13 +485,15 @@ a|
 | Users have a profile with basic information.
 
 | Attributes
-| Name, email, avatar, linked accounts (OIDC providers, Telegram), creation date.
+| Current API exposes name, email, and avatar URL. Linked accounts and profile metadata remain an internal model / future API expansion.
 
 | Acceptance Criteria
 a|
-* Users can update their name and avatar.
-* Users can link/unlink OIDC providers.
-* Users can view their Space memberships.
+* [Implemented] Users can update their name and email via `PUT /auth/me`.
+* [Implemented] Users can link Google OIDC accounts via `POST /auth/link/google`.
+* [Future] Users can update their avatar.
+* [Future] Users can unlink OIDC providers.
+* [Future] Users can view their Space memberships from their profile.
 |===
 
 ==== FR-4.3: Personal Library
@@ -838,7 +844,7 @@ a|
 a|
 . Validate container format and size limits (admin-configurable max file size, default 2 GB).
 . Compute SHA-256 content hash.
-. Deduplicate globally: if a Media Asset with the same hash already exists, reuse it (create a new reference, not a new file).
+. Deduplicate per uploader: if the same uploader uploads a video with the same hash again, reuse the existing Media Asset. Different users may upload identical files independently.
 . Store original file.
 . Extract metadata: duration, resolution, frame rate, codec, audio codec, bitrate, creation date, GPS (if embedded).
 . Generate poster image — a representative frame (configurable: first keyframe, frame at 25%, or auto-selected by aesthetic score).
@@ -1093,7 +1099,7 @@ a|
 a|
 * Storage backends: pluggable via SPI. Adding a new backend requires implementing one interface.
 * ML models: pluggable via Model Registry. Adding a new model requires a YAML manifest + ONNX file.
-* Auth providers: extensible via Quarkus OIDC configuration.
+* Auth providers: extensible via the linked-accounts model plus provider-specific token verification or login integrations. Redirect-based OIDC configuration remains an option for future providers if needed.
 * API: versioned (`/api/v1/`) to support multiple client versions.
 * Clients: any HTTP client can integrate via the OpenAPI spec.
 |===
@@ -1110,12 +1116,12 @@ ____
 
 . Maria deploys PINA on her VPS via Docker Compose.
 . She creates a Space "Runners" with Subspaces "MSK", "SPB", "KZN".
-. For each Subspace, she generates an invite link with `role=Member`, `auto-approve=true`, `limit=100`.
+. For each Subspace, she generates an invite link with `role=Member`, `limit=100`.
 . She posts each link in the corresponding city's Telegram group.
-. Members tap the link, join in one click, and start uploading race photos and finish-line videos.
-. AI auto-tags media ("running", "medal", "group photo", "finish line").
-. Members search "finish line SPB marathon 2026" and find their photos and videos instantly.
-. Maria connects the Telegram groups to PINA via the bot — now photos and videos posted in chat are automatically collected.
+. Existing members sign in, join via the invite link, and start uploading race photos.
+. [Future] AI auto-tags media ("running", "medal", "group photo", "finish line").
+. [Future] Members search "finish line SPB marathon 2026" and find their photos and videos instantly.
+. [Future] Maria connects the Telegram groups to PINA via the bot — now photos and videos posted in chat are automatically collected.
 
 === A.2: Family Photo Archive
 
@@ -1125,10 +1131,11 @@ ____
 
 . Alex deploys PINA at home on a NAS (Docker Compose + local storage; WebDAV backend planned for future).
 . He creates accounts for family members and invites them via email.
-. Each family member uploads their phone photos and videos (batch upload).
-. AI detects and clusters faces — Alex names them ("Mom", "Dad", "Kids").
-. Searching "kids at the beach" returns all relevant photos and videos from all family members.
-. Alex creates a Shared Link for the vacation album and sends it to grandparents — they can view without an account.
+. Each family member uploads their phone photos.
+. [Future] Batch upload is used for large phone-library imports.
+. [Future] AI detects and clusters faces — Alex names them ("Mom", "Dad", "Kids").
+. [Future] Searching "kids at the beach" returns all relevant photos and videos from all family members.
+. [Future] Alex creates a Shared Link for the vacation album and sends it to grandparents — they can view without an account.
 
 === A.3: Event Photographer
 
@@ -1137,10 +1144,11 @@ A photographer covers a corporate event and needs to deliver 500+ photos to the 
 ____
 
 . Photographer uploads all event photos to PINA.
-. AI auto-tags and scores photos by aesthetic quality.
-. Photographer creates a "Best Of" album sorted by aesthetic score, adds top photos.
-. Creates a Shared Link with download enabled and sends to the client.
-. Client browses the gallery, downloads favorites — no account required.
+. Photographer creates a "Best Of" album and adds top photos.
+. [Future] AI auto-tags and scores photos by aesthetic quality.
+. [Future] The album is sorted by aesthetic score.
+. [Future] The photographer creates a Shared Link with download enabled and sends it to the client.
+. [Future] The client browses the gallery and downloads selected photos without an account.
 
 == Appendix B: API Overview
 
@@ -1196,20 +1204,23 @@ Notes:
 * `needsTotal=false` by default; in that case `totalItems` and `totalPages` are omitted.
 * Server-side page size is capped at `100`.
 
-=== Auth [Target]
+=== Auth [Implemented]
 
 [cols="1,2,3"]
 |===
 | Method | Path | Description
 
-| `POST` | `/api/v1/auth/register` | Email/password registration
-| `POST` | `/api/v1/auth/login` | Email/password login
-| `GET` | `/api/v1/auth/oidc/{provider}` | OIDC redirect
+| `POST` | `/api/v1/auth/register` | Username/password registration
+| `POST` | `/api/v1/auth/login` | Username/password login
+| `POST` | `/api/v1/auth/google` | Google OIDC login/register via ID token
+| `POST` | `/api/v1/auth/link/google` | Link Google account to current user
+| `POST` | `/api/v1/auth/refresh` | Exchange refresh token for new token pair
+| `POST` | `/api/v1/auth/logout` | Revoke refresh token
 | `GET` | `/api/v1/auth/me` | Current user profile
-| `PUT` | `/api/v1/auth/me` | Update profile
+| `PUT` | `/api/v1/auth/me` | Update profile (name, email)
 |===
 
-=== Spaces [Target]
+=== Spaces [Implemented in Phase 2]
 
 [cols="1,2,3"]
 |===
@@ -1229,19 +1240,36 @@ Notes:
 | `POST` | `/api/v1/spaces/{id}/invites` | Generate invite link
 | `GET` | `/api/v1/spaces/{id}/invites` | List active invite links
 | `DELETE` | `/api/v1/spaces/{id}/invites/{inviteId}` | Revoke invite link
-| `POST` | `/api/v1/invites/{code}/join` | Join via invite link
+| `GET` | `/api/v1/invites/{code}` | Public invite preview
+| `POST` | `/api/v1/invites/{code}/join` | Join via invite link (authenticated user)
 |===
 
-=== Favorites [Target]
+=== Space Albums [Implemented in Phase 2]
 
 [cols="1,2,3"]
 |===
 | Method | Path | Description
 
-| `GET` | `/api/v1/favorites` | List user's favorites (photos, videos, albums — filterable)
-| `POST` | `/api/v1/favorites` | Add to favorites (`{type: "photo"|"video"|"album", id: ...}`)
-| `DELETE` | `/api/v1/favorites/{type}/{id}` | Remove from favorites
-| `GET` | `/api/v1/favorites/check?type=&id=` | Check if item is favorited
+| `POST` | `/api/v1/spaces/{id}/albums` | Create Space album
+| `GET` | `/api/v1/spaces/{id}/albums` | List Space albums
+| `PUT` | `/api/v1/spaces/{id}/albums/{albumId}` | Update Space album
+| `DELETE` | `/api/v1/spaces/{id}/albums/{albumId}` | Delete Space album
+| `POST` | `/api/v1/spaces/{id}/albums/{albumId}/photos/{photoId}` | Add own photo to Space album
+| `DELETE` | `/api/v1/spaces/{id}/albums/{albumId}/photos/{photoId}` | Remove photo from Space album
+| `GET` | `/api/v1/spaces/{id}/albums/{albumId}/photos` | List photos in Space album (paginated response with `items`, `page`, `size`, `hasNext`; `needsTotal=true` also includes `totalItems` and `totalPages`)
+| `GET` | `/api/v1/spaces/{id}/albums/{albumId}/photos/{photoId}/file?variant=` | Stream a photo variant via the Space album context
+|===
+
+=== Favorites [Implemented]
+
+[cols="1,2,3"]
+|===
+| Method | Path | Description
+
+| `GET` | `/api/v1/favorites?type=` | List user's favorites (supported filters today: PHOTO, ALBUM; VIDEO reserved for a future phase)
+| `POST` | `/api/v1/favorites` | Add to favorites (`{targetType: "PHOTO"\|"ALBUM", targetId: ...}` in Phase 2)
+| `DELETE` | `/api/v1/favorites/{id}` | Remove from favorites (by favorite ID)
+| `GET` | `/api/v1/favorites/check?targetType=&targetId=` | Check if item is favorited
 |===
 
 === Search [Target]

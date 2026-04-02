@@ -43,10 +43,10 @@ public class PhotoVariantGenerator {
 			if (photoConfig.storeOriginal()) {
 				storeOriginal(photo, tempFile, contentHash, prefix);
 			}
-			storeCompressed(photo, image, contentHash, prefix);
-			storeThumbnail(photo, VariantType.THUMB_SM, imageProcessor.thumbnailSm(image), contentHash, prefix);
-			storeThumbnail(photo, VariantType.THUMB_MD, imageProcessor.thumbnailMd(image), contentHash, prefix);
-			storeThumbnail(photo, VariantType.THUMB_LG, imageProcessor.thumbnailLg(image), contentHash, prefix);
+			storeCompressed(photo, image, prefix);
+			storeThumbnail(photo, VariantType.THUMB_SM, imageProcessor.thumbnailSm(image), prefix);
+			storeThumbnail(photo, VariantType.THUMB_MD, imageProcessor.thumbnailMd(image), prefix);
+			storeThumbnail(photo, VariantType.THUMB_LG, imageProcessor.thumbnailLg(image), prefix);
 		} catch (Exception e) {
 			cleanupStoredVariants(photo);
 			throw e;
@@ -66,33 +66,39 @@ public class PhotoVariantGenerator {
 	private void storeOriginal(Photo photo, Path tempFile, String contentHash, String prefix) throws IOException {
 		String ext = MimeTypes.extensionFrom(photo.mimeType);
 		long fileSize = Files.size(tempFile);
-		StoragePath path = storagePath(VariantType.ORIGINAL, prefix, contentHash, ext);
+		StoragePath path = storagePath(photo, VariantType.ORIGINAL, prefix, ext);
 		try (var in = new BufferedInputStream(Files.newInputStream(tempFile))) {
 			storage.store(path, in, new StoreMeta(photo.mimeType, fileSize, contentHash));
 		}
 		addVariant(photo, VariantType.ORIGINAL, path, ext, null, photo.width, photo.height, fileSize);
 	}
 
-	private void storeCompressed(Photo photo, BufferedImage image, String contentHash, String prefix)
-			throws IOException {
+	private void storeCompressed(Photo photo, BufferedImage image, String prefix) throws IOException {
 		var compressed = imageProcessor.compress(image);
-		StoragePath path = storagePath(VariantType.COMPRESSED, prefix, contentHash, compressed.format());
+		StoragePath path = storagePath(photo, VariantType.COMPRESSED, prefix, compressed.format());
 		storage.store(path, new ByteArrayInputStream(compressed.data()),
 				new StoreMeta(MimeTypes.mimeForFormat(compressed.format()), compressed.sizeBytes(), null));
 		addVariant(photo, VariantType.COMPRESSED, path, compressed.format(), photoConfig.compression().quality(),
 				compressed.width(), compressed.height(), compressed.sizeBytes());
 	}
 
-	private void storeThumbnail(Photo photo, VariantType type, ProcessedImage processed, String hash, String prefix) {
-		StoragePath path = storagePath(type, prefix, hash, processed.format());
+	private void storeThumbnail(Photo photo, VariantType type, ProcessedImage processed, String prefix) {
+		StoragePath path = storagePath(photo, type, prefix, processed.format());
 		storage.store(path, new ByteArrayInputStream(processed.data()),
 				new StoreMeta(MimeTypes.mimeForFormat(processed.format()), processed.sizeBytes(), null));
 		addVariant(photo, type, path, processed.format(), null, processed.width(), processed.height(),
 				processed.sizeBytes());
 	}
 
-	private StoragePath storagePath(VariantType type, String prefix, String hash, String ext) {
-		return StoragePath.of(type.storageFolder(), prefix, hash + "." + ext);
+	private StoragePath storagePath(Photo photo, VariantType type, String prefix, String ext) {
+		return StoragePath.of(type.storageFolder(), prefix, fileKey(photo) + "." + ext);
+	}
+
+	private String fileKey(Photo photo) {
+		if (photo.id == null) {
+			throw new IllegalArgumentException("photo.id must be assigned before storing variants");
+		}
+		return photo.id.toString();
 	}
 
 	private void addVariant(Photo photo, VariantType type, StoragePath path, String format, Integer quality, int width,

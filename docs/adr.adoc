@@ -1,6 +1,6 @@
 = PINA — Architecture Decision Records
 :author: PINA Team
-:revdate: 2026-03-26
+:revdate: 2026-03-28
 :toc: left
 :toclevels: 3
 :sectnums:
@@ -196,7 +196,7 @@ If rollback automation becomes critical — consider Liquibase.
 
 === DATA-003: Media Asset + Reference ownership model
 
-Status:: Accepted
+Status:: Implemented
 Date:: 2026-03-26
 
 ==== Context
@@ -206,29 +206,29 @@ Key scenarios: deduplication, deletion, Space removal, quotas, and access contro
 
 ==== Decision
 
-Global asset + scoped references:
+Uploader-owned asset + scoped references:
 
-* *Media Asset* — a globally unique file identified by SHA-256 hash.
-Owned by the uploader.
+* *Media Asset* — an uploader-owned file identified by SHA-256 hash within that uploader's media library.
 Physical files and variants belong to the asset.
 * *Media Reference* — a link from a Space album to a Media Asset.
 Adding media to a Space creates a reference, not a copy.
 * Upload always creates the asset in the uploader's Personal Library.
 If a Space album is specified, a reference is added automatically.
-* Deduplication is global (by content hash).
+* Deduplication is per uploader (by uploader + content hash).
 * Deleting a reference from a Space does not delete the asset.
 * Deleting an asset from Personal Library deletes files only if no references exist elsewhere.
 
 ==== Alternatives considered
 
 * **Per-scope copies** — simpler mental model, but wastes storage and breaks dedup across Spaces.
-* **Global asset without Personal Library ownership** — complicates deletion (who can delete?) and quotas (who pays for storage?).
+* **Global asset without Personal Library ownership** — complicates deletion (who can delete?), quotas (who pays for storage?), and leaks cross-user file existence.
 
 ==== Consequences
 
 * Clear deletion semantics: reference removal is cheap, asset deletion is gated by reference count.
 * Quotas can be attributed to the asset owner.
-* Requires a reference-counting mechanism before allowing asset deletion.
+* Cross-user uploads of identical files do not leak prior existence and still preserve per-user ownership.
+* Asset deletion is guarded by existing reference rows, without shared-blob reference counting across users.
 
 ==== Review trigger
 
@@ -266,32 +266,33 @@ The storage layer must be swappable without touching business logic.
 
 Before S3/WebDAV providers are completed — validate the interface covers all required operations.
 
-=== STOR-002: Content-addressable file storage
+=== STOR-002: Photo-ID-based file storage paths
 
 Status:: Implemented
 Date:: 2026-03-25
 
 ==== Context
 
-Users may upload the same photo multiple times (from different devices, or multiple users in a shared Space).
-Files need stable, collision-resistant names independent of the original filename.
+Users may upload the same photo multiple times from different devices, and different users may upload identical files independently.
+The storage layout must stay simple while ensuring that one user's deletion cannot remove another user's files.
 
 ==== Decision
 
-Files are named by their SHA-256 content hash.
-The hash serves as the deduplication key (unique DB constraint).
-Storage paths are date-partitioned: `{category}/{YYYY}/{MM}/{hash}.{ext}`.
+Files are named by `photo.id`.
+SHA-256 remains the per-uploader deduplication key together with uploader identity, but it is not used as the physical filename.
+Storage paths are date-partitioned: `{category}/{YYYY}/{MM}/{photo-id}.{ext}`.
 
 ==== Alternatives considered
 
-- **UUID filenames** — simpler, but no deduplication without a separate lookup.
+- **Hash-based filenames** — look neat, but become unsafe once different users are allowed to store identical content without shared-blob lifecycle management.
 - **Flat directory structure** — degrades on filesystems with >10k entries per directory (ext4, XFS).
 
 ==== Consequences
 
-- Deduplication is automatic: duplicate uploads resolve to the same file.
+- Deduplication is automatic for repeated uploads by the same user.
+- Different users get isolated physical files even when their assets share the same content hash.
 - Date partitioning keeps directory sizes manageable and simplifies backup by time range.
-- Concurrent upload of the same file is safe: the second insert fails with a constraint violation and returns the existing photo.
+- Concurrent upload of the same file by the same user is safe: the second insert fails with a constraint violation and returns the existing photo.
 
 ==== Review trigger
 
@@ -388,6 +389,246 @@ Currently only backend + PostgreSQL are wired.
 ==== Review trigger
 
 If a managed hosting offering or paid tier is considered — evaluate Kubernetes support.
+
+== Authentication & Authorization
+
+=== AUTH-001: JWT authentication with SmallRye JWT
+
+Status:: Implemented
+Date:: 2026-03-28
+
+==== Context
+
+The backend needs authentication that works for self-hosted deployments without requiring an external identity provider.
+Multiple auth providers (local password, Google OIDC, Telegram Login Widget) will be supported over time.
+
+==== Decision
+
+Use SmallRye JWT for stateless token-based authentication.
+Local registration uses username + BCrypt-hashed password.
+JWT tokens contain the user UUID as subject claim.
+A `linked_accounts` table links users to auth providers, allowing one user to have multiple login methods.
+
+==== Alternatives considered
+
+- **Session-based auth** — simpler, but requires sticky sessions or shared session store for horizontal scaling.
+- **Quarkus OIDC only** — good for external providers, but self-hosted instances may not have an OIDC provider.
+
+==== Consequences
+
+- Stateless: no server-side session storage needed.
+- RSA key pair required for signing and verification (included in resources for dev; must be externalized in production).
+- BCrypt cost is configurable (`pina.auth.bcrypt.cost`): 12 for production, 4 for tests.
+- `linked_accounts` pattern supports adding OIDC and Telegram auth without schema changes.
+
+==== Review trigger
+
+[Reviewed 2026-03-28] Google OIDC implemented — JWT claims and linked_accounts model confirmed sufficient. Next review: when adding Telegram Login Widget or GitHub OIDC.
+
+=== AUTH-002: Linked accounts pattern for multi-provider identity
+
+Status:: Implemented
+Date:: 2026-03-28
+
+==== Context
+
+Users will authenticate via different providers (local password, Google, Telegram).
+No single common field (email, phone) exists across all providers.
+A user must be able to link multiple auth methods to one account.
+
+==== Decision
+
+Separate `linked_accounts` table with composite key (user_id, provider).
+Each row stores provider-specific credentials (BCrypt hash for LOCAL, empty for OIDC, telegram_id for Telegram).
+
+==== Alternatives considered
+
+- **Single `users` table with email/password columns** — cannot represent users who only have Telegram auth.
+- **Separate tables per provider** — redundant schema; harder to query all login methods for a user.
+
+==== Consequences
+
+- Adding a new provider requires only a new enum value in `AuthProvider`, not a schema change.
+- Account linking logic must check for existing linked accounts to prevent duplicate identities.
+
+==== Review trigger
+
+[Reviewed 2026-03-28] Google OIDC implemented — pattern works as designed. Next review: when adding Telegram Login Widget.
+
+=== AUTH-003: Adjacency list with depth for Space hierarchy
+
+Status:: Implemented
+Date:: 2026-03-28
+
+==== Context
+
+Spaces can have subspaces (e.g., "Trip 2026" → "Day 1", "Day 2").
+The hierarchy needs simple queries (find parent, list children) and must prevent unbounded depth.
+
+==== Decision
+
+Adjacency list model: `spaces.parent_id` references `spaces.id`, plus a `depth` column.
+Maximum depth is 5 (enforced in application and by DB CHECK constraint).
+No re-parenting is supported in the initial implementation.
+
+==== Alternatives considered
+
+- **Nested sets** — efficient subtree queries, but expensive on insert/move and complex to maintain.
+- **Materialized path** — easy to query full path, but requires path rewriting on move and string-based operations.
+- **Closure table** — most flexible, but adds significant storage and insert overhead for a max-depth-5 hierarchy.
+
+==== Consequences
+
+- Simple queries: `WHERE parent_id = ?` for children, `WHERE id = parent_id` for parent.
+- Depth column allows enforcing max depth without recursive queries.
+- If re-parenting is needed later, cycle detection must be added (depth recalculation + ancestry check).
+
+==== Review trigger
+
+If re-parenting or deep subtree queries become a requirement.
+
+=== AUTH-004: Google OIDC via jose4j direct verification
+
+Status:: Implemented
+Date:: 2026-03-28
+
+==== Context
+
+Google OIDC login requires verifying Google-issued ID tokens.
+Quarkus provides a built-in OIDC extension, but it assumes the application acts as an OIDC client with redirect flows.
+PINA receives ID tokens directly from the frontend (e.g., Google Sign-In button) and needs server-side verification only.
+
+==== Decision
+
+Use jose4j (already a transitive dependency of SmallRye JWT) to verify Google ID tokens directly against Google's JWKS endpoint.
+`GoogleTokenVerifier` is a CDI bean that fetches Google's public keys via `HttpsJwks` and validates the token signature, issuer, audience, and expiry.
+The Google client ID is configured via `pina.auth.google.client-id` (empty = disabled).
+
+==== Alternatives considered
+
+- **Quarkus OIDC extension** — designed for redirect-based flows; would require a different frontend integration pattern and adds unnecessary complexity for token-only verification.
+- **Manual HTTP call to Google tokeninfo endpoint** — simpler, but adds a network round-trip per login and creates a dependency on Google's tokeninfo availability.
+
+==== Consequences
+
+- No additional dependencies needed (jose4j is already present).
+- JWKS keys are cached and refreshed automatically by jose4j.
+- Google OIDC can be disabled by not setting the client ID property — safe for self-hosted instances without Google credentials.
+- Tests use `@InjectMock GoogleTokenVerifier` to avoid real Google calls.
+
+==== Review trigger
+
+If additional OIDC providers (GitHub, Apple) are added — consider extracting a generic OIDC token verifier.
+
+=== AUTH-005: Subspace visibility via inheritMembers flag
+
+Status:: Implemented
+Date:: 2026-03-28
+
+==== Context
+
+Subspaces inherit members from parent Spaces by default, but some subspaces need restricted access (e.g., a leadership subspace within a public club).
+The visibility control must be simple, per-subspace, and admin-manageable.
+
+==== Decision
+
+A boolean `inherit_members` column on the `spaces` table (default `true`).
+When `true`, `getEffectiveRole()` walks up the parent chain and grants inherited roles.
+When `false`, only direct memberships on that subspace are recognized — parent members cannot access it.
+Direct memberships always work regardless of the flag.
+
+==== Alternatives considered
+
+- **Per-member visibility overrides** — more granular, but adds significant complexity (N rows per subspace instead of 1 flag).
+- **Separate ACL table** — overkill for the current requirement; can be added later if needed.
+
+==== Consequences
+
+- Simple admin toggle: one boolean per subspace.
+- Blocking at any level in the chain stops all inheritance below that point.
+- Re-enabling the flag immediately restores access (no data loss).
+- No extra ACL table is needed for Phase 2.
+
+==== Review trigger
+
+If per-member visibility overrides or more granular ACLs are needed.
+
+=== AUTH-006: Invite link atomic join with usage tracking
+
+Status:: Implemented
+Date:: 2026-03-28
+
+==== Context
+
+Invite links have optional usage limits.
+Multiple users may attempt to join via the same link concurrently.
+The usage count must be accurate and must not exceed the limit under concurrent access.
+
+==== Decision
+
+The join operation is increment-first: an atomic `UPDATE` query increments the usage count (`UPDATE invite_links SET usage_count = usage_count + 1 WHERE code = :code AND active = true AND (usage_limit IS NULL OR usage_count < usage_limit) AND (expiration IS NULL OR expiration > :now)`).
+If the update affects 0 rows, the link is invalid, expired, or exhausted — membership is not created.
+If it affects 1 row, the membership is created afterwards.
+This ordering guarantees that the usage limit is never exceeded, even under concurrent access.
+Invite codes are 12-character alphanumeric strings generated with `SecureRandom`.
+
+==== Alternatives considered
+
+- **Add member first, then increment** — creates a window where concurrent joins can both succeed before either increments, potentially exceeding the usage limit and requiring rollback.
+- **SELECT + check + UPDATE** — race condition: two concurrent joins could both pass the check before either increments the count.
+- **Pessimistic locking (SELECT FOR UPDATE)** — correct, but reduces throughput under contention.
+- **Optimistic locking (@Version)** — requires retry logic on conflict.
+
+==== Consequences
+
+- Single atomic query handles validation and count increment — no race conditions.
+- No retry logic needed.
+- Link exhaustion is immediate and accurate.
+- If `addMember` fails after increment, usage count is slightly inflated — acceptable trade-off vs. exceeding the limit.
+
+==== Review trigger
+
+If invite links need more complex join logic (e.g., admin approval queue).
+
+=== AUTH-007: Refresh token flow with rotation
+
+Status:: Implemented
+Date:: 2026-03-28
+
+==== Context
+
+The original JWT setup used a single long-lived access token (24 hours).
+Long-lived JWTs are risky: if stolen, they grant access until expiry with no revocation mechanism.
+A refresh token flow allows short-lived access tokens while keeping sessions alive without re-authentication.
+
+==== Decision
+
+Short-lived access tokens (15 min) + long-lived refresh tokens (30 days) with single-use rotation.
+
+* Access tokens are stateless JWTs signed with RSA. The backend never stores them.
+* Refresh tokens are 32-byte random values (hex-encoded, 64 chars). The backend stores only the SHA-256 hash.
+* Each call to `/auth/refresh` revokes the old refresh token and issues a new pair (access + refresh).
+* `/auth/logout` revokes the refresh token. Access token remains valid until it expires (max 15 min).
+* Refresh tokens are stored in a `refresh_tokens` table with `revoked` flag and `expires_at` timestamp.
+* Both lifespans are configurable: `smallrye.jwt.new-token.lifespan` (access) and `pina.auth.refresh-token.lifespan` (refresh).
+
+==== Alternatives considered
+
+- **Long-lived access tokens only** — simpler, but no revocation and high risk if token is stolen.
+- **Token blacklist for access tokens** — enables instant revocation, but requires a shared store (Redis) checked on every request, defeating the stateless benefit of JWTs.
+- **Sliding-window refresh (no rotation)** — reuse the same refresh token until expiry. Simpler, but a stolen refresh token grants access for the full 30 days with no detection.
+
+==== Consequences
+
+- Stolen access tokens are limited to 15 min of damage.
+- Refresh token rotation detects theft: if the attacker uses a rotated token, the legitimate user's next refresh fails, signaling compromise.
+- No server-side state needed for access token validation (stateless JWT).
+- Database lookup only on refresh/logout, not on every API call.
+- JWT keys moved out of source control into `dev-keys/` (gitignored), configurable via env vars for production.
+
+==== Review trigger
+
+If real-time revocation of access tokens is needed (e.g., admin force-logout) — consider a token blacklist with Redis.
 
 == Testing
 

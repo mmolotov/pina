@@ -5,8 +5,10 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import dev.pina.backend.TestUserHelper;
 import dev.pina.backend.domain.Album;
 import dev.pina.backend.domain.Photo;
+import dev.pina.backend.domain.PhotoVariant;
 import dev.pina.backend.domain.User;
 import dev.pina.backend.domain.VariantType;
 import io.quarkus.test.junit.QuarkusTest;
@@ -18,7 +20,9 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.HashSet;
 import java.util.Optional;
+import java.util.Set;
 import javax.imageio.ImageIO;
 import org.junit.jupiter.api.Test;
 
@@ -31,13 +35,10 @@ class PhotoServiceTest {
 	@Inject
 	AlbumService albumService;
 
-	@Inject
-	UserResolver userResolver;
-
 	@Test
 	@Transactional
 	void uploadCreatesPhotoWithVariants() throws IOException {
-		User user = userResolver.currentUser();
+		User user = TestUserHelper.createUser("photo-svc");
 		Photo photo = photoService.upload(jpegStream(Color.CYAN, 200, 150), "test.jpg", "image/jpeg", user);
 
 		assertNotNull(photo.id);
@@ -54,7 +55,7 @@ class PhotoServiceTest {
 	@Test
 	@Transactional
 	void uploadDeduplicatesByContentHash() throws IOException {
-		User user = userResolver.currentUser();
+		User user = TestUserHelper.createUser("photo-svc");
 		byte[] imageBytes = createJpegBytes(Color.MAGENTA, 100, 100);
 
 		Photo first = photoService.upload(new ByteArrayInputStream(imageBytes), "a.jpg", "image/jpeg", user);
@@ -65,8 +66,52 @@ class PhotoServiceTest {
 
 	@Test
 	@Transactional
+	void uploadDuplicateOwnedByDifferentUserCreatesSeparatePhoto() throws IOException {
+		User firstUser = TestUserHelper.createUser("photo-svc-first");
+		User secondUser = TestUserHelper.createUser("photo-svc-second");
+		byte[] imageBytes = createJpegBytes(Color.MAGENTA, 101, 101);
+
+		Photo first = photoService.upload(new ByteArrayInputStream(imageBytes), "a.jpg", "image/jpeg", firstUser);
+		Photo second = photoService.upload(new ByteArrayInputStream(imageBytes), "b.jpg", "image/jpeg", secondUser);
+
+		assertNotNull(first.id);
+		assertNotNull(second.id);
+		assertTrue(!first.id.equals(second.id));
+		assertTrue(!first.personalLibrary.id.equals(second.personalLibrary.id));
+		assertEquals(first.contentHash, second.contentHash);
+		Set<String> firstStoragePaths = new HashSet<>(
+				first.variants.stream().map(variant -> variant.storagePath).toList());
+		Set<String> secondStoragePaths = new HashSet<>(
+				second.variants.stream().map(variant -> variant.storagePath).toList());
+		assertTrue(firstStoragePaths.stream().noneMatch(secondStoragePaths::contains));
+	}
+
+	@Test
+	@Transactional
+	void deletingCrossUserDuplicateDoesNotRemoveOtherUsersFiles() throws IOException {
+		User firstUser = TestUserHelper.createUser("photo-svc-delete-first");
+		User secondUser = TestUserHelper.createUser("photo-svc-delete-second");
+		byte[] imageBytes = createJpegBytes(Color.BLUE, 102, 102);
+
+		Photo first = photoService.upload(new ByteArrayInputStream(imageBytes), "a.jpg", "image/jpeg", firstUser);
+		Photo second = photoService.upload(new ByteArrayInputStream(imageBytes), "b.jpg", "image/jpeg", secondUser);
+
+		PhotoVariant secondCompressed = second.variants.stream()
+				.filter(variant -> variant.variantType == VariantType.COMPRESSED).findFirst().orElseThrow();
+		assertNotNull(secondCompressed.storagePath);
+
+		assertEquals(PhotoService.DeleteResult.DELETED, photoService.delete(first.id));
+
+		try (InputStream stream = photoService.getVariantFile(second, VariantType.COMPRESSED)) {
+			byte[] data = stream.readAllBytes();
+			assertTrue(data.length > 0);
+		}
+	}
+
+	@Test
+	@Transactional
 	void findByIdReturnsExistingPhoto() throws IOException {
-		User user = userResolver.currentUser();
+		User user = TestUserHelper.createUser("photo-svc");
 		Photo photo = photoService.upload(jpegStream(Color.YELLOW, 80, 80), "find.jpg", "image/jpeg", user);
 
 		Optional<Photo> found = photoService.findById(photo.id);
@@ -77,7 +122,7 @@ class PhotoServiceTest {
 	@Test
 	@Transactional
 	void deleteRemovesPhotoAndReturnsDeleted() throws IOException {
-		User user = userResolver.currentUser();
+		User user = TestUserHelper.createUser("photo-svc");
 		Photo photo = photoService.upload(jpegStream(Color.DARK_GRAY, 60, 60), "delete.jpg", "image/jpeg", user);
 
 		PhotoService.DeleteResult result = photoService.delete(photo.id);
@@ -96,7 +141,7 @@ class PhotoServiceTest {
 	@Test
 	@Transactional
 	void deleteReferencedPhotoReturnsHasReferences() throws IOException {
-		User user = userResolver.currentUser();
+		User user = TestUserHelper.createUser("photo-svc");
 		Photo photo = photoService.upload(jpegStream(Color.PINK, 70, 70), "ref.jpg", "image/jpeg", user);
 		Album album = albumService.create("ref-test", null, user);
 		albumService.addPhoto(album.id, photo.id, user);
@@ -108,7 +153,7 @@ class PhotoServiceTest {
 	@Test
 	@Transactional
 	void getVariantFileReturnsStream() throws IOException {
-		User user = userResolver.currentUser();
+		User user = TestUserHelper.createUser("photo-svc");
 		Photo photo = photoService.upload(jpegStream(Color.ORANGE, 90, 90), "variant.jpg", "image/jpeg", user);
 
 		InputStream stream = photoService.getVariantFile(photo, VariantType.COMPRESSED);
@@ -120,7 +165,7 @@ class PhotoServiceTest {
 	@Test
 	@Transactional
 	void getVariantFileReturnsStreamForAllVariantTypes() throws IOException {
-		User user = userResolver.currentUser();
+		User user = TestUserHelper.createUser("photo-svc");
 		Photo photo = photoService.upload(jpegStream(Color.RED, 50, 50), "all-variants.jpg", "image/jpeg", user);
 
 		for (VariantType type : VariantType.values()) {
@@ -131,8 +176,9 @@ class PhotoServiceTest {
 	}
 
 	@Test
+	@Transactional
 	void uploadUnsupportedImageThrows() {
-		User user = userResolver.currentUser();
+		User user = TestUserHelper.createUser("photo-svc");
 		byte[] notAnImage = "not an image".getBytes(java.nio.charset.StandardCharsets.UTF_8);
 
 		assertThrows(IllegalArgumentException.class,
@@ -142,7 +188,7 @@ class PhotoServiceTest {
 	@Test
 	@Transactional
 	void uploadSetsExifAndDimensions() throws IOException {
-		User user = userResolver.currentUser();
+		User user = TestUserHelper.createUser("photo-svc");
 		Photo photo = photoService.upload(jpegStream(Color.BLUE, 300, 200), "exif.jpg", "image/jpeg", user);
 
 		assertEquals(300, photo.width);
@@ -154,7 +200,7 @@ class PhotoServiceTest {
 	@Test
 	@Transactional
 	void listByUploaderReturnsPhotos() throws IOException {
-		User user = userResolver.currentUser();
+		User user = TestUserHelper.createUser("photo-svc");
 		photoService.upload(jpegStream(Color.GREEN, 40, 40), "list1.jpg", "image/jpeg", user);
 		photoService.upload(jpegStream(Color.RED, 41, 41), "list2.jpg", "image/jpeg", user);
 

@@ -40,15 +40,15 @@ public class PhotoResource {
 	@Inject
 	UserResolver userResolver;
 
-	// TODO Phase 2: add rate limiting per user to prevent abuse
 	@POST
 	@Consumes(MediaType.MULTIPART_FORM_DATA)
 	public Response upload(@RestForm("file") FileUpload file) throws IOException {
 		if (!MimeTypes.isSupportedImage(file.contentType())) {
 			return ApiErrors.unsupportedMediaType("Unsupported image type: " + file.contentType());
 		}
+		var user = userResolver.currentUser();
 		try (InputStream is = Files.newInputStream(file.uploadedFile())) {
-			var photo = photoService.upload(is, file.fileName(), file.contentType(), userResolver.currentUser());
+			var photo = photoService.upload(is, file.fileName(), file.contentType(), user);
 			return Response.status(Response.Status.CREATED).entity(PhotoDto.from(photo)).build();
 		}
 	}
@@ -65,8 +65,9 @@ public class PhotoResource {
 	@GET
 	@Path("/{id}")
 	public Response getById(@PathParam("id") UUID id) {
-		return photoService.findById(id).map(p -> Response.ok(PhotoDto.from(p)).build())
-				.orElse(ApiErrors.notFound("Photo not found: " + id));
+		var user = userResolver.currentUser();
+		return photoService.findById(id).filter(p -> p.uploader.id.equals(user.id))
+				.map(p -> Response.ok(PhotoDto.from(p)).build()).orElse(ApiErrors.notFound("Photo not found"));
 	}
 
 	@GET
@@ -76,7 +77,8 @@ public class PhotoResource {
 			@QueryParam("variant") @DefaultValue("COMPRESSED") String variant) {
 		VariantType type = parseVariant(variant);
 
-		return photoService.findById(id).map(photo -> {
+		var user = userResolver.currentUser();
+		return photoService.findById(id).filter(photo -> photo.uploader.id.equals(user.id)).map(photo -> {
 			var found = photo.variants.stream().filter(v -> v.variantType == type).findFirst();
 			if (found.isEmpty()) {
 				return ApiErrors.notFound("Variant not available: " + type);
@@ -88,18 +90,21 @@ public class PhotoResource {
 				}
 			};
 			return Response.ok(output).type(contentType).build();
-		}).orElse(ApiErrors.notFound("Photo not found: " + id));
+		}).orElse(ApiErrors.notFound("Photo not found"));
 	}
 
-	// TODO Phase 2: verify current user is the uploader or an authorized Space
-	// admin
 	@DELETE
 	@Path("/{id}")
 	public Response delete(@PathParam("id") UUID id) {
+		var user = userResolver.currentUser();
+		var photo = photoService.findById(id);
+		if (photo.isEmpty() || !photo.get().uploader.id.equals(user.id)) {
+			return ApiErrors.notFound("Photo not found");
+		}
 		return switch (photoService.delete(id)) {
 			case DELETED -> Response.noContent().build();
 			case HAS_REFERENCES -> ApiErrors.conflict("Photo still has album references");
-			case NOT_FOUND -> ApiErrors.notFound("Photo not found: " + id);
+			case NOT_FOUND -> ApiErrors.notFound("Photo not found");
 		};
 	}
 

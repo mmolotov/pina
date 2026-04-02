@@ -1,7 +1,8 @@
 # PINA Frontend
 
 SPA client for PINA built with React, React Router 7, Vite, and Tailwind CSS.
-Current repository status: Phase 1 skeleton only.
+Current repository status: the repository is in Phase 2, while the frontend itself remains a minimal
+Phase 1-style skeleton pending Phase 4 feature work.
 
 ## Development
 
@@ -43,7 +44,7 @@ app/
 - Colocate component-specific files (styles, tests, types) next to the component
 - Keep components small and focused; extract reusable parts into `app/components/`
 - Prefer React Router's `loader`/`action` for route data fetching as the frontend grows
-- The current Phase 1 home route is a minimal skeleton and uses `useEffect` for a health check
+- The current home route is still a minimal skeleton and uses `useEffect` for a health check
 
 ### Routing
 

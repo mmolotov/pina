@@ -31,7 +31,6 @@ import java.util.UUID;
 @Consumes(MediaType.APPLICATION_JSON)
 public class AlbumResource {
 
-	public static final String ALBUM_NOT_FOUND = "Album not found: ";
 	@Inject
 	AlbumService albumService;
 
@@ -45,7 +44,6 @@ public class AlbumResource {
 		return Response.status(Response.Status.CREATED).entity(AlbumDto.from(album)).build();
 	}
 
-	// TODO Phase 2: all album operations must verify ownership/membership
 	@GET
 	public Response list() {
 		var user = userResolver.currentUser();
@@ -58,28 +56,36 @@ public class AlbumResource {
 	public Response listPhotos(@PathParam("id") UUID id, @QueryParam("page") @DefaultValue("0") @Min(0) int page,
 			@QueryParam("size") @DefaultValue("50") @Positive int size,
 			@QueryParam("needsTotal") @DefaultValue("false") boolean needsTotal) {
-		return albumService.findById(id).map(_ -> {
+		var user = userResolver.currentUser();
+		return albumService.findById(id).filter(album -> album.owner.id.equals(user.id)).map(album -> {
 			var photos = albumService.listPhotos(id, new PageRequest(page, size, needsTotal));
 			return Response.ok(PageResponse.from(photos, PhotoDto::from)).build();
-		}).orElse(ApiErrors.notFound(ALBUM_NOT_FOUND + id));
+		}).orElse(ApiErrors.notFound("Album not found"));
 	}
 
 	@PUT
 	@Path("/{id}")
 	public Response update(@PathParam("id") UUID id, @Valid CreateAlbumRequest request) {
-		return albumService.update(id, request.name(), request.description())
-				.map(album -> Response.ok(AlbumDto.from(album)).build())
-				.orElse(ApiErrors.notFound(ALBUM_NOT_FOUND + id));
+		var user = userResolver.currentUser();
+		return albumService.findById(id).filter(album -> album.owner.id.equals(user.id))
+				.flatMap(album -> albumService.update(id, request.name(), request.description()))
+				.map(updated -> Response.ok(AlbumDto.from(updated)).build())
+				.orElse(ApiErrors.notFound("Album not found"));
 	}
 
 	@POST
 	@Path("/{id}/photos/{photoId}")
 	@Consumes(MediaType.WILDCARD)
 	public Response addPhoto(@PathParam("id") UUID id, @PathParam("photoId") UUID photoId) {
-		return switch (albumService.addPhoto(id, photoId, userResolver.currentUser())) {
+		var user = userResolver.currentUser();
+		var album = albumService.findById(id);
+		if (album.isEmpty() || !album.get().owner.id.equals(user.id)) {
+			return ApiErrors.notFound("Album not found");
+		}
+		return switch (albumService.addPhoto(id, photoId, user)) {
 			case CREATED -> Response.status(Response.Status.CREATED).build();
 			case ALREADY_EXISTS -> Response.ok().build();
-			case NOT_FOUND -> ApiErrors.notFound("Album or photo not found");
+			case NOT_FOUND, PHOTO_NOT_ACCESSIBLE -> ApiErrors.notFound("Album or photo not found");
 		};
 	}
 
@@ -87,18 +93,27 @@ public class AlbumResource {
 	@Path("/{id}/photos/{photoId}")
 	@Consumes(MediaType.WILDCARD)
 	public Response removePhoto(@PathParam("id") UUID id, @PathParam("photoId") UUID photoId) {
-		if (albumService.removePhoto(id, photoId)) {
-			return Response.noContent().build();
+		var user = userResolver.currentUser();
+		var album = albumService.findById(id);
+		if (album.isEmpty() || !album.get().owner.id.equals(user.id)) {
+			return ApiErrors.notFound("Album not found");
 		}
-		return ApiErrors.notFound("Album photo reference not found");
+		return switch (albumService.removePhoto(id, photoId, user, true)) {
+			case REMOVED -> Response.noContent().build();
+			case NOT_FOUND -> ApiErrors.notFound("Album photo reference not found");
+			case FORBIDDEN -> ApiErrors.notFound("Album photo reference not found");
+		};
 	}
 
 	@DELETE
 	@Path("/{id}")
 	public Response delete(@PathParam("id") UUID id) {
-		if (albumService.delete(id)) {
-			return Response.noContent().build();
+		var user = userResolver.currentUser();
+		var album = albumService.findById(id);
+		if (album.isEmpty() || !album.get().owner.id.equals(user.id)) {
+			return ApiErrors.notFound("Album not found");
 		}
-		return ApiErrors.notFound(ALBUM_NOT_FOUND + id);
+		albumService.delete(id);
+		return Response.noContent().build();
 	}
 }

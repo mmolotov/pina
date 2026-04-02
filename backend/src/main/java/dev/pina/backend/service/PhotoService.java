@@ -52,6 +52,9 @@ public class PhotoService {
 	PersonalLibraryService personalLibraryService;
 
 	@Inject
+	FavoriteService favoriteService;
+
+	@Inject
 	EntityManager em;
 
 	record IngestedFile(Path tempFile, String contentHash, long size) {
@@ -69,7 +72,8 @@ public class PhotoService {
 			throws IOException {
 		var ingested = ingestToTempFile(inputStream);
 		try {
-			Optional<Photo> existing = Photo.findByContentHashWithRelations(ingested.contentHash());
+			Optional<Photo> existing = Photo.findByContentHashAndUploaderWithRelations(ingested.contentHash(),
+					uploader.id);
 			if (existing.isPresent()) {
 				return existing.get();
 			}
@@ -80,14 +84,23 @@ public class PhotoService {
 			try {
 				photo = createPhotoEntity(ingested, analyzed, originalFilename, mimeType, uploader, personalLibrary);
 			} catch (PersistenceException _) {
-				// Concurrent upload with the same content_hash — unique constraint caught the
-				// race
+				// Concurrent upload by the same user with the same content_hash — unique
+				// constraint caught the race.
 				Photo.getEntityManager().clear();
-				return Photo.findByContentHashWithRelations(ingested.contentHash())
+				Photo concurrent = Photo.findByContentHashAndUploaderWithRelations(ingested.contentHash(), uploader.id)
 						.orElseThrow(() -> new IllegalStateException("Duplicate hash conflict but photo not found"));
+				return concurrent;
 			}
-			variantGenerator.generateAll(photo, analyzed.image(), ingested.tempFile(), ingested.contentHash(),
-					storagePrefixFor());
+			try {
+				variantGenerator.generateAll(photo, analyzed.image(), ingested.tempFile(), ingested.contentHash(),
+						storagePrefixFor());
+			} catch (Exception e) {
+				// Variant generation failed — remove the orphaned Photo entity to keep DB
+				// clean.
+				photo.delete();
+				em.flush();
+				throw e;
+			}
 			return photo;
 		} finally {
 			Files.deleteIfExists(ingested.tempFile());
@@ -108,6 +121,7 @@ public class PhotoService {
 			return DeleteResult.HAS_REFERENCES;
 		}
 		Photo p = photo.get();
+		favoriteService.removeForTarget(dev.pina.backend.domain.FavoriteTargetType.PHOTO, id);
 		for (PhotoVariant variant : p.variants) {
 			storage.delete(new StoragePath(variant.storagePath));
 		}

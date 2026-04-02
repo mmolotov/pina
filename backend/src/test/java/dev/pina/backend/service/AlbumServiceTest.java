@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import dev.pina.backend.TestUserHelper;
 import dev.pina.backend.domain.Album;
 import dev.pina.backend.domain.Photo;
 import dev.pina.backend.domain.User;
@@ -36,9 +37,6 @@ class AlbumServiceTest {
 	PhotoService photoService;
 
 	@Inject
-	UserResolver userResolver;
-
-	@Inject
 	EntityManager em;
 
 	@Test
@@ -65,7 +63,7 @@ class AlbumServiceTest {
 	@Test
 	@Transactional
 	void listPhotosUsesStableTiebreakerWhenAddedAtIsEqual() throws IOException {
-		User user = userResolver.currentUser();
+		User user = TestUserHelper.createUser("album-svc");
 		Album album = albumService.create("Stable order", "Tie-breaker test", user);
 
 		Photo first = uploadPhoto("stable-order-1.jpg", user, Color.RED);
@@ -99,7 +97,7 @@ class AlbumServiceTest {
 	@Test
 	@Transactional
 	void listPhotosReturnsPaginationMetadata() throws IOException {
-		User user = userResolver.currentUser();
+		User user = TestUserHelper.createUser("album-svc");
 		Album album = albumService.create("Pagination metadata", null, user);
 
 		albumService.addPhoto(album.id, uploadPhoto("pagination-1.jpg", user, Color.RED).id, user);
@@ -118,7 +116,7 @@ class AlbumServiceTest {
 	@Test
 	@Transactional
 	void listPhotosOmitsTotalsWhenNotRequested() throws IOException {
-		User user = userResolver.currentUser();
+		User user = TestUserHelper.createUser("album-svc");
 		Album album = albumService.create("No totals", null, user);
 
 		albumService.addPhoto(album.id, uploadPhoto("no-total-1.jpg", user, Color.ORANGE).id, user);
@@ -132,15 +130,17 @@ class AlbumServiceTest {
 	}
 
 	private Photo uploadPhoto(String filename, User user, Color color) throws IOException {
-		return photoService.upload(new ByteArrayInputStream(createJpegBytes(color)), filename, "image/jpeg", user);
+		return photoService.upload(new ByteArrayInputStream(createJpegBytes(color, filename)), filename, "image/jpeg",
+				user);
 	}
 
-	private byte[] createJpegBytes(Color color) throws IOException {
+	private byte[] createJpegBytes(Color color, String salt) throws IOException {
 		BufferedImage image = new BufferedImage(100, 100, BufferedImage.TYPE_INT_RGB);
 		var g = image.createGraphics();
 		g.setColor(color);
 		g.fillRect(0, 0, image.getWidth(), image.getHeight());
 		g.dispose();
+		image.setRGB(0, 0, salt.hashCode());
 
 		ByteArrayOutputStream out = new ByteArrayOutputStream();
 		ImageIO.write(image, "jpg", out);

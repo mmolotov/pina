@@ -8,7 +8,7 @@ Current state:
 
 - No proto contracts are checked in yet
 - No code generation is wired yet
-- Backend phase 1 does not depend on gRPC
+- Backend phase 2 does not depend on gRPC yet
 
 See:
 

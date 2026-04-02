@@ -6,7 +6,7 @@
 
 PINA is a self-hosted media gallery for private and group photo/video libraries.
 The long-term product includes Spaces, local ML analysis, Telegram integration, and video support.
-The repository is currently at **Phase 1**: backend MVP foundation plus a frontend skeleton.
+The repository is currently in **Phase 2**: JWT authentication, Google OIDC login, ownership enforcement, Spaces with role-based access, subspace hierarchy, invite links, Space albums, and favorites are implemented.
 
 The repository is organized as a monorepo. See [Milestones](MILESTONES.md) for current scope
 and progress.
@@ -28,7 +28,7 @@ npm install
 npm run dev
 ```
 
-Compose setup for current Phase 1 deployment target:
+Compose setup:
 
 ```bash
 docker compose -f docker/docker-compose.yml up --build
@@ -44,7 +44,7 @@ docker compose -f docker/docker-compose.yml up --build
 | Storage   | Local FS implemented; S3/WebDAV stubbed   |
 | ML        | Planned for Phase 3                       |
 | Telegram  | Planned for Phase 5                       |
-| Auth      | Planned for Phase 2                       |
+| Auth      | JWT + refresh tokens; Google OIDC implemented |
 | Deploy    | Compose for backend + PostgreSQL today    |
 
 ## Repository Structure

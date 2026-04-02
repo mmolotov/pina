@@ -33,8 +33,12 @@ public class Album extends PanacheEntityBase {
 	public User owner;
 
 	@ManyToOne(fetch = FetchType.LAZY)
-	@JoinColumn(name = "personal_library_id", nullable = false)
+	@JoinColumn(name = "personal_library_id")
 	public PersonalLibrary personalLibrary;
+
+	@ManyToOne(fetch = FetchType.LAZY)
+	@JoinColumn(name = "space_id")
+	public Space space;
 
 	@Column(nullable = false, updatable = false, insertable = false)
 	@ColumnDefault("now()")

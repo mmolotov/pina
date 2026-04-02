@@ -33,6 +33,11 @@ dependencies {
     // Health checks
     implementation("io.quarkus:quarkus-smallrye-health")
 
+    // Security & JWT
+    implementation("io.quarkus:quarkus-smallrye-jwt")
+    implementation("io.quarkus:quarkus-smallrye-jwt-build")
+    implementation("at.favre.lib:bcrypt:0.10.2")
+
     // Configuration
     implementation("io.quarkus:quarkus-arc")
 
@@ -42,8 +47,10 @@ dependencies {
 
     // Testing
     testImplementation("io.quarkus:quarkus-junit5")
+    testImplementation("io.quarkus:quarkus-junit5-mockito")
     testImplementation("io.quarkus:quarkus-jacoco")
     testImplementation("io.rest-assured:rest-assured")
+    testImplementation("io.quarkus:quarkus-test-security")
 }
 
 java {

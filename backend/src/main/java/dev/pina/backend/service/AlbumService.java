@@ -2,8 +2,10 @@ package dev.pina.backend.service;
 
 import dev.pina.backend.domain.Album;
 import dev.pina.backend.domain.AlbumPhoto;
+import dev.pina.backend.domain.FavoriteTargetType;
 import dev.pina.backend.domain.PersonalLibrary;
 import dev.pina.backend.domain.Photo;
+import dev.pina.backend.domain.Space;
 import dev.pina.backend.domain.User;
 import dev.pina.backend.pagination.PageRequest;
 import dev.pina.backend.pagination.PageResult;
@@ -24,7 +26,11 @@ public class AlbumService {
 	private static final int MAX_PAGE_SIZE = 100;
 
 	public enum AddPhotoResult {
-		CREATED, ALREADY_EXISTS, NOT_FOUND
+		CREATED, ALREADY_EXISTS, NOT_FOUND, PHOTO_NOT_ACCESSIBLE
+	}
+
+	public enum RemovePhotoResult {
+		REMOVED, NOT_FOUND, FORBIDDEN
 	}
 
 	@Inject
@@ -32,6 +38,9 @@ public class AlbumService {
 
 	@Inject
 	PersonalLibraryService personalLibraryService;
+
+	@Inject
+	FavoriteService favoriteService;
 
 	@Transactional
 	public Album create(String name, String description, User owner) {
@@ -46,8 +55,26 @@ public class AlbumService {
 		return album;
 	}
 
+	@Transactional
+	public Album createSpaceAlbum(String name, String description, Space space, User owner) {
+		Album album = new Album();
+		album.name = name;
+		album.description = description;
+		album.owner = owner;
+		album.space = space;
+		album.persist();
+		return album;
+	}
+
 	public Optional<Album> findById(UUID id) {
 		return Album.findByIdOptional(id);
+	}
+
+	public Optional<Photo> findPhotoInAlbum(UUID albumId, UUID photoId) {
+		return em.createQuery(
+				"SELECT DISTINCT p FROM AlbumPhoto ap JOIN ap.photo p LEFT JOIN FETCH p.variants LEFT JOIN FETCH p.uploader LEFT JOIN FETCH p.personalLibrary WHERE ap.album.id = :albumId AND p.id = :photoId",
+				Photo.class).setParameter("albumId", albumId).setParameter("photoId", photoId).getResultStream()
+				.findFirst();
 	}
 
 	@Transactional
@@ -56,6 +83,7 @@ public class AlbumService {
 		if (album.isEmpty()) {
 			return false;
 		}
+		favoriteService.removeForTarget(FavoriteTargetType.ALBUM, id);
 		AlbumPhoto.delete("album.id", id);
 		album.get().delete();
 		return true;
@@ -63,6 +91,10 @@ public class AlbumService {
 
 	public List<Album> listByOwner(UUID ownerId) {
 		return Album.list("personalLibrary.owner.id", ownerId);
+	}
+
+	public List<Album> listBySpace(UUID spaceId) {
+		return Album.list("space.id = ?1 order by createdAt desc", spaceId);
 	}
 
 	public boolean hasPhoto(Album album, Photo photo) {
@@ -75,6 +107,9 @@ public class AlbumService {
 		Optional<Photo> photo = Photo.findByIdWithRelations(photoId);
 		if (album.isEmpty() || photo.isEmpty()) {
 			return AddPhotoResult.NOT_FOUND;
+		}
+		if (!photo.get().uploader.id.equals(addedBy.id)) {
+			return AddPhotoResult.PHOTO_NOT_ACCESSIBLE;
 		}
 		if (hasPhoto(album.get(), photo.get())) {
 			return AddPhotoResult.ALREADY_EXISTS;
@@ -101,12 +136,31 @@ public class AlbumService {
 		Album a = album.get();
 		a.name = name;
 		a.description = description;
+		a.persistAndFlush();
 		return Optional.of(a);
 	}
 
 	@Transactional
 	public boolean removePhoto(UUID albumId, UUID photoId) {
 		return AlbumPhoto.delete("album.id = ?1 and photo.id = ?2", albumId, photoId) > 0;
+	}
+
+	@Transactional
+	public RemovePhotoResult removePhoto(UUID albumId, UUID photoId, User actingUser, boolean canManageAlbum) {
+		Optional<AlbumPhoto> albumPhoto = AlbumPhoto.getEntityManager().createQuery(
+				"SELECT ap FROM AlbumPhoto ap JOIN FETCH ap.photo p JOIN FETCH p.uploader WHERE ap.album.id = :albumId AND ap.photo.id = :photoId",
+				AlbumPhoto.class).setParameter("albumId", albumId).setParameter("photoId", photoId).getResultStream()
+				.findFirst();
+		if (albumPhoto.isEmpty()) {
+			return RemovePhotoResult.NOT_FOUND;
+		}
+
+		if (!canManageAlbum && !albumPhoto.get().photo.uploader.id.equals(actingUser.id)) {
+			return RemovePhotoResult.FORBIDDEN;
+		}
+
+		albumPhoto.get().delete();
+		return RemovePhotoResult.REMOVED;
 	}
 
 	@Transactional

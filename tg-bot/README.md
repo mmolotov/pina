@@ -10,4 +10,4 @@ Planned responsibilities:
 - Auto-collect media from linked chats
 - Expose basic browse/search/link commands
 
-Current repository phase is still Phase 1, so there is no bot code here yet.
+Current repository phase is Phase 2. Telegram work starts in Phase 5, so there is no bot code here yet.

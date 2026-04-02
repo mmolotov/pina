@@ -16,6 +16,18 @@ public final class ApiErrors {
 		return response(Response.Status.NOT_FOUND, "not_found", message);
 	}
 
+	public static Response forbidden(String message) {
+		return response(Response.Status.FORBIDDEN, "forbidden", message);
+	}
+
+	public static Response unauthorized(String message) {
+		return response(Response.Status.UNAUTHORIZED, "unauthorized", message);
+	}
+
+	public static Response badRequest(String message) {
+		return response(Response.Status.BAD_REQUEST, "bad_request", message);
+	}
+
 	public static Response conflict(String message) {
 		return response(Response.Status.CONFLICT, "conflict", message);
 	}

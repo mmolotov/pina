@@ -16,13 +16,13 @@ class PersonalLibraryServiceTest {
 	@Inject
 	PersonalLibraryService personalLibraryService;
 
-	@Inject
-	UserResolver userResolver;
-
 	@Test
 	@Transactional
 	void getOrCreateCreatesLibraryForUser() {
-		User user = userResolver.currentUser();
+		User user = new User();
+		user.name = "lib-test-create";
+		user.persistAndFlush();
+
 		PersonalLibrary library = personalLibraryService.getOrCreate(user);
 
 		assertNotNull(library);
@@ -33,7 +33,10 @@ class PersonalLibraryServiceTest {
 	@Test
 	@Transactional
 	void getOrCreateReturnsExistingLibrary() {
-		User user = userResolver.currentUser();
+		User user = new User();
+		user.name = "lib-test-idempotent";
+		user.persistAndFlush();
+
 		PersonalLibrary first = personalLibraryService.getOrCreate(user);
 		PersonalLibrary second = personalLibraryService.getOrCreate(user);
 

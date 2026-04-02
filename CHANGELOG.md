@@ -9,11 +9,14 @@ For module-specific changes, see changelogs in each module directory.
 
 ## [Unreleased]
 
-### Added
-- Monorepo structure: backend, ml, frontend, tg-bot, tg-mini-app, proto, docker, docs
-- Root README with project overview, tech stack, and development guide
-- CLAUDE.md for AI agent guidance
-- MILESTONES.md with phased development roadmap
-- Product requirements specification (docs/product-requirements.adoc)
+### Phase 2: Auth + Spaces
+- JWT authentication with refresh token rotation, Google OIDC login
+- Spaces with role-based access, subspace hierarchy, invite links
+- Space albums, favorites, ownership enforcement
+- See [backend/CHANGELOG.md](backend/CHANGELOG.md) for detailed changes
+
+### Phase 1: Foundation
+- Monorepo structure, CI, product requirements, ADRs
+- Backend: photo upload pipeline, albums, storage SPI, OpenAPI
+- Frontend skeleton (React + Vite + Tailwind)
 - AGPL-3.0 license
-- GitHub Actions CI for backend (build, format check, test, SpotBugs)

@@ -37,7 +37,7 @@ public class Photo extends PanacheEntityBase {
 	@JoinColumn(name = "personal_library_id", nullable = false)
 	public PersonalLibrary personalLibrary;
 
-	@Column(nullable = false, unique = true)
+	@Column(nullable = false)
 	public String contentHash;
 
 	@Column
@@ -68,8 +68,8 @@ public class Photo extends PanacheEntityBase {
 	@OneToMany(mappedBy = "photo", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
 	public List<PhotoVariant> variants = new ArrayList<>();
 
-	public static Optional<Photo> findByContentHash(String hash) {
-		return find("contentHash", hash).firstResultOptional();
+	public static Optional<Photo> findByContentHashAndUploader(String hash, UUID uploaderId) {
+		return find("contentHash = ?1 and uploader.id = ?2", hash, uploaderId).firstResultOptional();
 	}
 
 	public static Optional<Photo> findByIdWithRelations(UUID id) {
@@ -78,9 +78,9 @@ public class Photo extends PanacheEntityBase {
 				id).list().stream().findFirst();
 	}
 
-	public static Optional<Photo> findByContentHashWithRelations(String hash) {
+	public static Optional<Photo> findByContentHashAndUploaderWithRelations(String hash, UUID uploaderId) {
 		return Photo.<Photo>find(
-				"select distinct p from Photo p left join fetch p.variants left join fetch p.uploader left join fetch p.personalLibrary where p.contentHash = ?1",
-				hash).list().stream().findFirst();
+				"select distinct p from Photo p left join fetch p.variants left join fetch p.uploader left join fetch p.personalLibrary where p.contentHash = ?1 and p.uploader.id = ?2",
+				hash, uploaderId).list().stream().findFirst();
 	}
 }
