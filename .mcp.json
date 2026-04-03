@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "backlog": {
+      "command": "/opt/homebrew/bin/backlog",
+      "args": ["mcp", "start"]
+    }
+  }
+}
