@@ -100,3 +100,28 @@ jobs:
 
       - name: Static analysis
         run: ./gradlew spotbugsMain
+
+      - name: OWASP dependency check
+        run: ./gradlew dependencyCheckAnalyze
+        env:
+          QUARKUS_DATASOURCE_JDBC_URL: jdbc:postgresql://localhost:5432/pina_test
+          QUARKUS_DATASOURCE_USERNAME: pina
+          QUARKUS_DATASOURCE_PASSWORD: ${{ secrets.CI_POSTGRES_PASSWORD || 'pina' }}
+
+      - name: Upload OWASP report
+        uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: owasp-dependency-check
+          path: backend/build/reports/dependency-check-report.html
+
+  dependency-review:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high

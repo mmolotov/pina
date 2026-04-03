@@ -4,6 +4,7 @@ plugins {
     id("io.quarkus")
     id("com.diffplug.spotless") version "8.4.0"
     id("com.github.spotbugs") version "6.4.8"
+    id("org.owasp.dependencycheck") version "12.1.1"
 }
 
 val quarkusPlatformVersion: String by project
@@ -32,6 +33,7 @@ dependencies {
 
     // Health checks
     implementation("io.quarkus:quarkus-smallrye-health")
+    implementation("io.quarkus:quarkus-scheduler")
 
     // Security & JWT
     implementation("io.quarkus:quarkus-smallrye-jwt")
@@ -89,6 +91,12 @@ tasks.withType<com.github.spotbugs.snom.SpotBugsTask> {
     reports.create("xml") { required = false }
 }
 
+// OWASP Dependency-Check
+dependencyCheck {
+    failBuildOnCVSS = 7.0f
+    formats = listOf("HTML", "JSON")
+}
+
 // Disable Gradle JaCoCo agent — quarkus-jacoco handles instrumentation
 tasks.withType<Test> {
     extensions.configure<JacocoTaskExtension> {
@@ -120,5 +128,4 @@ tasks.jacocoTestCoverageVerification {
         }
     }
 }
-
 
