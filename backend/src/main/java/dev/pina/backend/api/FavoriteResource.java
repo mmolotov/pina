@@ -2,14 +2,19 @@ package dev.pina.backend.api;
 
 import dev.pina.backend.api.dto.CreateFavoriteRequest;
 import dev.pina.backend.api.dto.FavoriteDto;
+import dev.pina.backend.api.dto.PageResponse;
 import dev.pina.backend.api.error.ApiErrors;
 import dev.pina.backend.domain.FavoriteTargetType;
+import dev.pina.backend.pagination.PageRequest;
 import dev.pina.backend.service.FavoriteService;
 import dev.pina.backend.service.UserResolver;
 import jakarta.inject.Inject;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Positive;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DELETE;
+import jakarta.ws.rs.DefaultValue;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
@@ -53,10 +58,13 @@ public class FavoriteResource {
 	}
 
 	@GET
-	public Response list(@QueryParam("type") FavoriteTargetType targetType) {
+	public Response list(@QueryParam("type") FavoriteTargetType targetType,
+			@QueryParam("page") @DefaultValue("0") @Min(0) int page,
+			@QueryParam("size") @DefaultValue("50") @Positive int size,
+			@QueryParam("needsTotal") @DefaultValue("false") boolean needsTotal) {
 		var user = userResolver.currentUser();
-		var favorites = favoriteService.listByUser(user.id, targetType).stream().map(FavoriteDto::from).toList();
-		return Response.ok(favorites).build();
+		var favorites = favoriteService.listByUser(user.id, targetType, new PageRequest(page, size, needsTotal));
+		return Response.ok(PageResponse.from(favorites, FavoriteDto::from)).build();
 	}
 
 	@GET

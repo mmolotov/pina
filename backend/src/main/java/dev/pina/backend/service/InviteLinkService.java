@@ -4,8 +4,11 @@ import dev.pina.backend.domain.InviteLink;
 import dev.pina.backend.domain.Space;
 import dev.pina.backend.domain.SpaceRole;
 import dev.pina.backend.domain.User;
+import dev.pina.backend.pagination.PageRequest;
+import dev.pina.backend.pagination.PageResult;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
+import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
 import jakarta.transaction.Transactional;
 import java.security.SecureRandom;
@@ -19,10 +22,14 @@ public class InviteLinkService {
 
 	private static final String CODE_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
 	private static final int CODE_LENGTH = 12;
+	private static final int MAX_PAGE_SIZE = 100;
 	private static final SecureRandom RANDOM = new SecureRandom();
 
 	@Inject
 	SpaceService spaceService;
+
+	@Inject
+	EntityManager em;
 
 	public enum JoinResult {
 		JOINED, ALREADY_MEMBER, INVALID
@@ -54,8 +61,23 @@ public class InviteLinkService {
 		return link;
 	}
 
-	public List<InviteLink> listBySpace(UUID spaceId) {
-		return InviteLink.list("space.id = ?1 and active = true order by createdAt desc", spaceId);
+	public PageResult<InviteLink> listBySpace(UUID spaceId, PageRequest pageRequest) {
+		int effectiveSize = pageRequest.effectiveSize(MAX_PAGE_SIZE);
+		List<InviteLink> results = em.createQuery(
+				"SELECT il FROM InviteLink il WHERE il.space.id = :spaceId AND il.active = true ORDER BY il.createdAt DESC",
+				InviteLink.class).setParameter("spaceId", spaceId).setFirstResult(pageRequest.offset(MAX_PAGE_SIZE))
+				.setMaxResults(effectiveSize + 1).getResultList();
+		boolean hasNext = results.size() > effectiveSize;
+		List<InviteLink> items = hasNext ? results.subList(0, effectiveSize) : results;
+		Long totalItems = null;
+		Long totalPages = null;
+		if (pageRequest.needsTotal()) {
+			totalItems = em.createQuery(
+					"SELECT COUNT(il) FROM InviteLink il WHERE il.space.id = :spaceId AND il.active = true", Long.class)
+					.setParameter("spaceId", spaceId).getSingleResult();
+			totalPages = PageResult.totalPages(totalItems, effectiveSize);
+		}
+		return new PageResult<>(items, pageRequest.page(), effectiveSize, hasNext, totalItems, totalPages);
 	}
 
 	public Optional<InviteLink> findByCode(String code) {
@@ -124,11 +146,8 @@ public class InviteLinkService {
 		if (link.expiration != null && !link.expiration.isAfter(now)) {
 			return false;
 		}
-		if (link.usageLimit != null && link.usageCount >= link.usageLimit) {
-			return false;
-		}
-		return true;
-	}
+    return link.usageLimit == null || link.usageCount < link.usageLimit;
+  }
 
 	private String generateCode() {
 		StringBuilder sb = new StringBuilder(CODE_LENGTH);

@@ -160,7 +160,8 @@ class SpaceResourceTest {
 		authAs(ownerToken).body("{\"userId\": \"" + memberId + "\", \"role\": \"MEMBER\"}").when()
 				.post("/api/v1/spaces/{id}/members", id).then().statusCode(201);
 
-		authAs(ownerToken).when().get("/api/v1/spaces/{id}/members", id).then().statusCode(200).body("$", hasSize(2));
+		authAs(ownerToken).when().get("/api/v1/spaces/{id}/members", id).then().statusCode(200).body("items",
+				hasSize(2));
 	}
 
 	@Test

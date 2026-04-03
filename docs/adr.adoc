@@ -232,7 +232,7 @@ If a Space album is specified, a reference is added automatically.
 
 ==== Review trigger
 
-When implementing Phase 2 (Spaces) — validate that the reference model handles all edge cases (concurrent delete, Space removal, user deactivation).
+[Reviewed 2026-03-28] Phase 2 (Spaces) validated — reference model handles concurrent delete (409 guard), Space deletion (DB cascade), and access-loss scenarios correctly. Next review: when implementing Video assets (Phase 7) — validate that videos reuse the same ownership model.
 
 == Storage
 
@@ -566,25 +566,25 @@ The usage count must be accurate and must not exceed the limit under concurrent 
 
 ==== Decision
 
-The join operation is increment-first: an atomic `UPDATE` query increments the usage count (`UPDATE invite_links SET usage_count = usage_count + 1 WHERE code = :code AND active = true AND (usage_limit IS NULL OR usage_count < usage_limit) AND (expiration IS NULL OR expiration > :now)`).
-If the update affects 0 rows, the link is invalid, expired, or exhausted — membership is not created.
-If it affects 1 row, the membership is created afterwards.
-This ordering guarantees that the usage limit is never exceeded, even under concurrent access.
+The join operation uses pessimistic locking: `findByCodeForJoin()` loads the invite link with `LockModeType.PESSIMISTIC_WRITE` (`SELECT ... FOR UPDATE`), which serializes concurrent access to the same invite link row.
+After acquiring the lock, the service validates the link (active, not expired, usage count below limit), increments the usage count, and creates the membership — all within the same transaction.
+If validation fails, the link is invalid, expired, or exhausted — membership is not created.
 Invite codes are 12-character alphanumeric strings generated with `SecureRandom`.
 
 ==== Alternatives considered
 
+- **Atomic increment-first UPDATE** — single query combines validation and increment. Simpler, but harder to add conditional logic (e.g., skip increment for already-members).
 - **Add member first, then increment** — creates a window where concurrent joins can both succeed before either increments, potentially exceeding the usage limit and requiring rollback.
-- **SELECT + check + UPDATE** — race condition: two concurrent joins could both pass the check before either increments the count.
-- **Pessimistic locking (SELECT FOR UPDATE)** — correct, but reduces throughput under contention.
+- **SELECT + check + UPDATE (no lock)** — race condition: two concurrent joins could both pass the check before either increments the count.
 - **Optimistic locking (@Version)** — requires retry logic on conflict.
 
 ==== Consequences
 
-- Single atomic query handles validation and count increment — no race conditions.
+- `PESSIMISTIC_WRITE` serializes concurrent joins on the same invite link — no race conditions.
 - No retry logic needed.
 - Link exhaustion is immediate and accurate.
-- If `addMember` fails after increment, usage count is slightly inflated — acceptable trade-off vs. exceeding the limit.
+- Already-members can join without consuming usage count (the lock allows conditional logic before incrementing).
+- Slightly reduced throughput under contention on a single invite link — acceptable for this use case.
 
 ==== Review trigger
 

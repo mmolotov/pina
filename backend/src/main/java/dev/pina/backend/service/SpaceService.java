@@ -7,6 +7,8 @@ import dev.pina.backend.domain.SpaceMembership;
 import dev.pina.backend.domain.SpaceRole;
 import dev.pina.backend.domain.SpaceVisibility;
 import dev.pina.backend.domain.User;
+import dev.pina.backend.pagination.PageRequest;
+import dev.pina.backend.pagination.PageResult;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.persistence.EntityManager;
@@ -25,6 +27,7 @@ import java.util.UUID;
 public class SpaceService {
 
 	private static final int MAX_DEPTH = 5;
+	private static final int MAX_PAGE_SIZE = 100;
 	private static final String FAVORITE_TARGET_LOCK_NAMESPACE = "favorite-target-album";
 	private static final String SPACE_CONTENT_LOCK_NAMESPACE = "space-content";
 
@@ -225,10 +228,23 @@ public class SpaceService {
 		return Optional.empty();
 	}
 
-	public List<SpaceMembership> listMembers(UUID spaceId) {
-		return SpaceMembership.getEntityManager().createQuery(
+	public PageResult<SpaceMembership> listMembers(UUID spaceId, PageRequest pageRequest) {
+		int effectiveSize = pageRequest.effectiveSize(MAX_PAGE_SIZE);
+		List<SpaceMembership> results = em.createQuery(
 				"SELECT sm FROM SpaceMembership sm JOIN FETCH sm.user WHERE sm.space.id = :spaceId ORDER BY sm.joinedAt",
-				SpaceMembership.class).setParameter("spaceId", spaceId).getResultList();
+				SpaceMembership.class).setParameter("spaceId", spaceId)
+				.setFirstResult(pageRequest.offset(MAX_PAGE_SIZE)).setMaxResults(effectiveSize + 1).getResultList();
+		boolean hasNext = results.size() > effectiveSize;
+		List<SpaceMembership> items = hasNext ? results.subList(0, effectiveSize) : results;
+		Long totalItems = null;
+		Long totalPages = null;
+		if (pageRequest.needsTotal()) {
+			totalItems = em
+					.createQuery("SELECT COUNT(sm) FROM SpaceMembership sm WHERE sm.space.id = :spaceId", Long.class)
+					.setParameter("spaceId", spaceId).getSingleResult();
+			totalPages = PageResult.totalPages(totalItems, effectiveSize);
+		}
+		return new PageResult<>(items, pageRequest.page(), effectiveSize, hasNext, totalItems, totalPages);
 	}
 
 	@Transactional

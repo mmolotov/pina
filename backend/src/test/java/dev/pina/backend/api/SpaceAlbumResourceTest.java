@@ -80,7 +80,8 @@ class SpaceAlbumResourceTest {
 		authAs(token).body("{\"name\":\"Album 2\"}").when().post("/api/v1/spaces/" + spaceId + "/albums").then()
 				.statusCode(201);
 
-		authAs(token).when().get("/api/v1/spaces/" + spaceId + "/albums").then().statusCode(200).body("$", hasSize(2));
+		authAs(token).when().get("/api/v1/spaces/" + spaceId + "/albums").then().statusCode(200).body("items",
+				hasSize(2));
 	}
 
 	@Test
@@ -125,7 +126,8 @@ class SpaceAlbumResourceTest {
 
 		authAs(token).when().delete("/api/v1/spaces/" + spaceId + "/albums/" + albumId).then().statusCode(204);
 
-		authAs(token).when().get("/api/v1/spaces/" + spaceId + "/albums").then().statusCode(200).body("$", hasSize(0));
+		authAs(token).when().get("/api/v1/spaces/" + spaceId + "/albums").then().statusCode(200).body("items",
+				hasSize(0));
 	}
 
 	@Test
@@ -170,7 +172,7 @@ class SpaceAlbumResourceTest {
 		authAs(ownerToken).when().post("/api/v1/spaces/" + spaceId + "/albums/" + albumId + "/photos/" + photoId).then()
 				.statusCode(201);
 
-		authAs(viewerToken).when().get("/api/v1/spaces/" + spaceId + "/albums").then().statusCode(200).body("$",
+		authAs(viewerToken).when().get("/api/v1/spaces/" + spaceId + "/albums").then().statusCode(200).body("items",
 				hasSize(1));
 		authAs(viewerToken).when().get("/api/v1/spaces/" + spaceId + "/albums/" + albumId + "/photos").then()
 				.statusCode(200).body("items", hasSize(1));

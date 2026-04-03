@@ -78,7 +78,8 @@ class InviteLinkResourceTest {
 		authAs(token).body("{}").when().post("/api/v1/spaces/" + spaceId + "/invites").then().statusCode(201);
 		authAs(token).body("{}").when().post("/api/v1/spaces/" + spaceId + "/invites").then().statusCode(201);
 
-		authAs(token).when().get("/api/v1/spaces/" + spaceId + "/invites").then().statusCode(200).body("$", hasSize(2));
+		authAs(token).when().get("/api/v1/spaces/" + spaceId + "/invites").then().statusCode(200).body("items",
+				hasSize(2));
 	}
 
 	@Test
@@ -104,8 +105,8 @@ class InviteLinkResourceTest {
 
 		authAs(token).when().delete("/api/v1/spaces/" + spaceId + "/invites/" + revokeId).then().statusCode(204);
 
-		authAs(token).when().get("/api/v1/spaces/" + spaceId + "/invites").then().statusCode(200).body("$", hasSize(1))
-				.body("[0].id", equalTo(keepId)).body("[0].active", equalTo(true));
+		authAs(token).when().get("/api/v1/spaces/" + spaceId + "/invites").then().statusCode(200)
+				.body("items", hasSize(1)).body("items[0].id", equalTo(keepId)).body("items[0].active", equalTo(true));
 	}
 
 	@Test
@@ -173,7 +174,7 @@ class InviteLinkResourceTest {
 		authAs(ownerToken).when().post("/api/v1/invites/" + code + "/join").then().statusCode(200);
 
 		authAs(ownerToken).when().get("/api/v1/spaces/" + spaceId + "/invites").then().statusCode(200)
-				.body("$", hasSize(1)).body("[0].usageCount", equalTo(0));
+				.body("items", hasSize(1)).body("items[0].usageCount", equalTo(0));
 	}
 
 	@Test
@@ -190,8 +191,8 @@ class InviteLinkResourceTest {
 		authAs(inheritedToken).when().post("/api/v1/invites/" + code + "/join").then().statusCode(200);
 
 		authAs(ownerToken).when().get("/api/v1/spaces/" + childId + "/invites").then().statusCode(200)
-				.body("$", hasSize(1)).body("[0].usageCount", equalTo(0));
-		authAs(ownerToken).when().get("/api/v1/spaces/" + childId + "/members").then().statusCode(200).body("$",
+				.body("items", hasSize(1)).body("items[0].usageCount", equalTo(0));
+		authAs(ownerToken).when().get("/api/v1/spaces/" + childId + "/members").then().statusCode(200).body("items",
 				hasSize(1));
 	}
 
@@ -203,7 +204,7 @@ class InviteLinkResourceTest {
 		String inviteId = authAs(ownerToken).body("{}").when().post("/api/v1/spaces/" + spaceId + "/invites").then()
 				.statusCode(201).extract().path("id");
 		String code = authAs(ownerToken).when().get("/api/v1/spaces/" + spaceId + "/invites").then().statusCode(200)
-				.extract().path("[0].code");
+				.extract().path("items[0].code");
 
 		authAs(ownerToken).when().delete("/api/v1/spaces/" + spaceId + "/invites/" + inviteId).then().statusCode(204);
 

@@ -76,7 +76,7 @@ Once running:
 The repository also includes a reproducible smoke runner for the backend API manual suite:
 
 ```bash
-./scripts/manual-phase2-smoke.sh
+./scripts/manual-smoke.sh
 ```
 
 Requirements:
@@ -87,9 +87,9 @@ Requirements:
 Useful environment overrides:
 
 ```bash
-BASE_URL=http://127.0.0.1:8080/api/v1 ./scripts/manual-phase2-smoke.sh
-RUN_ID=phase2_rc1 ./scripts/manual-phase2-smoke.sh
-PHOTO_FILE=/absolute/path/to/local-test-image.png ./scripts/manual-phase2-smoke.sh
+BASE_URL=http://127.0.0.1:8080/api/v1 ./scripts/manual-smoke.sh
+RUN_ID=phase2_rc1 ./scripts/manual-smoke.sh
+PHOTO_FILE=/absolute/path/to/local-test-image.png ./scripts/manual-smoke.sh
 ```
 
 Behavior notes:
@@ -247,14 +247,14 @@ Auth response format (register, login, google, refresh):
 | Method   | Path                                                 | Description                                     |
 |----------|------------------------------------------------------|-------------------------------------------------|
 | `POST`   | `/api/v1/albums`                                     | Create album in current user's Personal Library |
-| `GET`    | `/api/v1/albums`                                     | List current user's albums                      |
+| `GET`    | `/api/v1/albums?page=&size=&needsTotal=`             | List current user's albums (paginated)          |
 | `PUT`    | `/api/v1/albums/{id}`                                | Rename/update description                       |
 | `DELETE` | `/api/v1/albums/{id}`                                | Delete album and its references                 |
 | `GET`    | `/api/v1/albums/{id}/photos?page=&size=&needsTotal=` | List referenced photos with paged response      |
 | `POST`   | `/api/v1/albums/{id}/photos/{photoId}`               | Add existing photo reference                    |
 | `DELETE` | `/api/v1/albums/{id}/photos/{photoId}`               | Remove photo reference                          |
 
-Album photo listing response:
+All paginated list endpoints return the same response envelope:
 
 ```json
 {
@@ -286,7 +286,7 @@ Notes:
 | `GET`    | `/api/v1/spaces/{id}`                  | Get Space details                   | Any member              |
 | `PUT`    | `/api/v1/spaces/{id}`                  | Update Space (incl. inheritMembers) | Owner or Admin          |
 | `DELETE` | `/api/v1/spaces/{id}`                  | Delete Space                        | Owner only              |
-| `GET`    | `/api/v1/spaces/{id}/members`          | List members                        | Any member              |
+| `GET`    | `/api/v1/spaces/{id}/members?page=&size=&needsTotal=` | List members (paginated)   | Any member              |
 | `POST`   | `/api/v1/spaces/{id}/members`          | Add member                          | Owner or Admin          |
 | `PUT`    | `/api/v1/spaces/{id}/members/{userId}` | Change member role                  | Owner; Admin restricted |
 | `DELETE` | `/api/v1/spaces/{id}/members/{userId}` | Remove member (or self-leave)       | Owner; Admin restricted |
@@ -298,12 +298,12 @@ Notes:
 | Method   | Path                                                    | Description                                                         | Required Role           |
 |----------|---------------------------------------------------------|---------------------------------------------------------------------|-------------------------|
 | `POST`   | `/api/v1/spaces/{id}/albums`                            | Create album in Space                                               | Any member              |
-| `GET`    | `/api/v1/spaces/{id}/albums`                            | List Space albums                                                   | Viewer+                 |
+| `GET`    | `/api/v1/spaces/{id}/albums?page=&size=&needsTotal=`    | List Space albums (paginated)                                       | Viewer+                 |
 | `PUT`    | `/api/v1/spaces/{id}/albums/{albumId}`                  | Update album                                                        | Owner of album or Admin |
 | `DELETE` | `/api/v1/spaces/{id}/albums/{albumId}`                  | Delete album                                                        | Owner of album or Admin |
 | `POST`   | `/api/v1/spaces/{id}/albums/{albumId}/photos/{photoId}` | Add own photo to Space album                                        | Any member              |
 | `DELETE` | `/api/v1/spaces/{id}/albums/{albumId}/photos/{photoId}` | Remove own photo from Space album; Admin/album owner can remove any | Member+                 |
-| `GET`    | `/api/v1/spaces/{id}/albums/{albumId}/photos`           | List photos in Space album                                          | Viewer+                 |
+| `GET`    | `/api/v1/spaces/{id}/albums/{albumId}/photos?page=&size=&needsTotal=` | List photos in Space album (paginated)                    | Viewer+                 |
 | `GET`    | `/api/v1/spaces/{id}/albums/{albumId}/photos/{photoId}/file?variant=COMPRESSED` | Stream a photo variant through the Space album context | Viewer+                 |
 
 ### Space Invite Links
@@ -311,7 +311,7 @@ Notes:
 | Method   | Path                                     | Description              | Required Role  |
 |----------|------------------------------------------|--------------------------|----------------|
 | `POST`   | `/api/v1/spaces/{id}/invites`            | Create invite link       | Owner or Admin |
-| `GET`    | `/api/v1/spaces/{id}/invites`            | List active invite links | Owner or Admin |
+| `GET`    | `/api/v1/spaces/{id}/invites?page=&size=&needsTotal=` | List active invite links (paginated) | Owner or Admin |
 | `DELETE` | `/api/v1/spaces/{id}/invites/{inviteId}` | Revoke invite link       | Owner or Admin |
 
 ### Invite Links
@@ -327,7 +327,7 @@ Notes:
 |----------|-------------------------------------------------|--------------------------------------------------------|
 | `POST`   | `/api/v1/favorites`                             | Add a favorite (photo or album today; video is future) |
 | `DELETE` | `/api/v1/favorites/{id}`                        | Remove a favorite                                      |
-| `GET`    | `/api/v1/favorites?type=`                       | List user's favorites (optional type filter)           |
+| `GET`    | `/api/v1/favorites?type=&page=&size=&needsTotal=` | List user's favorites (paginated, optional type filter) |
 | `GET`    | `/api/v1/favorites/check?targetType=&targetId=` | Check if a target is favorited                         |
 
 ### Health

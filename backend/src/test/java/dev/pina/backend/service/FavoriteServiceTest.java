@@ -13,6 +13,7 @@ import dev.pina.backend.domain.Photo;
 import dev.pina.backend.domain.SpaceRole;
 import dev.pina.backend.domain.SpaceVisibility;
 import dev.pina.backend.domain.User;
+import dev.pina.backend.pagination.PageRequest;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
@@ -21,6 +22,8 @@ import org.junit.jupiter.api.Test;
 
 @QuarkusTest
 class FavoriteServiceTest {
+
+	private static final PageRequest ALL = new PageRequest(0, 100, false);
 
 	@Inject
 	FavoriteService favoriteService;
@@ -70,10 +73,10 @@ class FavoriteServiceTest {
 		var user = TestUserHelper.createUser("fav-rm");
 		var photo = createPhoto(user);
 		favoriteService.add(FavoriteTargetType.PHOTO, photo.id, user);
-		var favorites = favoriteService.listByUser(user.id, null);
+		var favorites = favoriteService.listByUser(user.id, null, ALL).items();
 		assertEquals(1, favorites.size());
 		assertTrue(favoriteService.remove(favorites.getFirst().id, user.id));
-		assertTrue(favoriteService.listByUser(user.id, null).isEmpty());
+		assertTrue(favoriteService.listByUser(user.id, null, ALL).items().isEmpty());
 	}
 
 	@Test
@@ -90,7 +93,7 @@ class FavoriteServiceTest {
 		var user2 = TestUserHelper.createUser("fav-rm-o2");
 		var photo = createPhoto(user1);
 		favoriteService.add(FavoriteTargetType.PHOTO, photo.id, user1);
-		var favorites = favoriteService.listByUser(user1.id, null);
+		var favorites = favoriteService.listByUser(user1.id, null, ALL).items();
 		assertFalse(favoriteService.remove(favorites.getFirst().id, user2.id));
 	}
 
@@ -103,10 +106,10 @@ class FavoriteServiceTest {
 		favoriteService.add(FavoriteTargetType.PHOTO, photo.id, user);
 		favoriteService.add(FavoriteTargetType.ALBUM, album.id, user);
 
-		assertEquals(2, favoriteService.listByUser(user.id, null).size());
-		assertEquals(1, favoriteService.listByUser(user.id, FavoriteTargetType.PHOTO).size());
-		assertEquals(1, favoriteService.listByUser(user.id, FavoriteTargetType.ALBUM).size());
-		assertEquals(0, favoriteService.listByUser(user.id, FavoriteTargetType.VIDEO).size());
+		assertEquals(2, favoriteService.listByUser(user.id, null, ALL).items().size());
+		assertEquals(1, favoriteService.listByUser(user.id, FavoriteTargetType.PHOTO, ALL).items().size());
+		assertEquals(1, favoriteService.listByUser(user.id, FavoriteTargetType.ALBUM, ALL).items().size());
+		assertEquals(0, favoriteService.listByUser(user.id, FavoriteTargetType.VIDEO, ALL).items().size());
 	}
 
 	@Test
@@ -192,7 +195,7 @@ class FavoriteServiceTest {
 
 		assertEquals(SpaceService.RemoveMemberResult.REMOVED, spaceService.removeMember(space.id, owner.id, member.id));
 		assertFalse(favoriteService.isFavorited(member.id, FavoriteTargetType.ALBUM, memberOwnedSpaceAlbum.id));
-		assertTrue(favoriteService.listByUser(member.id, FavoriteTargetType.ALBUM).isEmpty());
+		assertTrue(favoriteService.listByUser(member.id, FavoriteTargetType.ALBUM, ALL).items().isEmpty());
 	}
 
 	@Test
@@ -248,7 +251,7 @@ class FavoriteServiceTest {
 				spaceService.addMember(child.id, member.id, SpaceRole.VIEWER));
 
 		assertFalse(favoriteService.isFavorited(member.id, FavoriteTargetType.ALBUM, parentAlbum.id));
-		assertTrue(favoriteService.listByUser(member.id, FavoriteTargetType.ALBUM).isEmpty());
+		assertTrue(favoriteService.listByUser(member.id, FavoriteTargetType.ALBUM, ALL).items().isEmpty());
 	}
 
 	@Test

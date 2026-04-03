@@ -45,10 +45,12 @@ public class AlbumResource {
 	}
 
 	@GET
-	public Response list() {
+	public Response list(@QueryParam("page") @DefaultValue("0") @Min(0) int page,
+			@QueryParam("size") @DefaultValue("50") @Positive int size,
+			@QueryParam("needsTotal") @DefaultValue("false") boolean needsTotal) {
 		var user = userResolver.currentUser();
-		var albums = albumService.listByOwner(user.id).stream().map(AlbumDto::from).toList();
-		return Response.ok(albums).build();
+		var albums = albumService.listByOwner(user.id, new PageRequest(page, size, needsTotal));
+		return Response.ok(PageResponse.from(albums, AlbumDto::from)).build();
 	}
 
 	@GET

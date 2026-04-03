@@ -12,6 +12,7 @@ import dev.pina.backend.domain.Space;
 import dev.pina.backend.domain.SpaceRole;
 import dev.pina.backend.domain.SpaceVisibility;
 import dev.pina.backend.domain.User;
+import dev.pina.backend.pagination.PageRequest;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
@@ -20,6 +21,8 @@ import org.junit.jupiter.api.Test;
 
 @QuarkusTest
 class SpaceServiceTest {
+
+	private static final PageRequest ALL = new PageRequest(0, 100, false);
 
 	@Inject
 	SpaceService spaceService;
@@ -145,7 +148,7 @@ class SpaceServiceTest {
 		var result = spaceService.addMember(space.id, member.id, SpaceRole.MEMBER);
 		assertEquals(SpaceService.AddMemberResult.CREATED, result);
 
-		var members = spaceService.listMembers(space.id);
+		var members = spaceService.listMembers(space.id, ALL).items();
 		assertEquals(2, members.size());
 	}
 
@@ -345,6 +348,6 @@ class SpaceServiceTest {
 				favoriteService.add(FavoriteTargetType.ALBUM, album.id, member));
 
 		assertTrue(spaceService.delete(space.id));
-		assertTrue(favoriteService.listByUser(member.id, FavoriteTargetType.ALBUM).isEmpty());
+		assertTrue(favoriteService.listByUser(member.id, FavoriteTargetType.ALBUM, ALL).items().isEmpty());
 	}
 }

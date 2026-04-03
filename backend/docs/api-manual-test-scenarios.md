@@ -11,7 +11,7 @@ Each scenario contains:
 All examples assume the backend is running locally on `http://localhost:8080`.
 
 For a reproducible end-to-end smoke run of this document, use
-`../scripts/manual-phase2-smoke.sh`. The script exercises the same backend API flow with generated
+`../scripts/manual-smoke.sh`. The script exercises the same backend API flow with generated
 test users and automatic assertions. It is intended for local release/smoke verification, not as a
 replacement for automated integration tests in `../src/test`.
 
@@ -387,14 +387,15 @@ Step 4. Verify member listing.
 ```bash
 curl -sS -i \
   -H "Authorization: Bearer $USER_A_ACCESS_TOKEN" \
-  "$BASE_URL/spaces/$SPACE_ID/members"
+  "$BASE_URL/spaces/$SPACE_ID/members?page=0&size=20&needsTotal=true"
 ```
 
 Expected result:
 
 - HTTP status is `200 OK`
-- response contains user A as `OWNER`
-- response contains user B as `MEMBER`
+- response body contains paginated `items` array
+- `items` contains user A as `OWNER` and user B as `MEMBER`
+- pagination fields include `page`, `size`, `hasNext`, `totalItems`, `totalPages`
 
 ## Scenario 9. Subspace Inheritance Visibility
 
@@ -669,14 +670,16 @@ Step 2. List active invites for the Space.
 ```bash
 curl -sS -i \
   -H "Authorization: Bearer $USER_A_ACCESS_TOKEN" \
-  "$BASE_URL/spaces/$SPACE_ID/invites"
+  "$BASE_URL/spaces/$SPACE_ID/invites?page=0&size=20&needsTotal=true"
 ```
 
 Expected result:
 
 - HTTP status is `200 OK`
-- response contains the created invite
+- response body contains paginated `items` array
+- `items` contains the created invite
 - inactive invites must not be included
+- pagination fields include `page`, `size`, `hasNext`, `totalItems`, `totalPages`
 
 Step 3. Preview the invite without authentication.
 
@@ -792,14 +795,16 @@ Step 3. List favorites.
 ```bash
 curl -sS -i \
   -H "Authorization: Bearer $USER_B_ACCESS_TOKEN" \
-  "$BASE_URL/favorites?type=ALBUM"
+  "$BASE_URL/favorites?type=ALBUM&page=0&size=20&needsTotal=true"
 ```
 
 Expected result:
 
 - HTTP status is `200 OK`
-- response contains one favorite pointing to `SPACE_ALBUM_ID`
+- response body contains paginated `items` array
+- `items` contains one favorite pointing to `SPACE_ALBUM_ID`
 - copy the favorite's `id` into `FAVORITE_ID`
+- pagination fields include `page`, `size`, `hasNext`, `totalItems`, `totalPages`
 
 Step 4. Check favorite status.
 
@@ -870,13 +875,14 @@ Step 9. List favorites again as user B.
 ```bash
 curl -sS -i \
   -H "Authorization: Bearer $USER_B_ACCESS_TOKEN" \
-  "$BASE_URL/favorites?type=ALBUM"
+  "$BASE_URL/favorites?type=ALBUM&page=0&size=20"
 ```
 
 Expected result:
 
 - HTTP status is `200 OK`
-- the response does not include the Space album favorite anymore because user B lost access to that Space
+- response body contains paginated `items` array
+- `items` does not include the Space album favorite anymore because user B lost access to that Space
 - this remains true even if the album was originally created by user B
 - direct membership in a child subspace does not keep a parent-Space album favorite visible
 

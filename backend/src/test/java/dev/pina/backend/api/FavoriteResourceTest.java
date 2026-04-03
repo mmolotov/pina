@@ -115,12 +115,12 @@ class FavoriteResourceTest {
 		authAs(token).body("{\"targetType\":\"PHOTO\",\"targetId\":\"" + photoId + "\"}").when()
 				.post("/api/v1/favorites").then().statusCode(201);
 
-		String favId = authAs(token).when().get("/api/v1/favorites").then().statusCode(200).body("$", hasSize(1))
-				.extract().path("[0].id");
+		String favId = authAs(token).when().get("/api/v1/favorites").then().statusCode(200).body("items", hasSize(1))
+				.extract().path("items[0].id");
 
 		authAs(token).when().delete("/api/v1/favorites/" + favId).then().statusCode(204);
 
-		authAs(token).when().get("/api/v1/favorites").then().statusCode(200).body("$", hasSize(0));
+		authAs(token).when().get("/api/v1/favorites").then().statusCode(200).body("items", hasSize(0));
 	}
 
 	@Test
@@ -140,11 +140,11 @@ class FavoriteResourceTest {
 		authAs(token).body("{\"targetType\":\"ALBUM\",\"targetId\":\"" + albumId + "\"}").when()
 				.post("/api/v1/favorites").then().statusCode(201);
 
-		authAs(token).when().get("/api/v1/favorites").then().statusCode(200).body("$", hasSize(2));
-		authAs(token).when().get("/api/v1/favorites?type=PHOTO").then().statusCode(200).body("$", hasSize(1))
-				.body("[0].targetType", equalTo("PHOTO"));
-		authAs(token).when().get("/api/v1/favorites?type=ALBUM").then().statusCode(200).body("$", hasSize(1))
-				.body("[0].targetType", equalTo("ALBUM"));
+		authAs(token).when().get("/api/v1/favorites").then().statusCode(200).body("items", hasSize(2));
+		authAs(token).when().get("/api/v1/favorites?type=PHOTO").then().statusCode(200).body("items", hasSize(1))
+				.body("items[0].targetType", equalTo("PHOTO"));
+		authAs(token).when().get("/api/v1/favorites?type=ALBUM").then().statusCode(200).body("items", hasSize(1))
+				.body("items[0].targetType", equalTo("ALBUM"));
 	}
 
 	@Test
@@ -198,7 +198,7 @@ class FavoriteResourceTest {
 		given().header("Authorization", "Bearer " + token).when().delete("/api/v1/photos/{id}", photoId).then()
 				.statusCode(204);
 
-		authAs(token).when().get("/api/v1/favorites").then().statusCode(200).body("$", hasSize(0));
+		authAs(token).when().get("/api/v1/favorites").then().statusCode(200).body("items", hasSize(0));
 		authAs(token).when().get("/api/v1/favorites/check?targetType=PHOTO&targetId=" + photoId).then().statusCode(200)
 				.body("favorited", equalTo(false));
 	}
@@ -214,7 +214,7 @@ class FavoriteResourceTest {
 		given().header("Authorization", "Bearer " + token).when().delete("/api/v1/albums/{id}", albumId).then()
 				.statusCode(204);
 
-		authAs(token).when().get("/api/v1/favorites").then().statusCode(200).body("$", hasSize(0));
+		authAs(token).when().get("/api/v1/favorites").then().statusCode(200).body("items", hasSize(0));
 		authAs(token).when().get("/api/v1/favorites/check?targetType=ALBUM&targetId=" + albumId).then().statusCode(200)
 				.body("favorited", equalTo(false));
 	}
@@ -238,7 +238,7 @@ class FavoriteResourceTest {
 
 		removeMember(ownerToken, spaceId, memberId);
 
-		authAs(memberToken).when().get("/api/v1/favorites").then().statusCode(200).body("$", hasSize(0));
+		authAs(memberToken).when().get("/api/v1/favorites").then().statusCode(200).body("items", hasSize(0));
 		authAs(memberToken).when().get("/api/v1/favorites/check?targetType=PHOTO&targetId=" + photoId).then()
 				.statusCode(200).body("favorited", equalTo(false));
 		authAs(memberToken).when().get("/api/v1/favorites/check?targetType=ALBUM&targetId=" + albumId).then()
@@ -259,7 +259,7 @@ class FavoriteResourceTest {
 
 		removeMember(ownerToken, spaceId, memberId);
 
-		authAs(memberToken).when().get("/api/v1/favorites?type=ALBUM").then().statusCode(200).body("$", hasSize(0));
+		authAs(memberToken).when().get("/api/v1/favorites?type=ALBUM").then().statusCode(200).body("items", hasSize(0));
 		authAs(memberToken).when().get("/api/v1/favorites/check?targetType=ALBUM&targetId=" + memberOwnedAlbumId).then()
 				.statusCode(200).body("favorited", equalTo(false));
 	}

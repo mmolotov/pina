@@ -236,11 +236,11 @@ SPACE_ID=$(printf '%s' "$BODY" | jq -r '.id')
 ADD_SPACE_MEMBER=$(curl_json POST "$BASE_URL/spaces/$SPACE_ID/members" "$USER_A_ACCESS_TOKEN" "{\"userId\":\"${USER_B_ID}\",\"role\":\"MEMBER\"}")
 STATUS=$(status_of "$ADD_SPACE_MEMBER")
 expect_status "$STATUS" 201 "Add user B as member"
-LIST_SPACE_MEMBERS=$(curl_json GET "$BASE_URL/spaces/$SPACE_ID/members" "$USER_A_ACCESS_TOKEN")
+LIST_SPACE_MEMBERS=$(curl_json GET "$BASE_URL/spaces/$SPACE_ID/members?page=0&size=20" "$USER_A_ACCESS_TOKEN")
 STATUS=$(status_of "$LIST_SPACE_MEMBERS")
 BODY=$(body_of "$LIST_SPACE_MEMBERS")
 expect_status "$STATUS" 200 "List space members"
-expect_jq_true "$BODY" "Space members contain both A and B" --arg ua "$USER_A_ID" --arg ub "$USER_B_ID" 'map(.userId) | index($ua) != null and index($ub) != null'
+expect_jq_true "$BODY" "Space members contain both A and B" --arg ua "$USER_A_ID" --arg ub "$USER_B_ID" '.items | map(.userId) | index($ua) != null and index($ub) != null'
 
 echo "Scenario 9. Subspace Inheritance Visibility"
 CREATE_SUBSPACE=$(curl_json POST "$BASE_URL/spaces/$SPACE_ID/subspaces" "$USER_A_ACCESS_TOKEN" '{"name":"Manual Subspace","description":"Inherited access test","visibility":"PRIVATE"}')
@@ -316,11 +316,11 @@ BODY=$(body_of "$CREATE_INVITE")
 expect_status "$STATUS" 201 "Create invite link"
 INVITE_ID=$(printf '%s' "$BODY" | jq -r '.id')
 INVITE_CODE=$(printf '%s' "$BODY" | jq -r '.code')
-LIST_INVITES=$(curl_json GET "$BASE_URL/spaces/$SPACE_ID/invites" "$USER_A_ACCESS_TOKEN")
+LIST_INVITES=$(curl_json GET "$BASE_URL/spaces/$SPACE_ID/invites?page=0&size=20" "$USER_A_ACCESS_TOKEN")
 STATUS=$(status_of "$LIST_INVITES")
 BODY=$(body_of "$LIST_INVITES")
 expect_status "$STATUS" 200 "List active invites"
-expect_jq_true "$BODY" "Created invite appears in invite list" --arg iid "$INVITE_ID" 'map(.id) | index($iid) != null'
+expect_jq_true "$BODY" "Created invite appears in invite list" --arg iid "$INVITE_ID" '.items | map(.id) | index($iid) != null'
 PREVIEW_INVITE=$(curl_json GET "$BASE_URL/invites/$INVITE_CODE")
 STATUS=$(status_of "$PREVIEW_INVITE")
 BODY=$(body_of "$PREVIEW_INVITE")
@@ -347,12 +347,12 @@ expect_status "$STATUS" 201 "Add Space album to favorites"
 DUP_SPACE_ALBUM_FAVORITE=$(curl_json POST "$BASE_URL/favorites" "$USER_B_ACCESS_TOKEN" "{\"targetType\":\"ALBUM\",\"targetId\":\"${SPACE_ALBUM_ID}\"}")
 STATUS=$(status_of "$DUP_SPACE_ALBUM_FAVORITE")
 expect_status "$STATUS" 200 "Add duplicate Space album favorite"
-LIST_FAVORITES=$(curl_json GET "$BASE_URL/favorites?type=ALBUM" "$USER_B_ACCESS_TOKEN")
+LIST_FAVORITES=$(curl_json GET "$BASE_URL/favorites?type=ALBUM&page=0&size=20" "$USER_B_ACCESS_TOKEN")
 STATUS=$(status_of "$LIST_FAVORITES")
 BODY=$(body_of "$LIST_FAVORITES")
 expect_status "$STATUS" 200 "List album favorites"
-expect_jq_true "$BODY" "Album favorites contain Space album" --arg aid "$SPACE_ALBUM_ID" 'map(.targetId) | index($aid) != null'
-FAVORITE_ID=$(printf '%s' "$BODY" | jq -r '.[0].id')
+expect_jq_true "$BODY" "Album favorites contain Space album" --arg aid "$SPACE_ALBUM_ID" '.items | map(.targetId) | index($aid) != null'
+FAVORITE_ID=$(printf '%s' "$BODY" | jq -r '.items[0].id')
 CHECK_FAVORITE=$(curl_json GET "$BASE_URL/favorites/check?targetType=ALBUM&targetId=$SPACE_ALBUM_ID" "$USER_B_ACCESS_TOKEN")
 STATUS=$(status_of "$CHECK_FAVORITE")
 BODY=$(body_of "$CHECK_FAVORITE")
@@ -370,11 +370,11 @@ STATUS=$(status_of "$READD_FAVORITE")
 expect_status "$STATUS" 201 "Re-add favorite before access loss"
 REMOVE_SPACE_MEMBER_STATUS=$(curl_text_status DELETE "$BASE_URL/spaces/$SPACE_ID/members/$USER_B_ID" "$USER_A_ACCESS_TOKEN")
 expect_status "$REMOVE_SPACE_MEMBER_STATUS" 204 "Remove user B from parent Space"
-LIST_FAVORITES_AFTER_ACCESS_LOSS=$(curl_json GET "$BASE_URL/favorites?type=ALBUM" "$USER_B_ACCESS_TOKEN")
+LIST_FAVORITES_AFTER_ACCESS_LOSS=$(curl_json GET "$BASE_URL/favorites?type=ALBUM&page=0&size=20" "$USER_B_ACCESS_TOKEN")
 STATUS=$(status_of "$LIST_FAVORITES_AFTER_ACCESS_LOSS")
 BODY=$(body_of "$LIST_FAVORITES_AFTER_ACCESS_LOSS")
 expect_status "$STATUS" 200 "List favorites after access loss"
-expect_jq_true "$BODY" "Space album favorite hidden after Space access loss" --arg aid "$SPACE_ALBUM_ID" 'map(.targetId) | index($aid) == null'
+expect_jq_true "$BODY" "Space album favorite hidden after Space access loss" --arg aid "$SPACE_ALBUM_ID" '.items | map(.targetId) | index($aid) == null'
 CHECK_FAVORITE_AFTER_ACCESS_LOSS=$(curl_json GET "$BASE_URL/favorites/check?targetType=ALBUM&targetId=$SPACE_ALBUM_ID" "$USER_B_ACCESS_TOKEN")
 STATUS=$(status_of "$CHECK_FAVORITE_AFTER_ACCESS_LOSS")
 BODY=$(body_of "$CHECK_FAVORITE_AFTER_ACCESS_LOSS")

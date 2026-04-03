@@ -4,6 +4,8 @@ import dev.pina.backend.domain.Album;
 import dev.pina.backend.domain.Favorite;
 import dev.pina.backend.domain.FavoriteTargetType;
 import dev.pina.backend.domain.User;
+import dev.pina.backend.pagination.PageRequest;
+import dev.pina.backend.pagination.PageResult;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.persistence.EntityManager;
@@ -18,6 +20,7 @@ import java.util.stream.Collectors;
 @ApplicationScoped
 public class FavoriteService {
 
+	private static final int MAX_PAGE_SIZE = 100;
 	private static final String FAVORITE_PHOTO_LOCK_NAMESPACE = "favorite-target-photo";
 	private static final String FAVORITE_ALBUM_LOCK_NAMESPACE = "favorite-target-album";
 
@@ -69,17 +72,38 @@ public class FavoriteService {
 		}).orElse(false);
 	}
 
-	public List<Favorite> listByUser(UUID userId, FavoriteTargetType targetType) {
+	public PageResult<Favorite> listByUser(UUID userId, FavoriteTargetType targetType, PageRequest pageRequest) {
+		int effectiveSize = pageRequest.effectiveSize(MAX_PAGE_SIZE);
 		List<Favorite> favorites;
 		if (targetType != null) {
-			favorites = Favorite.list("user.id = ?1 and targetType = ?2 order by createdAt desc", userId, targetType);
+			favorites = em.createQuery(
+					"SELECT f FROM Favorite f JOIN FETCH f.user WHERE f.user.id = :userId AND f.targetType = :targetType ORDER BY f.createdAt DESC",
+					Favorite.class).setParameter("userId", userId).setParameter("targetType", targetType)
+					.setFirstResult(pageRequest.offset(MAX_PAGE_SIZE)).setMaxResults(effectiveSize + 1).getResultList();
 		} else {
-			favorites = Favorite.list("user.id = ?1 order by createdAt desc", userId);
+			favorites = em.createQuery(
+					"SELECT f FROM Favorite f JOIN FETCH f.user WHERE f.user.id = :userId ORDER BY f.createdAt DESC",
+					Favorite.class).setParameter("userId", userId).setFirstResult(pageRequest.offset(MAX_PAGE_SIZE))
+					.setMaxResults(effectiveSize + 1).getResultList();
 		}
-		if (favorites.isEmpty()) {
-			return favorites;
+		boolean hasNext = favorites.size() > effectiveSize;
+		List<Favorite> page = hasNext ? favorites.subList(0, effectiveSize) : favorites;
+		List<Favorite> filtered = page.isEmpty() ? page : filterAccessibleFavorites(userId, page);
+		Long totalItems = null;
+		Long totalPages = null;
+		if (pageRequest.needsTotal()) {
+			if (targetType != null) {
+				totalItems = em.createQuery(
+						"SELECT COUNT(f) FROM Favorite f WHERE f.user.id = :userId AND f.targetType = :targetType",
+						Long.class).setParameter("userId", userId).setParameter("targetType", targetType)
+						.getSingleResult();
+			} else {
+				totalItems = em.createQuery("SELECT COUNT(f) FROM Favorite f WHERE f.user.id = :userId", Long.class)
+						.setParameter("userId", userId).getSingleResult();
+			}
+			totalPages = PageResult.totalPages(totalItems, effectiveSize);
 		}
-		return filterAccessibleFavorites(userId, favorites);
+		return new PageResult<>(filtered, pageRequest.page(), effectiveSize, hasNext, totalItems, totalPages);
 	}
 
 	public boolean isFavorited(UUID userId, FavoriteTargetType targetType, UUID targetId) {

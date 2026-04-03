@@ -72,8 +72,9 @@ class AlbumResourceTest {
 	}
 
 	@Test
-	void listAlbumsReturnsArray() {
-		TestAuthHelper.authenticated().when().get("/api/v1/albums").then().statusCode(200).body("$", notNullValue());
+	void listAlbumsReturnsPaginatedResult() {
+		TestAuthHelper.authenticated().when().get("/api/v1/albums").then().statusCode(200).body("items", notNullValue())
+				.body("page", equalTo(0)).body("size", equalTo(50)).body("hasNext", equalTo(false));
 	}
 
 	@Test

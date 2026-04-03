@@ -192,6 +192,7 @@ CREATE TABLE favorites
 
 CREATE UNIQUE INDEX idx_favorites_user_target ON favorites (user_id, target_type, target_id);
 CREATE INDEX idx_favorites_user ON favorites (user_id);
+CREATE INDEX idx_favorites_target ON favorites (target_type, target_id);
 
 -- Refresh tokens
 CREATE TABLE refresh_tokens

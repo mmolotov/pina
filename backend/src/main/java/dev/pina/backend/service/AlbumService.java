@@ -97,12 +97,37 @@ public class AlbumService {
 		return true;
 	}
 
-	public List<Album> listByOwner(UUID ownerId) {
-		return Album.list("personalLibrary.owner.id", ownerId);
+	public PageResult<Album> listByOwner(UUID ownerId, PageRequest pageRequest) {
+		int effectiveSize = pageRequest.effectiveSize(MAX_PAGE_SIZE);
+		List<Album> results = em.createQuery(
+				"SELECT a FROM Album a LEFT JOIN FETCH a.owner LEFT JOIN FETCH a.personalLibrary WHERE a.personalLibrary.owner.id = :ownerId ORDER BY a.createdAt DESC",
+				Album.class).setParameter("ownerId", ownerId).setFirstResult(pageRequest.offset(MAX_PAGE_SIZE))
+				.setMaxResults(effectiveSize + 1).getResultList();
+		return toPage(results, pageRequest, effectiveSize,
+				"SELECT COUNT(a) FROM Album a WHERE a.personalLibrary.owner.id = :ownerId", "ownerId", ownerId);
 	}
 
-	public List<Album> listBySpace(UUID spaceId) {
-		return Album.list("space.id = ?1 order by createdAt desc", spaceId);
+	public PageResult<Album> listBySpace(UUID spaceId, PageRequest pageRequest) {
+		int effectiveSize = pageRequest.effectiveSize(MAX_PAGE_SIZE);
+		List<Album> results = em.createQuery(
+				"SELECT a FROM Album a LEFT JOIN FETCH a.owner LEFT JOIN FETCH a.space WHERE a.space.id = :spaceId ORDER BY a.createdAt DESC",
+				Album.class).setParameter("spaceId", spaceId).setFirstResult(pageRequest.offset(MAX_PAGE_SIZE))
+				.setMaxResults(effectiveSize + 1).getResultList();
+		return toPage(results, pageRequest, effectiveSize, "SELECT COUNT(a) FROM Album a WHERE a.space.id = :spaceId",
+				"spaceId", spaceId);
+	}
+
+	private <T> PageResult<T> toPage(List<T> results, PageRequest pageRequest, int effectiveSize, String countQuery,
+			String paramName, Object paramValue) {
+		boolean hasNext = results.size() > effectiveSize;
+		List<T> items = hasNext ? results.subList(0, effectiveSize) : results;
+		Long totalItems = null;
+		Long totalPages = null;
+		if (pageRequest.needsTotal()) {
+			totalItems = em.createQuery(countQuery, Long.class).setParameter(paramName, paramValue).getSingleResult();
+			totalPages = PageResult.totalPages(totalItems, effectiveSize);
+		}
+		return new PageResult<>(items, pageRequest.page(), effectiveSize, hasNext, totalItems, totalPages);
 	}
 
 	public boolean hasPhoto(Album album, Photo photo) {

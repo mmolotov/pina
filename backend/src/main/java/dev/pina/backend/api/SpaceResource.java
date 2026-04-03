@@ -114,11 +114,13 @@ public class SpaceResource {
 
 	@GET
 	@Path("/{id}/members")
-	public Response listMembers(@PathParam("id") UUID id) {
+	public Response listMembers(@PathParam("id") UUID id, @QueryParam("page") @DefaultValue("0") @Min(0) int page,
+			@QueryParam("size") @DefaultValue("50") @Positive int size,
+			@QueryParam("needsTotal") @DefaultValue("false") boolean needsTotal) {
 		var user = userResolver.currentUser();
 		return requireMember(id, user.id).map(role -> {
-			var members = spaceService.listMembers(id).stream().map(SpaceMemberDto::from).toList();
-			return Response.ok(members).build();
+			var members = spaceService.listMembers(id, new PageRequest(page, size, needsTotal));
+			return Response.ok(PageResponse.from(members, SpaceMemberDto::from)).build();
 		}).orElse(ApiErrors.notFound("Space not found"));
 	}
 
@@ -214,11 +216,13 @@ public class SpaceResource {
 
 	@GET
 	@Path("/{id}/albums")
-	public Response listAlbums(@PathParam("id") UUID id) {
+	public Response listAlbums(@PathParam("id") UUID id, @QueryParam("page") @DefaultValue("0") @Min(0) int page,
+			@QueryParam("size") @DefaultValue("50") @Positive int size,
+			@QueryParam("needsTotal") @DefaultValue("false") boolean needsTotal) {
 		var user = userResolver.currentUser();
 		return requireRole(id, user.id, SpaceRole.VIEWER).map(role -> {
-			var albums = albumService.listBySpace(id).stream().map(AlbumDto::from).toList();
-			return Response.ok(albums).build();
+			var albums = albumService.listBySpace(id, new PageRequest(page, size, needsTotal));
+			return Response.ok(PageResponse.from(albums, AlbumDto::from)).build();
 		}).orElse(ApiErrors.notFound("Space not found"));
 	}
 
@@ -349,11 +353,13 @@ public class SpaceResource {
 
 	@GET
 	@Path("/{id}/invites")
-	public Response listInvites(@PathParam("id") UUID id) {
+	public Response listInvites(@PathParam("id") UUID id, @QueryParam("page") @DefaultValue("0") @Min(0) int page,
+			@QueryParam("size") @DefaultValue("50") @Positive int size,
+			@QueryParam("needsTotal") @DefaultValue("false") boolean needsTotal) {
 		var user = userResolver.currentUser();
 		return requireRole(id, user.id, SpaceRole.ADMIN).map(role -> {
-			var invites = inviteLinkService.listBySpace(id).stream().map(InviteLinkDto::from).toList();
-			return Response.ok(invites).build();
+			var invites = inviteLinkService.listBySpace(id, new PageRequest(page, size, needsTotal));
+			return Response.ok(PageResponse.from(invites, InviteLinkDto::from)).build();
 		}).orElse(ApiErrors.notFound("Space not found"));
 	}
 
