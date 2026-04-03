@@ -3,6 +3,8 @@ import type { AuthResponse, SessionSnapshot, UserDto } from "~/types/api";
 
 const SESSION_STORAGE_KEY = "pina.session";
 const listeners = new Set<() => void>();
+let cachedRawSession: string | null = null;
+let cachedSessionSnapshot: SessionSnapshot | null = null;
 
 function readStoredSession(): SessionSnapshot | null {
   if (typeof window === "undefined") {
@@ -11,13 +13,24 @@ function readStoredSession(): SessionSnapshot | null {
 
   const rawValue = window.sessionStorage.getItem(SESSION_STORAGE_KEY);
   if (!rawValue) {
+    cachedRawSession = null;
+    cachedSessionSnapshot = null;
     return null;
   }
 
+  if (rawValue === cachedRawSession) {
+    return cachedSessionSnapshot;
+  }
+
   try {
-    return JSON.parse(rawValue) as SessionSnapshot;
+    const parsed = JSON.parse(rawValue) as SessionSnapshot;
+    cachedRawSession = rawValue;
+    cachedSessionSnapshot = parsed;
+    return parsed;
   } catch {
     window.sessionStorage.removeItem(SESSION_STORAGE_KEY);
+    cachedRawSession = null;
+    cachedSessionSnapshot = null;
     return null;
   }
 }
@@ -59,7 +72,10 @@ export function persistSession(authResponse: AuthResponse) {
     receivedAt: Date.now(),
   };
 
-  window.sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
+  const rawSession = JSON.stringify(session);
+  cachedRawSession = rawSession;
+  cachedSessionSnapshot = session;
+  window.sessionStorage.setItem(SESSION_STORAGE_KEY, rawSession);
   notifySessionChanged();
 }
 
@@ -68,6 +84,8 @@ export function clearSession() {
     return;
   }
 
+  cachedRawSession = null;
+  cachedSessionSnapshot = null;
   window.sessionStorage.removeItem(SESSION_STORAGE_KEY);
   notifySessionChanged();
 }
@@ -78,13 +96,14 @@ export function updateSessionUser(user: UserDto) {
     return;
   }
 
-  window.sessionStorage.setItem(
-    SESSION_STORAGE_KEY,
-    JSON.stringify({
-      ...session,
-      user,
-    } satisfies SessionSnapshot),
-  );
+  const updatedSession = {
+    ...session,
+    user,
+  } satisfies SessionSnapshot;
+  const rawSession = JSON.stringify(updatedSession);
+  cachedRawSession = rawSession;
+  cachedSessionSnapshot = updatedSession;
+  window.sessionStorage.setItem(SESSION_STORAGE_KEY, rawSession);
   notifySessionChanged();
 }
 
