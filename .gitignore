@@ -76,3 +76,4 @@ logs/
 
 # agents
 .claude/
+.mcp.json
