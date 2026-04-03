@@ -2,6 +2,7 @@ package dev.pina.backend.service;
 
 import at.favre.lib.crypto.bcrypt.BCrypt;
 import dev.pina.backend.domain.AuthProvider;
+import dev.pina.backend.domain.BrowserSessionType;
 import dev.pina.backend.domain.LinkedAccount;
 import dev.pina.backend.domain.RefreshToken;
 import dev.pina.backend.domain.User;
@@ -36,6 +37,9 @@ public class AuthService {
 
 	@Inject
 	TransactionalLockService lockService;
+
+	@Inject
+	BrowserSessionService browserSessionService;
 
 	@ConfigProperty(name = "pina.auth.bcrypt.cost", defaultValue = "12")
 	int bcryptCost;
@@ -209,6 +213,17 @@ public class AuthService {
 		existing.revoked = true;
 		existing.persistAndFlush();
 		return true;
+	}
+
+	@Transactional
+	public BrowserSessionService.BrowserSessionTokens createBrowserSession(User user, BrowserSessionType sessionType,
+			String userAgent, String remoteAddress) {
+		return browserSessionService.createBrowserSession(user, sessionType, userAgent, remoteAddress);
+	}
+
+	@Transactional
+	public boolean logoutBrowserSession(String rawSessionToken) {
+		return browserSessionService.revoke(rawSessionToken);
 	}
 
 	public record TokenPair(String accessToken, String refreshToken, User user) {

@@ -63,6 +63,69 @@ public class PhotoResource {
 	}
 
 	@GET
+	@Path("/geo")
+	public Response geo(@QueryParam("swLat") Double swLat, @QueryParam("swLng") Double swLng,
+			@QueryParam("neLat") Double neLat, @QueryParam("neLng") Double neLng,
+			@QueryParam("page") @DefaultValue("0") @Min(0) int page,
+			@QueryParam("size") @DefaultValue("50") @Positive int size,
+			@QueryParam("needsTotal") @DefaultValue("false") boolean needsTotal) {
+		if (swLat == null || swLng == null || neLat == null || neLng == null) {
+			return ApiErrors.badRequest("swLat, swLng, neLat, neLng are required");
+		}
+		if (!isFinite(swLat) || !isFinite(swLng) || !isFinite(neLat) || !isFinite(neLng)) {
+			return ApiErrors.badRequest("Geo coordinates must be finite numbers");
+		}
+		if (swLat < -90 || swLat > 90 || neLat < -90 || neLat > 90) {
+			return ApiErrors.badRequest("Latitude must be between -90 and 90");
+		}
+		if (swLng < -180 || swLng > 180 || neLng < -180 || neLng > 180) {
+			return ApiErrors.badRequest("Longitude must be between -180 and 180");
+		}
+		if (swLat > neLat) {
+			return ApiErrors.badRequest("swLat must be less than or equal to neLat");
+		}
+		var user = userResolver.currentUser();
+		var photos = photoService.findInBoundingBox(user.id, swLat, swLng, neLat, neLng,
+				new PageRequest(page, size, needsTotal));
+		return Response.ok(PageResponse.from(photos, PhotoDto::from)).build();
+	}
+
+	@GET
+	@Path("/geo/nearby")
+	public Response nearby(@QueryParam("lat") Double lat, @QueryParam("lng") Double lng,
+			@QueryParam("radiusKm") @DefaultValue("10") double radiusKm,
+			@QueryParam("page") @DefaultValue("0") @Min(0) int page,
+			@QueryParam("size") @DefaultValue("50") @Positive int size,
+			@QueryParam("needsTotal") @DefaultValue("false") boolean needsTotal) {
+		if (lat == null || lng == null) {
+			return ApiErrors.badRequest("lat and lng are required");
+		}
+		if (!isFinite(lat) || !isFinite(lng) || !Double.isFinite(radiusKm)) {
+			return ApiErrors.badRequest("Geo coordinates and radiusKm must be finite numbers");
+		}
+		if (lat < -90 || lat > 90) {
+			return ApiErrors.badRequest("Latitude must be between -90 and 90");
+		}
+		if (lng < -180 || lng > 180) {
+			return ApiErrors.badRequest("Longitude must be between -180 and 180");
+		}
+		if (radiusKm <= 0 || radiusKm > 20000) {
+			return ApiErrors.badRequest("radiusKm must be between 0 and 20000");
+		}
+		double deltaLat = radiusKm / 111.0;
+		double cosine = Math.abs(Math.cos(Math.toRadians(lat)));
+		double deltaLng = cosine < 1.0e-9 ? 180.0 : Math.min(180.0, radiusKm / (111.0 * cosine));
+		double swLat = Math.max(-90.0, lat - deltaLat);
+		double neLat = Math.min(90.0, lat + deltaLat);
+		double swLng = deltaLng >= 180.0 ? -180.0 : normalizeLongitude(lng - deltaLng);
+		double neLng = deltaLng >= 180.0 ? 180.0 : normalizeLongitude(lng + deltaLng);
+		var user = userResolver.currentUser();
+		var photos = photoService.findNearby(user.id, lat, lng, radiusKm, swLat, swLng, neLat, neLng,
+				new PageRequest(page, size, needsTotal));
+		return Response.ok(PageResponse.from(photos, PhotoDto::from)).build();
+	}
+
+	@GET
 	@Path("/{id}")
 	public Response getById(@PathParam("id") UUID id) {
 		var user = userResolver.currentUser();
@@ -114,5 +177,14 @@ public class PhotoResource {
 		} catch (IllegalArgumentException _) {
 			throw new IllegalArgumentException("Invalid variant: " + variant);
 		}
+	}
+
+	private double normalizeLongitude(double longitude) {
+		double normalized = ((longitude + 180.0) % 360.0 + 360.0) % 360.0 - 180.0;
+		return normalized == -180.0 ? 180.0 : normalized;
+	}
+
+	private boolean isFinite(Double value) {
+		return value != null && Double.isFinite(value);
 	}
 }

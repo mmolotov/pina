@@ -37,13 +37,20 @@ CREATE TABLE photos
     size_bytes          BIGINT                   NOT NULL,
     exif_data           JSONB,
     taken_at            TIMESTAMP WITH TIME ZONE,
-    created_at          TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
+    latitude            DOUBLE PRECISION,
+    longitude           DOUBLE PRECISION,
+    created_at          TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+    CONSTRAINT chk_photo_geo_pair CHECK (
+        (latitude IS NULL AND longitude IS NULL) OR
+        (latitude IS NOT NULL AND longitude IS NOT NULL)
+    )
 );
 
 CREATE INDEX idx_photos_uploader ON photos (uploader_id);
 CREATE INDEX idx_photos_personal_library ON photos (personal_library_id);
 CREATE UNIQUE INDEX idx_photos_uploader_content_hash ON photos (uploader_id, content_hash);
 CREATE INDEX idx_photos_taken_at ON photos (taken_at);
+CREATE INDEX idx_photos_geo ON photos (latitude, longitude) WHERE latitude IS NOT NULL;
 
 -- Photo variants (original, compressed, thumbnails)
 CREATE TABLE photo_variants
@@ -220,3 +227,22 @@ ALTER TABLE albums ADD CONSTRAINT chk_album_ownership
     );
 
 CREATE INDEX idx_albums_space ON albums (space_id);
+
+-- Browser sessions (cookie-backed auth)
+CREATE TABLE browser_sessions
+(
+    id              UUID PRIMARY KEY                  DEFAULT gen_random_uuid(),
+    user_id         UUID                     NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    session_hash    VARCHAR(64)              NOT NULL UNIQUE,
+    csrf_token_hash VARCHAR(64)              NOT NULL,
+    session_type    VARCHAR(32)              NOT NULL,
+    user_agent_hash VARCHAR(64),
+    ip_hash         VARCHAR(64),
+    expires_at      TIMESTAMP WITH TIME ZONE NOT NULL,
+    revoked_at      TIMESTAMP WITH TIME ZONE,
+    created_at      TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_browser_sessions_user_id ON browser_sessions (user_id);
+CREATE INDEX idx_browser_sessions_expires_at ON browser_sessions (expires_at);
+CREATE INDEX idx_browser_sessions_revoked_at ON browser_sessions (revoked_at);

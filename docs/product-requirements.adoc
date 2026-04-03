@@ -157,19 +157,22 @@ a|
 | ID | FR-1.2
 
 | Description
-| Users can browse their uploaded photos with pagination, retrieve photo metadata, and download specific variants.
+| Users can browse their uploaded photos with pagination, retrieve photo metadata, download specific variants, and query geo-tagged photos for map-based browsing.
 
 | Variants
 | `ORIGINAL` (if stored), `COMPRESSED`, `THUMB_SM`, `THUMB_MD`, `THUMB_LG`.
 
 | Behavior
-| List endpoint returns a paginated response for the active user's uploaded photos. Metadata endpoint returns JSON with photo details and variant list. File endpoint streams the binary with correct Content-Type.
+| List endpoint returns a paginated response for the active user's uploaded photos. Metadata endpoint returns JSON with photo details and variant list. File endpoint streams the binary with correct Content-Type. Geo endpoints return the active user's geo-tagged photos for a bounding box or nearby-radius query, exclude photos without GPS coordinates, and use a marker-oriented payload for map browsing.
 
 | Acceptance Criteria
 a|
 * `GET /photos?page=&size=&needsTotal=` returns the active user's uploaded photos in reverse chronological order with pagination metadata.
 * `GET /photos/{id}` returns photo metadata with all variant info.
 * `GET /photos/{id}/file?variant=THUMB_SM` returns the small thumbnail with `image/*` content type.
+* [Implemented] `GET /photos/geo?swLat=&swLng=&neLat=&neLng=` returns only geo-tagged photos belonging to the active user for the requested viewport.
+* [Implemented] Geo map payloads omit heavy fields for marker lists: `exifData = null` and `variants = []`.
+* [Implemented] `GET /photos/geo/nearby?lat=&lng=&radiusKm=` returns only geo-tagged photos belonging to the active user within the requested radius and orders them by actual distance.
 * Requesting a non-existent variant returns HTTP 404.
 |===
 
@@ -463,16 +466,19 @@ a|
 
 | Methods
 a|
-* Username + password (built-in).
-* OIDC: Google, GitHub (extensible to other providers).
-* Telegram Login Widget.
+* Username + password (built-in), exposed as both bearer-token auth with refresh-token rotation and browser-session auth with cookie + CSRF protection.
+* OIDC: Google [Implemented], GitHub [Future] (extensible to other providers).
+* Telegram Login Widget / WebApp auth [Future].
 
 | Acceptance Criteria
 a|
-* Users can register with username and password.
-* Users can log in via Google or GitHub OAuth.
-* Telegram users are automatically authenticated in the Mini App via WebApp SDK.
-* First-time OIDC/Telegram users get an account created automatically.
+* [Implemented] Users can register with username and password.
+* [Implemented] Users can authenticate with bearer tokens and rotate refresh tokens without re-entering credentials.
+* [Implemented] Browser clients can register/login with session cookies and must send `X-CSRF-Token` for mutating requests.
+* [Implemented] Users can log in via Google ID token verification.
+* [Future] Users can log in via GitHub OAuth.
+* [Future] Telegram users are automatically authenticated in the Mini App via WebApp SDK.
+* [Implemented for Google; Future for Telegram] First-time external-login users get an account created automatically.
 |===
 
 ==== FR-4.2: User Profile
@@ -1212,13 +1218,24 @@ Notes:
 
 | `POST` | `/api/v1/auth/register` | Username/password registration
 | `POST` | `/api/v1/auth/login` | Username/password login
+| `POST` | `/api/v1/auth/session/register` | Username/password registration with browser session issuance
+| `POST` | `/api/v1/auth/session/login` | Username/password login with browser session issuance
 | `POST` | `/api/v1/auth/google` | Google OIDC login/register via ID token
 | `POST` | `/api/v1/auth/link/google` | Link Google account to current user
 | `POST` | `/api/v1/auth/refresh` | Exchange refresh token for new token pair
 | `POST` | `/api/v1/auth/logout` | Revoke refresh token
+| `POST` | `/api/v1/auth/session/logout` | Revoke the current browser session
 | `GET` | `/api/v1/auth/me` | Current user profile
 | `PUT` | `/api/v1/auth/me` | Update profile (name, email)
 |===
+
+Browser session notes:
+
+* Browser session endpoints return `UserDto` and set an httpOnly session cookie plus a readable CSRF cookie.
+* Mutating requests authenticated by browser session must include `X-CSRF-Token`.
+* Bearer-token authentication remains available for non-browser clients.
+* Browser-session issuance endpoints are rate-limited and intended for web clients; bearer-token auth remains the default for programmatic clients.
+* Stored browser-session IP and user-agent hashes are audit metadata derived from trusted remote-address resolution; they are not used as strict binding checks during authentication.
 
 === Spaces [Implemented in Phase 2]
 

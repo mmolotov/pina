@@ -43,14 +43,23 @@ Legend: ✅ done · 🔲 todo
 ## Phase 3: Frontend
 
 - ✅ Framework selection: React + React Router 7 + Vite + Tailwind CSS
-- 🔲 Gallery view (grid, timeline) — mixed photos & videos
-- 🔲 Photo viewer (zoom, swipe, EXIF panel)
-- 🔲 Video player (inline, adaptive streaming, playback controls)
-- 🔲 Upload UI (drag & drop, progress, batch) — photos & videos
-- 🔲 Album management
-- 🔲 Search: text, faces, tags
-- 🔲 Admin panel: Space management, users, invite links, ML pipeline config, transcoding config, storage stats, system health dashboard
-- 🔲 Responsive / mobile-friendly
+- ✅ Public routes: landing page, login, register, invite join flow
+- ✅ App shell: protected layout, navigation, session-aware route guards
+- ✅ Gallery view (grid) for photos and albums
+- ✅ Timeline view for photos grouped by day
+- ✅ Photo viewer with metadata / EXIF panel and favorite toggle
+- ✅ Upload UI for photos (single-file multipart flow)
+- ✅ Batch upload UX for photos (multi-file input + drag and drop queue)
+- ✅ Album management for personal library
+- ✅ Favorites UI for photos and albums
+- ✅ Spaces UI: list, detail, members, subspaces, invites
+- ✅ Space albums UI and shared Space photo preview
+- ✅ Profile / settings route with session synchronization
+- ✅ Search route shell and navigation contract
+- ✅ Responsive / mobile-friendly baseline
+- ✅ Frontend tests: Vitest route and component coverage for key flows
+- 🔲 Search backend integration: text, faces, tags
+- 🔲 Admin panel: real instance administration UI, pending backend admin endpoints
 
 ## Phase 4: ML Service (basic)
 
@@ -79,6 +88,7 @@ Legend: ✅ done · 🔲 todo
 
 ## Phase 6: Advanced Features
 
+- 🔲 Rate limiting on auth and invite-join endpoints (infrastructure level: reverse proxy or API gateway)
 - 🔲 Additional ML models: captioning, OCR, NSFW detection, aesthetic scoring, geo estimation
 - 🔲 Custom user-uploaded ONNX models
 - 🔲 Duplicate detection (perceptual hashing)
@@ -106,6 +116,7 @@ Legend: ✅ done · 🔲 todo
 - 🔲 Re-transcode trigger (admin)
 - 🔲 Video storage policies: store originals toggle, max upload size
 - 🔲 Unified album media endpoint (photos + videos)
+- 🔲 Video player in the web frontend
 - 🔲 Video deletion (cascade: all variants, poster, animated thumbnail)
 - 🔲 FFmpeg bundled in Docker image
 - 🔲 Audio transcription (speech-to-text) as optional ML pipeline step

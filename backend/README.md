@@ -1,11 +1,14 @@
 # PINA Backend
 
 Backend for PINA: photo ingestion, derived variants, Personal Library ownership, album references,
-JWT authentication, ownership enforcement, and Spaces with role-based access.
+JWT authentication, cookie-backed browser sessions, ownership enforcement, and Spaces with role-based
+access.
 
 What is implemented today (Phase 1 + Phase 2):
 
 - JWT authentication: username/password registration & login (SmallRye JWT + BCrypt)
+- Cookie-backed browser sessions for web clients with httpOnly session cookies, CSRF protection,
+  server-side revocation, and scheduled cleanup
 - Refresh token flow: short-lived access tokens (15 min) + long-lived refresh tokens (30 days) with
   rotation
 - Google OIDC login + account linking (jose4j JWKS token verification)
@@ -21,6 +24,8 @@ What is implemented today (Phase 1 + Phase 2):
   tracking, expiration, usage limits)
 - Favorites: per-user favorite photos and albums (videos pending Phase 7)
 - Photo upload, metadata retrieval, file serving, and deletion
+- Geo search for personal photos via bounding box and nearby queries
+- Hybrid auth model: browser sessions for web clients, bearer JWTs for API/programmatic clients
 - Media Asset model backed by `photos` + `photo_variants`
 - Auto-created `PersonalLibrary` for the current user
 - Albums stored in the user's Personal Library
@@ -54,7 +59,19 @@ export PINA_JWT_PRIVATE_KEY=/path/to/privateKey.pem
 export PINA_JWT_PUBLIC_KEY=/path/to/publicKey.pem
 ```
 
-### 2. Build & run
+### 2. Reverse proxy (production)
+
+When deployed behind a reverse proxy (nginx, Caddy, etc.), set the trusted proxy address
+so Quarkus correctly resolves client IPs from `X-Forwarded-For`:
+
+```bash
+export PINA_TRUSTED_PROXIES=10.0.0.0/8   # CIDR of your proxy network
+```
+
+This is required for rate limiting to work correctly — without it, all requests
+appear to come from the proxy IP.
+
+### 3. Build & run
 
 ```bash
 ./gradlew quarkusDev          # dev mode with hot reload
@@ -98,6 +115,23 @@ Behavior notes:
 - it covers the same end-to-end flow described in `./docs/api-manual-test-scenarios.md`
 - if `PHOTO_FILE` is not provided, the script generates a temporary 1x1 PNG and removes it on exit
 
+## Planning Docs
+
+- Operational backlog: `../backlog/`
+- Manual API scenarios: `./docs/api-manual-test-scenarios.md`
+- Admin prerequisites: `./docs/admin-panel-backend-requirements.md`
+
+Use `Backlog.md` for active backend task management:
+
+```bash
+backlog task list --plain
+backlog board
+backlog browser
+```
+
+The backend backlog items that used to live in `./docs/backlog.md` are now tracked as task files
+under `../backlog/tasks/`.
+
 ## Stack
 
 | Dependency         | Version | Notes                                                          |
@@ -116,11 +150,14 @@ Behavior notes:
 
 ## Current Domain Model
 
-- `User`: authenticated user; resolved from JWT subject claim
+- `User`: authenticated user; resolved from bearer JWT subject or browser-session principal
 - `LinkedAccount`: links a user to an auth provider (LOCAL, GOOGLE, TELEGRAM) with provider-specific
   credentials
+- `BrowserSession`: server-managed browser session with hashed session token, hashed CSRF token,
+  type, expiry, revocation, and audit-oriented user-agent/IP metadata
 - `PersonalLibrary`: one per user, created automatically on registration
-- `Photo`: media asset owned by a user and anchored in that user's Personal Library
+- `Photo`: media asset owned by a user and anchored in that user's Personal Library, with optional
+  `takenAt`, `latitude`, and `longitude` extracted from EXIF
 - `PhotoVariant`: stored derivative files (`ORIGINAL`, `COMPRESSED`, `THUMB_*`)
 - `Album`: user-owned collection inside the same Personal Library (or a Space)
 - `AlbumPhoto`: reference edge from album to existing photo asset
@@ -159,9 +196,12 @@ dev.pina.backend/
 
 Main services:
 
-- `AuthService`: registration, authentication (BCrypt), JWT token generation, Google OIDC login +
-  account linking
-- `UserResolver`: resolves current user from JWT subject claim; profile updates
+- `AuthService`: registration, authentication (BCrypt), JWT token generation, browser-session
+  issuance/revocation, Google OIDC login + account linking
+- `BrowserSessionService`: persistent browser-session issuance, lookup, revocation, cleanup, and
+  trusted remote-address resolution for audit metadata
+- `UserResolver`: resolves current user from either bearer JWT or browser-session identity; profile
+  updates
 - `PhotoService`: upload pipeline, dedup, variant generation, delete rules
 - `AlbumService`: create/update/delete albums, manage album references, Space album support
 - `PersonalLibraryService`: resolve or create the user's Personal Library
@@ -180,7 +220,8 @@ Main services:
 3. Reuse existing asset on duplicate hash for the same uploader; allow separate `Photo` rows for
    different uploaders even when the file content is identical.
 4. Decode image and extract EXIF.
-5. Persist `Photo` in the uploader's Personal Library.
+5. Persist `Photo` in the uploader's Personal Library, including typed `takenAt`, `latitude`, and
+   `longitude` when present.
 6. Generate original/compressed/thumbnail variants; stored file paths are keyed by `photo.id`, not
    by the content hash.
 7. Store variant metadata in `photo_variants`.
@@ -195,9 +236,9 @@ and `png`. Default is `jpeg`.
 
 ## API
 
-All endpoints under `/api/v1/*` require a valid JWT `Authorization: Bearer <token>` header,
-except for registration, login, Google OIDC, refresh, logout, invite preview, health, and OpenAPI
-endpoints.
+All endpoints under `/api/v1/*` require either a valid JWT `Authorization: Bearer <token>` header
+or a valid browser session cookie, except for registration, login, Google OIDC, refresh, logout,
+invite preview, health, and OpenAPI endpoints.
 
 ### Auth
 
@@ -205,9 +246,12 @@ endpoints.
 |--------|----------------------------|-------------------------------------------|
 | `POST` | `/api/v1/auth/register`    | Register with username + password         |
 | `POST` | `/api/v1/auth/login`       | Login, returns JWT token                  |
+| `POST` | `/api/v1/auth/session/register` | Register and create browser session  |
+| `POST` | `/api/v1/auth/session/login` | Login and create browser session        |
 | `POST` | `/api/v1/auth/google`      | Login/register via Google ID token        |
 | `POST` | `/api/v1/auth/refresh`     | Exchange refresh token for new token pair |
 | `POST` | `/api/v1/auth/logout`      | Revoke refresh token                      |
+| `POST` | `/api/v1/auth/session/logout` | Revoke current browser session         |
 | `POST` | `/api/v1/auth/link/google` | Link Google account to current user       |
 | `GET`  | `/api/v1/auth/me`          | Get current user profile                  |
 | `PUT`  | `/api/v1/auth/me`          | Update current user profile               |
@@ -232,15 +276,47 @@ Auth response format (register, login, google, refresh):
 - Refresh tokens are single-use (rotation): each refresh invalidates the old token and issues a new
   one
 
+Browser-session auth notes:
+
+- `POST /api/v1/auth/session/register` and `POST /api/v1/auth/session/login` return `UserDto` and
+  set two cookies: httpOnly `PINA_SESSION` and readable `PINA_CSRF`
+- authenticated browser requests can use the session cookie instead of a bearer token
+- bearer JWT + refresh tokens remain available for SPA/API clients that use explicit authorization
+  headers
+- mutating requests authenticated by browser session must send `X-CSRF-Token` with the value from
+  the `PINA_CSRF` cookie
+- browser-session cookies use explicit `SameSite` settings and can be restricted to approved CORS
+  origins only
+- auth endpoints that create browser sessions are rate-limited, and expired/revoked sessions are
+  purged by a scheduled cleanup job
+
 ### Photos
 
 | Method   | Path                                          | Description                                             |
 |----------|-----------------------------------------------|---------------------------------------------------------|
 | `GET`    | `/api/v1/photos?page=&size=&needsTotal=`      | List current user's uploaded photos with pagination     |
+| `GET`    | `/api/v1/photos/geo?swLat=&swLng=&neLat=&neLng=&page=&size=&needsTotal=` | List current user's geo-tagged photos in a bounding box |
+| `GET`    | `/api/v1/photos/geo/nearby?lat=&lng=&radiusKm=&page=&size=&needsTotal=` | List current user's geo-tagged photos near a point      |
 | `POST`   | `/api/v1/photos`                              | Upload photo from multipart field `file`                |
 | `GET`    | `/api/v1/photos/{id}`                         | Get photo metadata                                      |
 | `GET`    | `/api/v1/photos/{id}/file?variant=COMPRESSED` | Stream a stored variant                                 |
 | `DELETE` | `/api/v1/photos/{id}`                         | Delete asset and variants if no album references remain |
+
+Photo geo search notes:
+
+- Geo endpoints return only the current uploader's own photos; Space album geo queries are still out
+  of scope.
+- Photos without GPS coordinates are excluded from geo query results.
+- Bounding box queries support antimeridian-crossing windows by passing `swLng > neLng`.
+- `GET /api/v1/photos/geo` requires finite coordinates, latitude range `[-90, 90]`, longitude range
+  `[-180, 180]`, and `swLat <= neLat`.
+- Geo list endpoints return a marker-oriented `PhotoDto` subset for map browsing: `exifData` is
+  `null` and `variants` is an empty list, while identity, filename, dimensions, coordinates,
+  timestamps, and `personalLibraryId` remain present.
+- `GET /api/v1/photos/geo/nearby` applies a bounding-box prefilter and then keeps only photos within
+  the requested radius, ordered by actual distance with deterministic `takenAt` / `id` tie-breakers.
+- The current frontend uses these endpoints for personal-library map browsing with URL-driven
+  viewport state and client-side clustering.
 
 ### Albums
 

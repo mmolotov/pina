@@ -1,10 +1,10 @@
 ---
 id: TASK-001
 title: AUTH-006 Browser-session security hardening
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-04-03 13:37'
-updated_date: '2026-04-03 14:26'
+updated_date: '2026-04-03 18:26'
 labels:
   - backend
   - auth
@@ -25,10 +25,10 @@ Make the browser-session model production-safe for regular web and Telegram WebA
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Session cookies are not exposed to JavaScript
-- [ ] #2 Cross-origin browser auth works only for approved origins
-- [ ] #3 Expired or revoked sessions are rejected consistently
-- [ ] #4 Security-sensitive auth endpoints are covered by automated tests
+- [x] #1 Session cookies are not exposed to JavaScript
+- [x] #2 Cross-origin browser auth works only for approved origins
+- [x] #3 Expired or revoked sessions are rejected consistently
+- [x] #4 Security-sensitive auth endpoints are covered by automated tests
 <!-- AC:END -->
 
 ## Implementation Notes

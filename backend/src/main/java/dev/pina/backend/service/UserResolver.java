@@ -2,6 +2,7 @@ package dev.pina.backend.service;
 
 import dev.pina.backend.api.dto.UpdateProfileRequest;
 import dev.pina.backend.domain.User;
+import io.quarkus.security.identity.SecurityIdentity;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.persistence.PersistenceException;
@@ -15,10 +16,14 @@ import org.eclipse.microprofile.jwt.JsonWebToken;
 public class UserResolver {
 
 	@Inject
-	JsonWebToken jwt;
+	SecurityIdentity securityIdentity;
 
 	public User currentUser() {
-		String subject = jwt.getSubject();
+		if (securityIdentity == null || securityIdentity.isAnonymous()) {
+			throw new WebApplicationException(Response.Status.UNAUTHORIZED);
+		}
+
+		String subject = resolveSubject();
 		if (subject == null) {
 			throw new WebApplicationException(Response.Status.UNAUTHORIZED);
 		}
@@ -28,6 +33,21 @@ public class UserResolver {
 			throw new WebApplicationException(Response.Status.UNAUTHORIZED);
 		}
 		return user;
+	}
+
+	public String currentAuthMethod() {
+		if (securityIdentity == null || securityIdentity.isAnonymous()) {
+			throw new WebApplicationException(Response.Status.UNAUTHORIZED);
+		}
+		String authMethod = securityIdentity.getAttribute(BrowserSessionService.AUTH_METHOD_ATTRIBUTE);
+		return authMethod != null ? authMethod : BrowserSessionService.AUTH_METHOD_BEARER;
+	}
+
+	public String currentSessionId() {
+		if (securityIdentity == null || securityIdentity.isAnonymous()) {
+			return null;
+		}
+		return securityIdentity.getAttribute(BrowserSessionService.SESSION_ID_ATTRIBUTE);
 	}
 
 	@Transactional
@@ -54,5 +74,13 @@ public class UserResolver {
 			throw new EmailAlreadyExistsException();
 		}
 		return user;
+	}
+
+	private String resolveSubject() {
+		var principal = securityIdentity.getPrincipal();
+		if (principal instanceof JsonWebToken jsonWebToken && jsonWebToken.getSubject() != null) {
+			return jsonWebToken.getSubject();
+		}
+		return principal != null ? principal.getName() : null;
 	}
 }

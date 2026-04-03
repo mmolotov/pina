@@ -1,9 +1,10 @@
 ---
 id: TASK-008
 title: FE-GEO-001 Frontend geo search data layer
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-04-03 16:47'
+updated_date: '2026-04-03 17:47'
 labels:
   - frontend
   - geo
@@ -25,10 +26,10 @@ Add frontend API support and route-level state for personal photo geo search so 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Frontend API client supports `/api/v1/photos/geo` and `/api/v1/photos/geo/nearby`
-- [ ] #2 Shared frontend photo types include nullable `latitude` and `longitude`
-- [ ] #3 Route state can store map viewport query parameters and restore them from the URL
-- [ ] #4 Frontend tests cover API parsing, query serialization, and invalid response handling
+- [x] #1 Frontend API client supports `/api/v1/photos/geo` and `/api/v1/photos/geo/nearby`
+- [x] #2 Shared frontend photo types include nullable `latitude` and `longitude`
+- [x] #3 Route state can store map viewport query parameters and restore them from the URL
+- [x] #4 Frontend tests cover API parsing, query serialization, and invalid response handling
 <!-- AC:END -->
 
 ## Implementation Notes

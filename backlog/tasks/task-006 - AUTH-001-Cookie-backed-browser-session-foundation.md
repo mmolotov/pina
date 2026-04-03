@@ -1,9 +1,10 @@
 ---
 id: TASK-006
 title: AUTH-001 Cookie-backed browser session foundation
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-04-03 13:37'
+updated_date: '2026-04-03 18:26'
 labels:
   - backend
   - auth
@@ -24,11 +25,11 @@ Add a server-managed browser session model so regular web clients and Telegram W
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Username/password login can create an httpOnly session cookie
-- [ ] #2 GET /api/v1/auth/me works when authenticated only by the session cookie
-- [ ] #3 Logout revokes the active session and the cookie can no longer access protected endpoints
-- [ ] #4 Mutating browser requests are protected against CSRF
-- [ ] #5 Backend tests cover successful session auth, logout, session revocation, and CSRF rejection
+- [x] #1 Username/password login can create an httpOnly session cookie
+- [x] #2 GET /api/v1/auth/me works when authenticated only by the session cookie
+- [x] #3 Logout revokes the active session and the cookie can no longer access protected endpoints
+- [x] #4 Mutating browser requests are protected against CSRF
+- [x] #5 Backend tests cover successful session auth, logout, session revocation, and CSRF rejection
 <!-- AC:END -->
 
 ## Implementation Notes

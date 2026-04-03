@@ -61,6 +61,12 @@ public class Photo extends PanacheEntityBase {
 	@Column
 	public OffsetDateTime takenAt;
 
+	@Column
+	public Double latitude;
+
+	@Column
+	public Double longitude;
+
 	@Column(nullable = false, updatable = false, insertable = false)
 	@ColumnDefault("now()")
 	public OffsetDateTime createdAt;

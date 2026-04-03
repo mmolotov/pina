@@ -26,7 +26,7 @@ public class ExifExtractor {
 
 	private static final Logger LOG = Logger.getLogger(ExifExtractor.class.getName());
 
-	public record ExifResult(String json, OffsetDateTime takenAt) {
+	public record ExifResult(String json, OffsetDateTime takenAt, Double latitude, Double longitude) {
 	}
 
 	public ExifResult extract(InputStream input) {
@@ -34,6 +34,8 @@ public class ExifExtractor {
 			Metadata metadata = ImageMetadataReader.readMetadata(input);
 			JsonObjectBuilder json = Json.createObjectBuilder();
 			OffsetDateTime takenAt = null;
+			Double latitude = null;
+			Double longitude = null;
 
 			var exifDir = metadata.getFirstDirectoryOfType(ExifSubIFDDirectory.class);
 			if (exifDir != null) {
@@ -56,15 +58,17 @@ public class ExifExtractor {
 			var gpsDir = metadata.getFirstDirectoryOfType(GpsDirectory.class);
 			if (gpsDir != null && gpsDir.getGeoLocation() != null) {
 				var geo = gpsDir.getGeoLocation();
-				json.add("latitude", geo.getLatitude());
-				json.add("longitude", geo.getLongitude());
+				latitude = geo.getLatitude();
+				longitude = geo.getLongitude();
+				json.add("latitude", latitude);
+				json.add("longitude", longitude);
 			}
 
 			var built = json.build();
-			return new ExifResult(built.isEmpty() ? null : built.toString(), takenAt);
+			return new ExifResult(built.isEmpty() ? null : built.toString(), takenAt, latitude, longitude);
 		} catch (ImageProcessingException | IOException e) {
 			LOG.log(Level.FINE, "EXIF extraction failed (best-effort, continuing without metadata)", e);
-			return new ExifResult(null, null);
+			return new ExifResult(null, null, null, null);
 		}
 	}
 
@@ -73,7 +77,7 @@ public class ExifExtractor {
 			return extract(input);
 		} catch (IOException e) {
 			LOG.log(Level.FINE, "EXIF extraction failed (best-effort, continuing without metadata)", e);
-			return new ExifResult(null, null);
+			return new ExifResult(null, null, null, null);
 		}
 	}
 }

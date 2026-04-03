@@ -26,6 +26,9 @@ import java.security.DigestOutputStream;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -41,6 +44,24 @@ public class PhotoService {
 
 	private static final Logger LOG = Logger.getLogger(PhotoService.class.getName());
 	private static final String FAVORITE_TARGET_LOCK_NAMESPACE = "favorite-target-photo";
+	private static final double EARTH_RADIUS_KM = 6371.0088;
+	private static final String GEO_PROJECTION_SELECT = """
+			SELECT new dev.pina.backend.service.PhotoGeoProjection(
+				p.id,
+				p.uploader.id,
+				p.originalFilename,
+				p.mimeType,
+				p.width,
+				p.height,
+				p.sizeBytes,
+				p.personalLibrary.id,
+				p.takenAt,
+				p.latitude,
+				p.longitude,
+				p.createdAt
+			)
+			FROM Photo p
+			""";
 
 	@Inject
 	StorageProvider storage;
@@ -182,17 +203,92 @@ public class PhotoService {
 		for (Photo photo : photos) {
 			photosById.put(photo.id, photo);
 		}
-		if (photosById.size() != photoIds.size()) {
-			throw new IllegalStateException("Photos changed during pagination");
-		}
-		List<Photo> orderedPhotos = photoIds.stream().map(photoId -> {
-			Photo photo = photosById.get(photoId);
-			if (photo == null) {
-				throw new IllegalStateException("Photos changed during pagination");
-			}
-			return photo;
-		}).toList();
+		List<Photo> orderedPhotos = orderExistingPageItems(photoIds, photosById);
 		return new PageResult<>(orderedPhotos, pageRequest.page(), effectiveSize, hasNext, totalItems, totalPages);
+	}
+
+	@Transactional
+	public PageResult<PhotoGeoProjection> findInBoundingBox(UUID uploaderId, double swLat, double swLng, double neLat,
+			double neLng, PageRequest pageRequest) {
+		int effectiveSize = pageRequest.effectiveSize(MAX_PAGE_SIZE);
+		String whereClause = buildGeoBoundsWhereClause(swLng > neLng, swLng, neLng);
+		Map<String, Object> parameters = new LinkedHashMap<>();
+		parameters.put("uploaderId", uploaderId);
+		parameters.put("swLat", swLat);
+		parameters.put("swLng", swLng);
+		parameters.put("neLat", neLat);
+		parameters.put("neLng", neLng);
+
+		List<PhotoGeoProjection> itemsWithLookahead = createGeoProjectionQuery(whereClause,
+				"ORDER BY p.takenAt DESC NULLS LAST, p.id DESC", parameters, effectiveSize, pageRequest)
+				.getResultList();
+		boolean hasNext = itemsWithLookahead.size() > effectiveSize;
+		List<PhotoGeoProjection> items = hasNext ? itemsWithLookahead.subList(0, effectiveSize) : itemsWithLookahead;
+
+		Long totalItems = countGeoItems(whereClause, parameters, pageRequest.needsTotal());
+		Long totalPages = totalItems != null ? PageResult.totalPages(totalItems, effectiveSize) : null;
+		return new PageResult<>(items, pageRequest.page(), effectiveSize, hasNext, totalItems, totalPages);
+	}
+
+	@Transactional
+	public PageResult<PhotoGeoProjection> findNearby(UUID uploaderId, double lat, double lng, double radiusKm,
+			double swLat, double swLng, double neLat, double neLng, PageRequest pageRequest) {
+		int effectiveSize = pageRequest.effectiveSize(MAX_PAGE_SIZE);
+		double latRad = Math.toRadians(lat);
+		boolean polarSearch = Math.abs(Math.cos(latRad)) < 1.0e-9;
+		boolean crossesAntimeridian = swLng > neLng;
+		String longitudePredicate = buildNearbyLongitudePredicate(crossesAntimeridian, swLng, neLng);
+		String distanceExpression = polarSearch
+				? EARTH_RADIUS_KM + " * abs(radians(p.latitude) - :latRad)"
+				: EARTH_RADIUS_KM + " * acos(least(1.0, greatest(-1.0, :sinLat * sin(radians(p.latitude))"
+						+ " + :cosLat * cos(radians(p.latitude)) * cos(radians(p.longitude) - :lngRad))))";
+		String whereClause = "WHERE p.uploader_id = :uploaderId\n" + "\tAND p.latitude IS NOT NULL\n"
+				+ "\tAND p.longitude IS NOT NULL\n" + "\tAND p.latitude BETWEEN :swLat AND :neLat\n" + "\tAND "
+				+ longitudePredicate + "\n" + "\tAND " + distanceExpression + " <= :radiusKm";
+		Map<String, Object> parameters = new LinkedHashMap<>();
+		parameters.put("uploaderId", uploaderId);
+		parameters.put("swLat", swLat);
+		parameters.put("neLat", neLat);
+		parameters.put("radiusKm", radiusKm);
+		if (longitudePredicate.contains(":swLng")) {
+			parameters.put("swLng", swLng);
+			parameters.put("neLng", neLng);
+		}
+		if (polarSearch) {
+			parameters.put("latRad", latRad);
+		} else {
+			parameters.put("sinLat", Math.sin(latRad));
+			parameters.put("cosLat", Math.cos(latRad));
+			parameters.put("lngRad", Math.toRadians(lng));
+		}
+
+		String selectSql = """
+				SELECT
+					p.id,
+					p.uploader_id,
+					p.original_filename,
+					p.mime_type,
+					p.width,
+					p.height,
+					p.size_bytes,
+					p.personal_library_id,
+					p.taken_at,
+					p.latitude,
+					p.longitude,
+					p.created_at
+				FROM photos p
+				""" + whereClause + "\nORDER BY " + distanceExpression + " ASC, p.taken_at DESC NULLS LAST, p.id DESC";
+		var query = em.createNativeQuery(selectSql);
+		setParameters(query, parameters);
+		query.setFirstResult(pageRequest.offset(MAX_PAGE_SIZE));
+		query.setMaxResults(effectiveSize + 1);
+		List<PhotoGeoProjection> itemsWithLookahead = mapGeoProjectionRows(query.getResultList());
+		boolean hasNext = itemsWithLookahead.size() > effectiveSize;
+		List<PhotoGeoProjection> items = hasNext ? itemsWithLookahead.subList(0, effectiveSize) : itemsWithLookahead;
+
+		Long totalItems = countNearbyItems(whereClause, parameters, pageRequest.needsTotal());
+		Long totalPages = totalItems != null ? PageResult.totalPages(totalItems, effectiveSize) : null;
+		return new PageResult<>(items, pageRequest.page(), effectiveSize, hasNext, totalItems, totalPages);
 	}
 
 	private IngestedFile ingestToTempFile(InputStream input) throws IOException {
@@ -225,6 +321,8 @@ public class PhotoService {
 		photo.sizeBytes = ingested.size();
 		photo.exifData = analyzed.exif().json();
 		photo.takenAt = analyzed.exif().takenAt();
+		photo.latitude = analyzed.exif().latitude();
+		photo.longitude = analyzed.exif().longitude();
 		photo.persistAndFlush();
 		return photo;
 	}
@@ -261,6 +359,104 @@ public class PhotoService {
 			} catch (RuntimeException e) {
 				LOG.log(Level.WARNING, "Failed to delete stored variant after transaction commit: " + storagePath, e);
 			}
+		}
+	}
+
+	static <T> List<T> orderExistingPageItems(List<UUID> orderedIds, Map<UUID, T> itemsById) {
+		List<T> orderedItems = new ArrayList<>(orderedIds.size());
+		for (UUID orderedId : orderedIds) {
+			T item = itemsById.get(orderedId);
+			if (item != null) {
+				orderedItems.add(item);
+			}
+		}
+		return List.copyOf(orderedItems);
+	}
+
+	private String buildGeoBoundsWhereClause(boolean crossesAntimeridian, double swLng, double neLng) {
+		return "WHERE p.uploader.id = :uploaderId\n" + "\tAND p.latitude IS NOT NULL\n"
+				+ "\tAND p.longitude IS NOT NULL\n" + "\tAND p.latitude BETWEEN :swLat AND :neLat\n" + "\tAND "
+				+ buildLongitudePredicate(crossesAntimeridian, swLng, neLng);
+	}
+
+	private String buildLongitudePredicate(boolean crossesAntimeridian, double swLng, double neLng) {
+		if (Math.abs(swLng + 180.0) < 1.0e-9 && Math.abs(neLng - 180.0) < 1.0e-9) {
+			return "1 = 1";
+		}
+		return crossesAntimeridian
+				? "(p.longitude >= :swLng OR p.longitude <= :neLng)"
+				: "p.longitude BETWEEN :swLng AND :neLng";
+	}
+
+	private String buildNearbyLongitudePredicate(boolean crossesAntimeridian, double swLng, double neLng) {
+		if (Math.abs(swLng + 180.0) < 1.0e-9 && Math.abs(neLng - 180.0) < 1.0e-9) {
+			return "1 = 1";
+		}
+		return crossesAntimeridian
+				? "(p.longitude >= :swLng OR p.longitude <= :neLng)"
+				: "p.longitude BETWEEN :swLng AND :neLng";
+	}
+
+	private jakarta.persistence.TypedQuery<PhotoGeoProjection> createGeoProjectionQuery(String whereClause,
+			String orderByClause, Map<String, Object> parameters, int effectiveSize, PageRequest pageRequest) {
+		var query = em.createQuery(GEO_PROJECTION_SELECT + whereClause + " " + orderByClause, PhotoGeoProjection.class);
+		setParameters(query, parameters);
+		query.setFirstResult(pageRequest.offset(MAX_PAGE_SIZE));
+		query.setMaxResults(effectiveSize + 1);
+		return query;
+	}
+
+	private Long countGeoItems(String whereClause, Map<String, Object> parameters, boolean needsTotal) {
+		if (!needsTotal) {
+			return null;
+		}
+		var query = em.createQuery("SELECT COUNT(p) FROM Photo p " + whereClause, Long.class);
+		setParameters(query, parameters);
+		return query.getSingleResult();
+	}
+
+	private Long countNearbyItems(String whereClause, Map<String, Object> parameters, boolean needsTotal) {
+		if (!needsTotal) {
+			return null;
+		}
+		var query = em.createNativeQuery("SELECT COUNT(*) FROM photos p " + whereClause);
+		setParameters(query, parameters);
+		return ((Number) query.getSingleResult()).longValue();
+	}
+
+	private List<PhotoGeoProjection> mapGeoProjectionRows(List<?> rows) {
+		List<PhotoGeoProjection> result = new ArrayList<>(rows.size());
+		for (Object row : rows) {
+			Object[] values = (Object[]) row;
+			result.add(new PhotoGeoProjection((UUID) values[0], (UUID) values[1], (String) values[2],
+					(String) values[3], values[4] != null ? ((Number) values[4]).intValue() : null,
+					values[5] != null ? ((Number) values[5]).intValue() : null, ((Number) values[6]).longValue(),
+					(UUID) values[7], toOffsetDateTime(values[8]),
+					values[9] != null ? ((Number) values[9]).doubleValue() : null,
+					values[10] != null ? ((Number) values[10]).doubleValue() : null, toOffsetDateTime(values[11])));
+		}
+		return result;
+	}
+
+	private OffsetDateTime toOffsetDateTime(Object value) {
+		if (value == null) {
+			return null;
+		}
+		if (value instanceof OffsetDateTime offsetDateTime) {
+			return offsetDateTime;
+		}
+		if (value instanceof java.time.Instant instant) {
+			return instant.atOffset(ZoneOffset.UTC);
+		}
+		if (value instanceof java.sql.Timestamp timestamp) {
+			return timestamp.toInstant().atOffset(ZoneOffset.UTC);
+		}
+		throw new IllegalArgumentException("Unsupported timestamp value: " + value.getClass().getName());
+	}
+
+	private void setParameters(jakarta.persistence.Query query, Map<String, Object> parameters) {
+		for (Map.Entry<String, Object> entry : parameters.entrySet()) {
+			query.setParameter(entry.getKey(), entry.getValue());
 		}
 	}
 }

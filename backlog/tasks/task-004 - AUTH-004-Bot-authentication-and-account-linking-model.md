@@ -9,7 +9,7 @@ labels:
   - auth
   - telegram
   - bot
-milestone: m-2
+milestone: m-4
 dependencies: []
 references:
   - backend/docs/admin-panel-backend-requirements.md

@@ -1,9 +1,10 @@
 ---
 id: TASK-010
 title: FE-GEO-003 Map clustering and geo browse polish
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-04-03 16:47'
+updated_date: '2026-04-03 17:50'
 labels:
   - frontend
   - geo
@@ -26,11 +27,11 @@ Add grouped map rendering for dense photo areas and polish the geo browsing expe
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Dense sets of nearby photo markers are rendered as map clusters instead of overlapping single markers
-- [ ] #2 Cluster interaction supports zooming in and progressively revealing underlying photos
-- [ ] #3 The map UI communicates the number of photos represented by each cluster
-- [ ] #4 List/detail interaction remains coherent when users move between clustered map browsing and individual photo views
-- [ ] #5 Frontend tests cover cluster rendering behavior or the derived clustering integration points
+- [x] #1 Dense sets of nearby photo markers are rendered as map clusters instead of overlapping single markers
+- [x] #2 Cluster interaction supports zooming in and progressively revealing underlying photos
+- [x] #3 The map UI communicates the number of photos represented by each cluster
+- [x] #4 List/detail interaction remains coherent when users move between clustered map browsing and individual photo views
+- [x] #5 Frontend tests cover cluster rendering behavior or the derived clustering integration points
 <!-- AC:END -->
 
 ## Implementation Notes

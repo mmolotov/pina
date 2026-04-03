@@ -32,6 +32,10 @@ public final class ApiErrors {
 		return response(Response.Status.CONFLICT, "conflict", message);
 	}
 
+	public static Response tooManyRequests(String message) {
+		return response(Response.Status.TOO_MANY_REQUESTS, "too_many_requests", message);
+	}
+
 	private static Response response(Response.Status status, String error, String message) {
 		return Response.status(status).type(MediaType.APPLICATION_JSON_TYPE).entity(new ApiError(error, message))
 				.build();

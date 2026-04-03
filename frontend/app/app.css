@@ -1,10 +1,195 @@
 @import "tailwindcss";
 
+:root {
+  --font-display:
+    "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+  --font-body: "Avenir Next", "Segoe UI", Helvetica, sans-serif;
+  --color-bg: #f6efe4;
+  --color-panel: rgba(255, 249, 241, 0.72);
+  --color-panel-strong: rgba(255, 251, 247, 0.94);
+  --color-border: rgba(75, 49, 34, 0.12);
+  --color-text: #22160f;
+  --color-text-muted: #705647;
+  --color-primary: #965d34;
+  --color-primary-strong: #6f4322;
+  --color-success: #2f7a57;
+  --color-danger: #a1453f;
+}
+
 html,
 body {
-  @apply bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100;
+  min-height: 100%;
+}
 
-  @media (prefers-color-scheme: dark) {
-    color-scheme: dark;
+body {
+  font-family: var(--font-body);
+  color: var(--color-text);
+  background:
+    radial-gradient(
+      circle at top left,
+      rgba(246, 203, 160, 0.38),
+      transparent 32%
+    ),
+    radial-gradient(
+      circle at bottom right,
+      rgba(142, 163, 120, 0.22),
+      transparent 28%
+    ),
+    linear-gradient(180deg, #fbf7f1 0%, var(--color-bg) 52%, #efe2d3 100%);
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: var(--font-display);
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+a {
+  color: inherit;
+}
+
+#app {
+  min-height: 100vh;
+}
+
+.app-shell {
+  position: relative;
+}
+
+.app-shell::before {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.18)),
+    repeating-linear-gradient(
+      90deg,
+      transparent 0,
+      transparent 18px,
+      rgba(150, 93, 52, 0.025) 18px,
+      rgba(150, 93, 52, 0.025) 19px
+    );
+  content: "";
+}
+
+.panel {
+  border: 1px solid var(--color-border);
+  border-radius: 1.75rem;
+  background: var(--color-panel);
+  backdrop-filter: blur(18px);
+  box-shadow:
+    0 28px 60px rgba(67, 43, 28, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.5);
+}
+
+.eyebrow {
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+}
+
+.button-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border-radius: 9999px;
+  background: linear-gradient(
+    135deg,
+    var(--color-primary) 0%,
+    var(--color-primary-strong) 100%
+  );
+  color: #fff8f3;
+  padding: 0.85rem 1.35rem;
+  font-weight: 600;
+  box-shadow: 0 16px 36px rgba(111, 67, 34, 0.22);
+  transition:
+    transform 160ms ease,
+    box-shadow 160ms ease,
+    opacity 160ms ease;
+}
+
+.button-primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 20px 44px rgba(111, 67, 34, 0.26);
+}
+
+.button-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border-radius: 9999px;
+  border: 1px solid var(--color-border);
+  background: rgba(255, 253, 249, 0.65);
+  padding: 0.85rem 1.35rem;
+  font-weight: 600;
+  color: var(--color-text);
+  transition:
+    transform 160ms ease,
+    background-color 160ms ease;
+}
+
+.button-secondary:hover {
+  transform: translateY(-1px);
+  background: rgba(255, 252, 247, 0.95);
+}
+
+.field {
+  width: 100%;
+  border: 1px solid var(--color-border);
+  border-radius: 1rem;
+  background: rgba(255, 252, 248, 0.88);
+  padding: 0.95rem 1rem;
+  color: var(--color-text);
+  outline: none;
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.field:focus {
+  border-color: rgba(150, 93, 52, 0.55);
+  box-shadow: 0 0 0 4px rgba(150, 93, 52, 0.12);
+}
+
+.status-dot {
+  display: inline-block;
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 9999px;
+}
+
+.status-dot-loading {
+  background: #b99a83;
+  animation: pulse 1.5s infinite;
+}
+
+.status-dot-up {
+  background: var(--color-success);
+}
+
+.status-dot-down {
+  background: var(--color-danger);
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 1;
   }
 }

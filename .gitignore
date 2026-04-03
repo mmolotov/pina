@@ -41,6 +41,7 @@ venv/
 # Node / TypeScript
 node_modules/
 dist/
+coverage/
 .next/
 .nuxt/
 *.tsbuildinfo

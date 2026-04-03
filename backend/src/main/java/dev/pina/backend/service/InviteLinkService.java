@@ -146,8 +146,8 @@ public class InviteLinkService {
 		if (link.expiration != null && !link.expiration.isAfter(now)) {
 			return false;
 		}
-    return link.usageLimit == null || link.usageCount < link.usageLimit;
-  }
+		return link.usageLimit == null || link.usageCount < link.usageLimit;
+	}
 
 	private String generateCode() {
 		StringBuilder sb = new StringBuilder(CODE_LENGTH);

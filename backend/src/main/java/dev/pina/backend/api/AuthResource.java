@@ -9,11 +9,14 @@ import dev.pina.backend.api.dto.RegisterRequest;
 import dev.pina.backend.api.dto.UpdateProfileRequest;
 import dev.pina.backend.api.dto.UserDto;
 import dev.pina.backend.api.error.ApiErrors;
+import dev.pina.backend.domain.BrowserSessionType;
 import dev.pina.backend.service.AuthService;
+import dev.pina.backend.service.BrowserSessionService;
 import dev.pina.backend.service.EmailAlreadyExistsException;
 import dev.pina.backend.service.GoogleTokenVerifier;
 import dev.pina.backend.service.UserResolver;
 import dev.pina.backend.service.UsernameAlreadyExistsException;
+import io.vertx.ext.web.RoutingContext;
 import jakarta.annotation.security.PermitAll;
 import jakarta.inject.Inject;
 import jakarta.validation.Valid;
@@ -23,6 +26,9 @@ import jakarta.ws.rs.POST;
 import jakarta.ws.rs.PUT;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.core.Context;
+import jakarta.ws.rs.core.Cookie;
+import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 
@@ -39,6 +45,12 @@ public class AuthResource {
 
 	@Inject
 	UserResolver userResolver;
+
+	@Inject
+	BrowserSessionService browserSessionService;
+
+	@Inject
+	RoutingContext routingContext;
 
 	@POST
 	@Path("/register")
@@ -58,6 +70,27 @@ public class AuthResource {
 	public Response login(@Valid LoginRequest request) {
 		return authService.authenticate(request.username(), request.password())
 				.map(user -> Response.ok(buildAuthResponse(user)).build())
+				.orElse(ApiErrors.unauthorized("Invalid username or password"));
+	}
+
+	@POST
+	@Path("/session/register")
+	@PermitAll
+	public Response registerSession(@Valid RegisterRequest request, @Context HttpHeaders headers) {
+		try {
+			var user = authService.register(request.username(), request.password(), request.name());
+			return buildSessionResponse(user, headers);
+		} catch (UsernameAlreadyExistsException e) {
+			return ApiErrors.conflict(e.getMessage());
+		}
+	}
+
+	@POST
+	@Path("/session/login")
+	@PermitAll
+	public Response loginSession(@Valid LoginRequest request, @Context HttpHeaders headers) {
+		return authService.authenticate(request.username(), request.password())
+				.map(user -> buildSessionResponse(user, headers))
 				.orElse(ApiErrors.unauthorized("Invalid username or password"));
 	}
 
@@ -92,6 +125,19 @@ public class AuthResource {
 	public Response logout(@Valid LogoutRequest request) {
 		authService.logout(request.refreshToken());
 		return Response.noContent().build();
+	}
+
+	@POST
+	@Path("/session/logout")
+	@PermitAll
+	@Consumes(MediaType.WILDCARD)
+	public Response logoutSession(@Context HttpHeaders headers) {
+		Cookie sessionCookie = headers.getCookies().get(browserSessionService.getSessionCookieName());
+		if (sessionCookie != null) {
+			authService.logoutBrowserSession(sessionCookie.getValue());
+		}
+		return Response.noContent()
+				.cookie(browserSessionService.clearSessionCookie(), browserSessionService.clearCsrfCookie()).build();
 	}
 
 	@POST
@@ -130,5 +176,13 @@ public class AuthResource {
 		var accessToken = authService.generateAccessToken(user);
 		var refreshToken = authService.createRefreshToken(user);
 		return AuthResponse.of(accessToken, refreshToken, authService.getAccessTokenLifespan(), user);
+	}
+
+	private Response buildSessionResponse(dev.pina.backend.domain.User user, HttpHeaders headers) {
+		String remoteAddress = browserSessionService.resolveTrustedRemoteAddress(routingContext);
+		var sessionTokens = authService.createBrowserSession(user, BrowserSessionType.WEB,
+				headers.getHeaderString(HttpHeaders.USER_AGENT), remoteAddress);
+		return Response.ok(UserDto.from(user)).cookie(browserSessionService.newSessionCookie(sessionTokens),
+				browserSessionService.newCsrfCookie(sessionTokens)).build();
 	}
 }

@@ -5,6 +5,14 @@ BASE_URL="${BASE_URL:-http://127.0.0.1:8080/api/v1}"
 RUN_ID="${RUN_ID:-manual_phase2_$(date +%s)}"
 JSON_HEADER="Content-Type: application/json"
 PHOTO_FILE="${PHOTO_FILE:-/tmp/pina-manual-${RUN_ID}.png}"
+GEO_PHOTO_INSIDE_FILE="/tmp/pina-manual-geo-inside-${RUN_ID}.jpg"
+GEO_PHOTO_OUTSIDE_FILE="/tmp/pina-manual-geo-outside-${RUN_ID}.jpg"
+
+GEO_PHOTO_INSIDE_BASE64='/9j/4QCIRXhpZgAASUkqAAgAAAABACWIBAABAAAAGgAAAAAAAAAEAAEAAgACAAAATgAAAAIABQADAAAAUAAAAAMAAgACAAAARQAAAAQABQADAAAAaAAAAAAAAAAsAAAAAQAAADEAAAABAAAAQIMAABAnAAAUAAAAAQAAABsAAAABAAAAUE4HABAnAAD/4AAQSkZJRgABAQAAAQABAAD/2wBDAAMCAgICAgMCAgIDAwMDBAYEBAQEBAgGBgUGCQgKCgkICQkKDA8MCgsOCwkJDRENDg8QEBEQCgwSExIQEw8QEBD/2wBDAQMDAwQDBAgEBAgQCwkLEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBD/wAARCAAKAAoDAREAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAf/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAf/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCRK2l4AAD/2Q=='
+GEO_PHOTO_OUTSIDE_BASE64='/9j/4QCIRXhpZgAASUkqAAgAAAABACWIBAABAAAAGgAAAAAAAAAEAAEAAgACAAAATgAAAAIABQADAAAAUAAAAAMAAgACAAAARQAAAAQABQADAAAAaAAAAAAAAAAwAAAAAQAAADMAAAABAAAAIKADABAnAAACAAAAAQAAABUAAAABAAAAYDUBABAnAAD/4AAQSkZJRgABAQAAAQABAAD/2wBDAAMCAgICAgMCAgIDAwMDBAYEBAQEBAgGBgUGCQgKCgkICQkKDA8MCgsOCwkJDRENDg8QEBEQCgwSExIQEw8QEBD/2wBDAQMDAwQDBAgEBAgQCwkLEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBD/wAARCAAKAAoDAREAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAf/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAf/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCFJosYAAD/2Q=='
+
+# This smoke script intentionally covers the current non-admin backend API surface.
+# Instance-level admin endpoints are tracked separately and are not exercised here yet.
 
 require_bin() {
   local name="$1"
@@ -134,6 +142,8 @@ expect_jq_true() {
 
 cleanup() {
   rm -f "$PHOTO_FILE"
+  rm -f "$GEO_PHOTO_INSIDE_FILE"
+  rm -f "$GEO_PHOTO_OUTSIDE_FILE"
 }
 
 require_bin curl
@@ -142,6 +152,8 @@ require_bin base64
 trap cleanup EXIT
 
 printf 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a7x8AAAAASUVORK5CYII=' | base64 -d > "$PHOTO_FILE"
+printf '%s' "$GEO_PHOTO_INSIDE_BASE64" | base64 -d > "$GEO_PHOTO_INSIDE_FILE"
+printf '%s' "$GEO_PHOTO_OUTSIDE_BASE64" | base64 -d > "$GEO_PHOTO_OUTSIDE_FILE"
 
 echo "Scenario 1. Health Check"
 HEALTH_JSON=$(curl --retry 30 --retry-all-errors --retry-connrefused --retry-delay 1 -sS "$BASE_URL/health")
@@ -226,9 +238,35 @@ REMOVE_A_PHOTO_FROM_ALBUM_STATUS=$(curl_text_status DELETE "$BASE_URL/albums/$US
 expect_status "$REMOVE_A_PHOTO_FROM_ALBUM_STATUS" 204 "Remove photo from personal album"
 DELETE_A_ALBUM_STATUS=$(curl_text_status DELETE "$BASE_URL/albums/$USER_A_ALBUM_ID" "$USER_A_ACCESS_TOKEN")
 expect_status "$DELETE_A_ALBUM_STATUS" 204 "Delete personal album"
+DELETE_A_PHOTO_STATUS=$(curl_text_status DELETE "$BASE_URL/photos/$USER_A_PHOTO_ID" "$USER_A_ACCESS_TOKEN")
+expect_status "$DELETE_A_PHOTO_STATUS" 204 "Delete photo after removing album reference"
+
+echo "Scenario 7a. Geo Photo Queries"
+UPLOAD_GEO_INSIDE=$(curl_multipart "$BASE_URL/photos" "$USER_A_ACCESS_TOKEN" "$GEO_PHOTO_INSIDE_FILE")
+STATUS=$(status_of "$UPLOAD_GEO_INSIDE")
+BODY=$(body_of "$UPLOAD_GEO_INSIDE")
+expect_status "$STATUS" 201 "Upload geo-tagged photo inside bounding box"
+GEO_INSIDE_ID=$(printf '%s' "$BODY" | jq -r '.id')
+expect_jq_true "$BODY" "Inside geo photo exposes expected coordinates" '.latitude > 44.81 and .latitude < 44.82 and .longitude > 20.46 and .longitude < 20.47'
+UPLOAD_GEO_OUTSIDE=$(curl_multipart "$BASE_URL/photos" "$USER_A_ACCESS_TOKEN" "$GEO_PHOTO_OUTSIDE_FILE")
+STATUS=$(status_of "$UPLOAD_GEO_OUTSIDE")
+BODY=$(body_of "$UPLOAD_GEO_OUTSIDE")
+expect_status "$STATUS" 201 "Upload geo-tagged photo outside bounding box"
+GEO_OUTSIDE_ID=$(printf '%s' "$BODY" | jq -r '.id')
+expect_jq_true "$BODY" "Outside geo photo exposes expected coordinates" '.latitude > 48.85 and .latitude < 48.86 and .longitude > 2.35 and .longitude < 2.36'
+LIST_GEO_BBOX=$(curl_json GET "$BASE_URL/photos/geo?swLat=44.70&swLng=20.30&neLat=44.90&neLng=20.60&page=0&size=20&needsTotal=true" "$USER_A_ACCESS_TOKEN")
+STATUS=$(status_of "$LIST_GEO_BBOX")
+BODY=$(body_of "$LIST_GEO_BBOX")
+expect_status "$STATUS" 200 "List geo photos in Belgrade bounding box"
+expect_jq_true "$BODY" "Bounding box returns only the inside geo photo as marker payload" --arg inside "$GEO_INSIDE_ID" --arg outside "$GEO_OUTSIDE_ID" '.items | length == 1 and any(.id == $inside and .exifData == null and (.variants | length == 0)) and all(.id != $outside)'
+LIST_GEO_NEARBY=$(curl_json GET "$BASE_URL/photos/geo/nearby?lat=44.8176&lng=20.4633&radiusKm=5&page=0&size=20&needsTotal=true" "$USER_A_ACCESS_TOKEN")
+STATUS=$(status_of "$LIST_GEO_NEARBY")
+BODY=$(body_of "$LIST_GEO_NEARBY")
+expect_status "$STATUS" 200 "List nearby geo photos around Belgrade point"
+expect_jq_true "$BODY" "Nearby query returns only the close geo photo" --arg inside "$GEO_INSIDE_ID" --arg outside "$GEO_OUTSIDE_ID" '.items | length == 1 and .[0].id == $inside and all(.id != $outside)'
 
 echo "Scenario 8. Space Membership Flow"
-CREATE_SPACE=$(curl_json POST "$BASE_URL/spaces" "$USER_A_ACCESS_TOKEN" '{"name":"Manual Space","description":"Collaborative test space"}')
+CREATE_SPACE=$(curl_json POST "$BASE_URL/spaces" "$USER_A_ACCESS_TOKEN" '{"name":"Manual Space","description":"Main manual test space","visibility":"PRIVATE"}')
 STATUS=$(status_of "$CREATE_SPACE")
 BODY=$(body_of "$CREATE_SPACE")
 expect_status "$STATUS" 201 "Create space"
@@ -236,11 +274,11 @@ SPACE_ID=$(printf '%s' "$BODY" | jq -r '.id')
 ADD_SPACE_MEMBER=$(curl_json POST "$BASE_URL/spaces/$SPACE_ID/members" "$USER_A_ACCESS_TOKEN" "{\"userId\":\"${USER_B_ID}\",\"role\":\"MEMBER\"}")
 STATUS=$(status_of "$ADD_SPACE_MEMBER")
 expect_status "$STATUS" 201 "Add user B as member"
-LIST_SPACE_MEMBERS=$(curl_json GET "$BASE_URL/spaces/$SPACE_ID/members?page=0&size=20" "$USER_A_ACCESS_TOKEN")
+LIST_SPACE_MEMBERS=$(curl_json GET "$BASE_URL/spaces/$SPACE_ID/members?page=0&size=20&needsTotal=true" "$USER_A_ACCESS_TOKEN")
 STATUS=$(status_of "$LIST_SPACE_MEMBERS")
 BODY=$(body_of "$LIST_SPACE_MEMBERS")
 expect_status "$STATUS" 200 "List space members"
-expect_jq_true "$BODY" "Space members contain both A and B" --arg ua "$USER_A_ID" --arg ub "$USER_B_ID" '.items | map(.userId) | index($ua) != null and index($ub) != null'
+expect_jq_true "$BODY" "Space members contain A as OWNER and B as MEMBER" --arg ua "$USER_A_ID" --arg ub "$USER_B_ID" '.items | any(.userId == $ua and .role == "OWNER") and any(.userId == $ub and .role == "MEMBER")'
 
 echo "Scenario 9. Subspace Inheritance Visibility"
 CREATE_SUBSPACE=$(curl_json POST "$BASE_URL/spaces/$SPACE_ID/subspaces" "$USER_A_ACCESS_TOKEN" '{"name":"Manual Subspace","description":"Inherited access test","visibility":"PRIVATE"}')

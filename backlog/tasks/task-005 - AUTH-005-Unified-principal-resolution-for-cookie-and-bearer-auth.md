@@ -1,10 +1,10 @@
 ---
 id: TASK-005
 title: AUTH-005 Unified principal resolution for cookie and bearer auth
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-04-03 13:37'
-updated_date: '2026-04-03 13:38'
+updated_date: '2026-04-03 18:26'
 labels:
   - backend
   - auth
@@ -24,9 +24,9 @@ Make backend authorization independent from whether authentication came from a b
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Protected endpoints behave the same for equivalent authenticated users regardless of auth method
-- [ ] #2 Existing authorization rules do not need per-endpoint branching by client type
-- [ ] #3 Tests cover the same protected route under both session and bearer auth
+- [x] #1 Protected endpoints behave the same for equivalent authenticated users regardless of auth method
+- [x] #2 Existing authorization rules do not need per-endpoint branching by client type
+- [x] #3 Tests cover the same protected route under both session and bearer auth
 <!-- AC:END -->
 
 ## Implementation Notes

@@ -1,9 +1,10 @@
 ---
 id: TASK-009
 title: FE-GEO-002 Map view for photo geo search
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-04-03 16:47'
+updated_date: '2026-04-03 17:47'
 labels:
   - frontend
   - geo
@@ -26,11 +27,11 @@ Implement a frontend map view that loads the user's geo-tagged photos for the cu
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Users can switch to a dedicated map-based photo browsing view in the frontend
-- [ ] #2 The map requests photo data for the current viewport using the backend bounding-box endpoint
-- [ ] #3 Marker selection opens a photo preview or detail navigation for the selected asset
-- [ ] #4 Loading, empty, and error states are presented clearly for the map experience
-- [ ] #5 Frontend tests cover viewport-driven data loading and marker interaction
+- [x] #1 Users can switch to a dedicated map-based photo browsing view in the frontend
+- [x] #2 The map requests photo data for the current viewport using the backend bounding-box endpoint
+- [x] #3 Marker selection opens a photo preview or detail navigation for the selected asset
+- [x] #4 Loading, empty, and error states are presented clearly for the map experience
+- [x] #5 Frontend tests cover viewport-driven data loading and marker interaction
 <!-- AC:END -->
 
 ## Implementation Notes

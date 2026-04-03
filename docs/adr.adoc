@@ -76,7 +76,7 @@ If Quarkus drops a critical extension or a competing framework offers a signific
 
 Status:: Implemented
 Date:: 2026-03-25
-Implementation notes:: Skeleton only — routing and build setup, no gallery UI yet.
+Implementation notes:: Phase 3 SPA now includes the authenticated app shell, library, Spaces, favorites, settings, search shell, and URL-driven geo map browsing with client-side clustering.
 
 ==== Context
 
@@ -99,7 +99,7 @@ TypeScript SPA with React, React Router 7 (file-based routing), Vite, and Tailwi
 
 ==== Review trigger
 
-Before Phase 3 (Frontend) — validate that the chosen libraries cover virtual scroll and gesture requirements.
+If Phase 3/4 UI requirements add gesture-heavy viewers, large virtualized grids, or client-side performance bottlenecks — re-evaluate the stack and supporting libraries.
 
 === LANG-004: Separate Python ML service with gRPC
 
@@ -629,6 +629,48 @@ Short-lived access tokens (15 min) + long-lived refresh tokens (30 days) with si
 ==== Review trigger
 
 If real-time revocation of access tokens is needed (e.g., admin force-logout) — consider a token blacklist with Redis.
+
+=== AUTH-008: Hybrid browser sessions alongside bearer-token auth
+
+Status:: Implemented
+Date:: 2026-04-03
+
+==== Context
+
+Bearer JWT + refresh-token rotation works well for API clients and future bot/integration flows, but web clients benefit from not exposing long-lived session material to JavaScript-accessible storage.
+The frontend also needs a browser-native authentication mode that works with CSRF protection and can coexist with bearer-token auth during the transition to additional clients such as Telegram WebApp.
+
+==== Decision
+
+Keep bearer JWT + refresh tokens as the general API authentication mechanism, and add server-managed browser sessions for web clients.
+
+* `POST /auth/session/register` and `POST /auth/session/login` issue a persistent browser session.
+* The backend stores only hashed session and CSRF tokens in `browser_sessions`.
+* The browser receives an httpOnly session cookie plus a readable CSRF cookie.
+* Mutating browser-session requests must send `X-CSRF-Token`.
+* `UserResolver` accepts either bearer JWTs or a valid browser-session principal.
+* Session-issuing auth endpoints are rate-limited, and expired/revoked sessions are cleaned up asynchronously.
+* Stored IP and user-agent hashes are audit metadata captured from trusted remote-address resolution;
+  they are intentionally not used as hard session-binding checks.
+
+==== Alternatives considered
+
+- **Bearer tokens only for every client** — simpler surface area, but long-lived refresh material remains exposed to XSS in browser clients.
+- **Session auth only** — would complicate non-browser clients and future bot/integration flows that are better served by explicit bearer credentials.
+- **Opaque access tokens with server-side lookup on every request** — more centralized control, but loses the stateless benefits of JWT access tokens for API clients.
+
+==== Consequences
+
+- Web clients can authenticate without storing long-lived refresh material in persistent browser storage.
+- CSRF protection becomes mandatory for mutating browser-session requests.
+- Authentication stays hybrid: browser-session cookies for web UX, bearer tokens for programmatic clients.
+- The backend now maintains server-side session state, cleanup jobs, and rate limiting for session issuance.
+- Session provenance metadata remains useful for audit and future anomaly detection without causing
+  false invalidations when IPs, proxies, or browser versions change.
+
+==== Review trigger
+
+When Telegram WebApp auth is implemented — verify whether it should issue the same browser session type or a dedicated session subtype with separate policy controls.
 
 == Testing
 

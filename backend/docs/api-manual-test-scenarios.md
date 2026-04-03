@@ -11,9 +11,11 @@ Each scenario contains:
 All examples assume the backend is running locally on `http://localhost:8080`.
 
 For a reproducible end-to-end smoke run of this document, use
-`../scripts/manual-smoke.sh`. The script exercises the same backend API flow with generated
-test users and automatic assertions. It is intended for local release/smoke verification, not as a
-replacement for automated integration tests in `../src/test`.
+`../scripts/manual-smoke.sh`. The script exercises the same non-admin backend API flow with
+generated test users and automatic assertions. It intentionally covers the current authenticated,
+library, Spaces, invites, and favorites surface; instance-level admin endpoints are out of scope
+until the ADMIN-001 backend subtasks are implemented. It is intended for local release/smoke
+verification, not as a replacement for automated integration tests in `../src/test`.
 
 ## Preconditions
 
@@ -26,6 +28,20 @@ export PHOTO_FILE="/absolute/path/to/test-image.jpg"
 
 The same `PHOTO_FILE` may be reused across different users. Upload deduplication is scoped per uploader:
 the same user re-uploading the same file gets the existing asset back, while a different user can upload the same bytes independently.
+
+If you want to run the geo scenarios manually, also prepare two JPEG files with GPS EXIF metadata:
+
+- one photo inside the viewport around Belgrade, Serbia, used below (`latitude ~= 44.8176`, `longitude ~= 20.4633`)
+- one photo clearly outside that viewport, for example Paris, France (`latitude ~= 48.8566`, `longitude ~= 2.3522`)
+
+Example variables:
+
+```bash
+export GEO_PHOTO_INSIDE_FILE="/absolute/path/to/geo-belgrade.jpg"
+export GEO_PHOTO_OUTSIDE_FILE="/absolute/path/to/geo-paris.jpg"
+```
+
+The smoke script generates its own embedded geo fixtures automatically; these extra files are needed only for the manual curl walkthrough in this document.
 
 3. Prepare a base URL, a unique run suffix, and content type helpers:
 
@@ -59,6 +75,8 @@ export USER_B_ACCESS_TOKEN=""
 export USER_B_REFRESH_TOKEN=""
 export USER_A_PHOTO_ID=""
 export USER_A_ALBUM_ID=""
+export USER_A_GEO_INSIDE_PHOTO_ID=""
+export USER_A_GEO_OUTSIDE_PHOTO_ID=""
 export USER_B_PHOTO_ID=""
 export USER_B_ALBUM_ID=""
 export SPACE_ID=""
@@ -329,6 +347,74 @@ curl -sS -i \
 Expected result:
 
 - HTTP status is `204 No Content`
+
+## Scenario 7a. Geo Photo Queries
+
+Description: verify geo-tagged photo upload plus bounding-box and nearby map queries for the current user's personal library.
+
+Step 1. Upload the geo-tagged photo inside the Belgrade viewport as user A.
+
+```bash
+curl -sS -i \
+  -H "Authorization: Bearer $USER_A_ACCESS_TOKEN" \
+  -F "file=@$GEO_PHOTO_INSIDE_FILE" \
+  "$BASE_URL/photos"
+```
+
+Expected result:
+
+- HTTP status is `201 Created`
+- response body contains non-null `latitude` and `longitude`
+- returned coordinates match the Belgrade-area photo
+- copy returned photo ID into `USER_A_GEO_INSIDE_PHOTO_ID`
+
+Step 2. Upload the geo-tagged photo outside the Belgrade viewport as user A.
+
+```bash
+curl -sS -i \
+  -H "Authorization: Bearer $USER_A_ACCESS_TOKEN" \
+  -F "file=@$GEO_PHOTO_OUTSIDE_FILE" \
+  "$BASE_URL/photos"
+```
+
+Expected result:
+
+- HTTP status is `201 Created`
+- response body contains non-null `latitude` and `longitude`
+- returned coordinates match the outside-viewport photo
+- copy returned photo ID into `USER_A_GEO_OUTSIDE_PHOTO_ID`
+
+Step 3. Query geo-tagged photos in the Belgrade bounding box.
+
+```bash
+curl -sS -i \
+  -H "Authorization: Bearer $USER_A_ACCESS_TOKEN" \
+  "$BASE_URL/photos/geo?swLat=44.70&swLng=20.30&neLat=44.90&neLng=20.60&page=0&size=20&needsTotal=true"
+```
+
+Expected result:
+
+- HTTP status is `200 OK`
+- response body contains paginated `items`
+- `items` contains `USER_A_GEO_INSIDE_PHOTO_ID`
+- `items` does not contain `USER_A_GEO_OUTSIDE_PHOTO_ID`
+- the marker payload omits heavy fields: `exifData` is `null` and `variants` is an empty array
+
+Step 4. Query nearby geo-tagged photos around the Belgrade point.
+
+```bash
+curl -sS -i \
+  -H "Authorization: Bearer $USER_A_ACCESS_TOKEN" \
+  "$BASE_URL/photos/geo/nearby?lat=44.8176&lng=20.4633&radiusKm=5&page=0&size=20&needsTotal=true"
+```
+
+Expected result:
+
+- HTTP status is `200 OK`
+- response body contains paginated `items`
+- `items` contains `USER_A_GEO_INSIDE_PHOTO_ID`
+- `items` does not contain `USER_A_GEO_OUTSIDE_PHOTO_ID`
+- photos without GPS coordinates are excluded from both geo result sets
 
 ## Scenario 8. Space Creation And Membership
 

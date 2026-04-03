@@ -6,6 +6,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- Cookie-backed browser session authentication with persistent `browser_sessions` storage
+- Browser-session auth endpoints: `/auth/session/register`, `/auth/session/login`, and `/auth/session/logout`
+- CSRF protection for mutating requests authenticated by session cookie
+- Scheduled cleanup for expired and revoked browser sessions
+- Rate limiting for auth endpoints that create or refresh sessions
+- Unified auth resolution across bearer JWT and browser session identities
+- Geo search for personal photos via `GET /api/v1/photos/geo` (bounding box query)
+- Nearby photo search via `GET /api/v1/photos/geo/nearby`
+- Dedicated `latitude` and `longitude` fields in `Photo` and `PhotoDto`
+- EXIF GPS extraction promoted to typed geo fields in `ExifExtractor.ExifResult`
+- Geo-focused API tests covering upload response mapping, bounding box search, nearby search, pole handling,
+  antimeridian queries, and exclusion of photos without GPS coordinates
+
+### Changed
+
+- Auth resources and `UserResolver` now work with either bearer tokens or browser sessions without
+  per-endpoint branching
+- Flyway schema consolidated so photo geo columns and index are now defined directly in `V01__core_schema.sql`
+- Geo query validation hardened for inverted latitude ranges and non-finite numeric inputs
+- Nearby longitude expansion normalized for pole-adjacent searches and antimeridian-safe bounding boxes
+- Bounding box pagination now keeps the same concurrent-change protection used by regular photo listing
+
 ## Phase 2
 
 ### Added

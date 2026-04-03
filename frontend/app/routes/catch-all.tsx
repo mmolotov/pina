@@ -1,12 +1,5 @@
-import { useNavigate } from "react-router";
-import { useEffect } from "react";
+import { Navigate } from "react-router";
 
 export default function CatchAll() {
-  const navigate = useNavigate();
-
-  useEffect(() => {
-    navigate("/", { replace: true });
-  }, [navigate]);
-
-  return null;
+  return <Navigate to="/" replace />;
 }

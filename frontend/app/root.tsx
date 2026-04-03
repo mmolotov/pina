@@ -6,11 +6,12 @@ import {
   Scripts,
   ScrollRestoration,
 } from "react-router";
+import type { ReactNode } from "react";
 
 import type { Route } from "./+types/root";
 import "./app.css";
 
-export function Layout({ children }: { children: React.ReactNode }) {
+export function Layout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
       <head>
@@ -49,14 +50,19 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
   }
 
   return (
-    <main className="pt-16 p-4 container mx-auto">
-      <h1>{message}</h1>
-      <p>{details}</p>
-      {stack && (
-        <pre className="w-full p-4 overflow-x-auto">
-          <code>{stack}</code>
-        </pre>
-      )}
+    <main className="app-shell flex min-h-screen items-center justify-center px-6 py-10">
+      <section className="panel max-w-3xl space-y-4 p-8">
+        <p className="eyebrow">Application Error</p>
+        <h1 className="text-4xl font-semibold tracking-tight">{message}</h1>
+        <p className="max-w-2xl text-base text-[var(--color-text-muted)]">
+          {details}
+        </p>
+        {stack && (
+          <pre className="max-h-96 overflow-auto rounded-2xl bg-[var(--color-panel-strong)] p-4 text-xs text-[var(--color-text-muted)]">
+            <code>{stack}</code>
+          </pre>
+        )}
+      </section>
     </main>
   );
 }
