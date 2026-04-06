@@ -7,6 +7,7 @@ import {
   useNavigate,
   useNavigation,
 } from "react-router";
+import { InlineMessage, SurfaceCard } from "~/components/ui";
 import { joinInvite, previewInvite } from "~/lib/api";
 import { toActionErrorMessage } from "~/lib/route-actions";
 import { getSessionSnapshot, useSession } from "~/lib/session";
@@ -77,14 +78,14 @@ export default function JoinInviteRoute({ loaderData }: Route.ComponentProps) {
         </h1>
 
         {errorMessage ? (
-          <p className="mt-5 rounded-2xl border border-[rgba(161,69,63,0.25)] bg-[rgba(161,69,63,0.08)] px-4 py-3 text-sm text-[var(--color-danger)]">
+          <InlineMessage className="mt-5" tone="danger">
             {errorMessage}
-          </p>
+          </InlineMessage>
         ) : null}
 
         {loaderData ? (
           <div className="mt-6 space-y-4">
-            <div className="rounded-3xl border border-[var(--color-border)] bg-[var(--color-panel-strong)] p-5">
+            <SurfaceCard className="rounded-3xl p-5">
               <p className="eyebrow">Space</p>
               <h2 className="mt-2 text-3xl font-semibold tracking-tight">
                 {loaderData.spaceName}
@@ -103,21 +104,21 @@ export default function JoinInviteRoute({ loaderData }: Route.ComponentProps) {
                   ? "Your current account can accept this invite immediately."
                   : "Log in first and then return here to join the Space."}
               </p>
-            </div>
+            </SurfaceCard>
 
             <div className="grid gap-4 md:grid-cols-2">
-              <div className="rounded-3xl border border-[var(--color-border)] bg-[var(--color-panel)] p-5">
+              <SurfaceCard className="rounded-3xl p-5" tone="subtle">
                 <p className="eyebrow">Join role</p>
                 <p className="mt-2 text-2xl font-semibold tracking-tight">
                   {loaderData.defaultRole}
                 </p>
-              </div>
-              <div className="rounded-3xl border border-[var(--color-border)] bg-[var(--color-panel)] p-5">
+              </SurfaceCard>
+              <SurfaceCard className="rounded-3xl p-5" tone="subtle">
                 <p className="eyebrow">Session state</p>
                 <p className="mt-2 text-2xl font-semibold tracking-tight">
                   {session ? "Authenticated" : "Login required"}
                 </p>
-              </div>
+              </SurfaceCard>
             </div>
 
             <div className="flex flex-wrap gap-3">

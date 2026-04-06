@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import type { Route } from "./+types/app-photo-detail";
-import { Panel } from "~/components/ui";
+import { InlineMessage, Panel, SurfaceCard } from "~/components/ui";
 import {
   ApiError,
   addFavorite,
@@ -134,7 +134,7 @@ export default function AppPhotoDetailRoute({
   if (!photoId) {
     return (
       <Panel className="p-6">
-        <p className="text-sm text-[var(--color-danger)]">
+        <p className="text-sm text-[var(--color-danger-strong)]">
           Photo id is missing.
         </p>
       </Panel>
@@ -202,7 +202,7 @@ export default function AppPhotoDetailRoute({
 
       {errorMessage ? (
         <Panel className="p-4">
-          <p className="text-sm text-[var(--color-danger)]">{errorMessage}</p>
+          <InlineMessage tone="danger">{errorMessage}</InlineMessage>
         </Panel>
       ) : null}
 
@@ -228,15 +228,15 @@ export default function AppPhotoDetailRoute({
       </section>
 
       <section className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
-        <Panel className="overflow-hidden p-3">
+        <Panel className="preview-frame overflow-hidden p-3">
           {imageUrl ? (
             <img
               alt={photo?.originalFilename ?? "Photo preview"}
-              className="h-full min-h-[16rem] w-full rounded-[1.25rem] object-contain bg-[rgba(255,255,255,0.55)] sm:min-h-[22rem] xl:min-h-[26rem]"
+              className="preview-image h-full min-h-[16rem] w-full rounded-[1.25rem] object-contain sm:min-h-[22rem] xl:min-h-[26rem]"
               src={imageUrl}
             />
           ) : (
-            <div className="flex min-h-[16rem] items-center justify-center rounded-[1.25rem] bg-[var(--color-panel-strong)] text-sm text-[var(--color-text-muted)] sm:min-h-[22rem] xl:min-h-[26rem]">
+            <div className="preview-placeholder flex min-h-[16rem] items-center justify-center rounded-[1.25rem] text-sm sm:min-h-[22rem] xl:min-h-[26rem]">
               Loading preview...
             </div>
           )}
@@ -282,12 +282,12 @@ export default function AppPhotoDetailRoute({
             </div>
           </dl>
 
-          <div className="mt-6 rounded-2xl border border-[var(--color-border)] bg-[var(--color-panel-strong)] p-4">
+          <SurfaceCard className="rounded-2xl p-4">
             <p className="eyebrow">EXIF payload</p>
             <pre className="mt-3 max-h-64 overflow-auto text-xs leading-6 text-[var(--color-text-muted)] whitespace-pre-wrap">
               {photo?.exifData || "No EXIF metadata available"}
             </pre>
-          </div>
+          </SurfaceCard>
         </Panel>
       </section>
     </div>

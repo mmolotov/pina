@@ -1,7 +1,15 @@
 import type { Route } from "./+types/app-favorites";
 import { useMemo, useState } from "react";
 import { Link } from "react-router";
-import { EmptyState, PageHeader, Panel } from "~/components/ui";
+import {
+  Badge,
+  EmptyHint,
+  EmptyState,
+  FilterToolbar,
+  PageHeader,
+  Panel,
+  SurfaceCard,
+} from "~/components/ui";
 import {
   listAlbums,
   listFavorites,
@@ -201,14 +209,8 @@ export default function AppFavoritesRoute({
       </section>
 
       {hasAnyFavorites ? (
-        <Panel className="p-5">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <p className="eyebrow">Local filter</p>
-              <p className="mt-2 text-sm text-[var(--color-text-muted)]">
-                Narrow favorite items by filename, album name, or Space name.
-              </p>
-            </div>
+        <FilterToolbar
+          controls={
             <div className="flex w-full flex-col gap-3 md:w-auto md:flex-row">
               <input
                 aria-label="Filter favorites"
@@ -227,8 +229,10 @@ export default function AppFavoritesRoute({
                 Clear filter
               </button>
             </div>
-          </div>
-        </Panel>
+          }
+          description="Narrow favorite items by filename, album name, or Space name."
+          title="Local filter"
+        />
       ) : null}
 
       {!hasAnyFavorites ? (
@@ -247,9 +251,9 @@ export default function AppFavoritesRoute({
                     Personal photo picks
                   </h2>
                 </div>
-                <span className="rounded-full border border-[var(--color-border)] px-3 py-1 text-xs font-semibold">
+                <Badge className="rounded-full px-3 py-1 text-xs font-semibold">
                   {counts.photos} saved
-                </span>
+                </Badge>
               </div>
 
               {data.favoritePhotos.length === 0 ? (
@@ -257,16 +261,13 @@ export default function AppFavoritesRoute({
                   No favorite photos yet.
                 </p>
               ) : filteredFavoritePhotos.length === 0 ? (
-                <p className="mt-6 rounded-2xl border border-dashed border-[var(--color-border)] px-4 py-4 text-sm text-[var(--color-text-muted)]">
+                <EmptyHint className="mt-6">
                   No favorite photos match the current filter.
-                </p>
+                </EmptyHint>
               ) : (
                 <div className="mt-6 grid gap-4 md:grid-cols-2">
                   {filteredFavoritePhotos.map(({ favorite, photo }) => (
-                    <article
-                      className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-panel-strong)] p-4"
-                      key={favorite.id}
-                    >
+                    <SurfaceCard className="rounded-2xl p-4" key={favorite.id}>
                       <div className="flex items-start justify-between gap-3">
                         <div>
                           <h3 className="text-lg font-semibold tracking-tight">
@@ -277,9 +278,12 @@ export default function AppFavoritesRoute({
                             {photo.height ?? "?"}
                           </p>
                         </div>
-                        <span className="rounded-full bg-[rgba(150,93,52,0.12)] px-3 py-1 text-xs font-semibold text-[var(--color-primary-strong)]">
+                        <Badge
+                          className="rounded-full px-3 py-1 text-xs font-semibold"
+                          tone="accent"
+                        >
                           Photo
-                        </span>
+                        </Badge>
                       </div>
                       <p className="mt-3 text-sm text-[var(--color-text-muted)]">
                         {formatBytes(photo.sizeBytes)} · saved{" "}
@@ -291,7 +295,7 @@ export default function AppFavoritesRoute({
                       >
                         Open photo
                       </Link>
-                    </article>
+                    </SurfaceCard>
                   ))}
                 </div>
               )}
@@ -307,9 +311,9 @@ export default function AppFavoritesRoute({
                     Collections worth revisiting
                   </h2>
                 </div>
-                <span className="rounded-full border border-[var(--color-border)] px-3 py-1 text-xs font-semibold">
+                <Badge className="rounded-full px-3 py-1 text-xs font-semibold">
                   {counts.albums} saved
-                </span>
+                </Badge>
               </div>
 
               {data.favoriteAlbums.length === 0 ? (
@@ -317,16 +321,13 @@ export default function AppFavoritesRoute({
                   No favorite albums yet.
                 </p>
               ) : filteredFavoriteAlbums.length === 0 ? (
-                <p className="mt-6 rounded-2xl border border-dashed border-[var(--color-border)] px-4 py-4 text-sm text-[var(--color-text-muted)]">
+                <EmptyHint className="mt-6">
                   No favorite albums match the current filter.
-                </p>
+                </EmptyHint>
               ) : (
                 <div className="mt-6 space-y-4">
                   {filteredFavoriteAlbums.map(({ favorite, album, space }) => (
-                    <article
-                      className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-panel-strong)] p-4"
-                      key={favorite.id}
-                    >
+                    <SurfaceCard className="rounded-2xl p-4" key={favorite.id}>
                       <div className="flex items-start justify-between gap-3">
                         <div>
                           <h3 className="text-lg font-semibold tracking-tight">
@@ -338,9 +339,9 @@ export default function AppFavoritesRoute({
                               : "Personal album"}
                           </p>
                         </div>
-                        <span className="rounded-full border border-[var(--color-border)] px-3 py-1 text-xs font-semibold">
+                        <Badge className="rounded-full px-3 py-1 text-xs font-semibold">
                           Album
-                        </span>
+                        </Badge>
                       </div>
                       <p className="mt-3 text-sm leading-7 text-[var(--color-text-muted)]">
                         {album.description || "No description"}
@@ -354,7 +355,7 @@ export default function AppFavoritesRoute({
                       >
                         {space ? `Open ${space.name}` : "Open library"}
                       </Link>
-                    </article>
+                    </SurfaceCard>
                   ))}
                 </div>
               )}

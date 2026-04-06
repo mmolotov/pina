@@ -10,7 +10,9 @@ The backend is currently complete through **Phase 2**: JWT authentication, Googl
 ownership enforcement, Spaces with role-based access, subspace hierarchy, invite links, Space albums,
 and favorites are implemented. The frontend is in active **Phase 3** implementation with the core SPA
 shell, auth flows, library, timeline, batch photo upload UX, favorites, Spaces, invites, shared
-albums, geo map browsing, search shell, and settings already wired to the backend.
+albums, geo map browsing, search shell, and settings already wired to the backend. The frontend
+quality layer now also includes a semantic design system, explicit light/dark theme switching,
+shared UI primitives, accessibility automation, and browser-level responsive/visual regression tests.
 
 The repository is organized as a monorepo. See [Milestones](MILESTONES.md) for current scope
 and progress.
@@ -47,7 +49,7 @@ docker compose -f docker/docker-compose.yml up --build
 | Component | Current Status                            |
 |-----------|-------------------------------------------|
 | Backend   | Java 25, Quarkus, Gradle                  |
-| Frontend  | React, React Router 7, Vite, Tailwind CSS; Phase 3 in progress |
+| Frontend  | React, React Router 7, Vite, Tailwind CSS; Phase 3 in progress with semantic theming, a11y automation, and Playwright responsive/visual regression checks |
 | Database  | PostgreSQL 17 + pgvector                  |
 | Storage   | Local FS implemented; S3/WebDAV stubbed   |
 | ML        | Planned for Phase 4                       |

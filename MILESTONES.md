@@ -58,6 +58,10 @@ Legend: ✅ done · 🔲 todo
 - ✅ Search route shell and navigation contract
 - ✅ Responsive / mobile-friendly baseline
 - ✅ Frontend tests: Vitest route and component coverage for key flows
+- ✅ Design system foundation: semantic tokens, light/dark theme governance, shared palette semantics
+- ✅ Theme switching: explicit light/dark theme support with persisted user preference
+- ✅ Shared UI style guide and reusable design primitives
+- ✅ Automated UI quality gates: accessibility checks, responsive smoke, visual regression coverage
 - 🔲 Search backend integration: text, faces, tags
 - 🔲 Admin panel: real instance administration UI, pending backend admin endpoints
 

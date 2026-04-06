@@ -10,6 +10,7 @@ import type { ReactNode } from "react";
 
 import type { Route } from "./+types/root";
 import "./app.css";
+import { ThemeProvider, themeBootstrapScript } from "~/lib/theme";
 
 export function Layout({ children }: { children: ReactNode }) {
   return (
@@ -17,13 +18,16 @@ export function Layout({ children }: { children: ReactNode }) {
       <head>
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <script dangerouslySetInnerHTML={{ __html: themeBootstrapScript }} />
         <Meta />
         <Links />
       </head>
       <body>
-        {children}
-        <ScrollRestoration />
-        <Scripts />
+        <ThemeProvider>
+          {children}
+          <ScrollRestoration />
+          <Scripts />
+        </ThemeProvider>
       </body>
     </html>
   );
@@ -58,7 +62,7 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
           {details}
         </p>
         {stack && (
-          <pre className="max-h-96 overflow-auto rounded-2xl bg-[var(--color-panel-strong)] p-4 text-xs text-[var(--color-text-muted)]">
+          <pre className="surface-card max-h-96 overflow-auto rounded-2xl p-4 text-xs text-[var(--color-text-muted)]">
             <code>{stack}</code>
           </pre>
         )}

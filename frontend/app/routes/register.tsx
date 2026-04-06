@@ -9,6 +9,7 @@ import {
   useNavigation,
 } from "react-router";
 import type { Route } from "./+types/register";
+import { InlineMessage, SurfaceCard } from "~/components/ui";
 import { register } from "~/lib/api";
 import { getRedirectTarget, toActionErrorMessage } from "~/lib/route-actions";
 import { persistSession, useSession } from "~/lib/session";
@@ -143,9 +144,7 @@ export default function RegisterRoute() {
             </label>
 
             {errorMessage ? (
-              <p className="rounded-2xl border border-[rgba(161,69,63,0.25)] bg-[rgba(161,69,63,0.08)] px-4 py-3 text-sm text-[var(--color-danger)]">
-                {errorMessage}
-              </p>
+              <InlineMessage tone="danger">{errorMessage}</InlineMessage>
             ) : null}
 
             <button
@@ -157,7 +156,7 @@ export default function RegisterRoute() {
             </button>
           </Form>
 
-          <div className="rounded-3xl border border-[var(--color-border)] bg-[var(--color-panel-strong)] p-5">
+          <SurfaceCard className="rounded-3xl p-5">
             <p className="eyebrow">What happens next</p>
             <ul className="mt-3 space-y-3 text-sm leading-7 text-[var(--color-text-muted)]">
               <li>Your new account is created in the backend immediately.</li>
@@ -167,15 +166,12 @@ export default function RegisterRoute() {
                 available in the current frontend phase.
               </li>
             </ul>
-          </div>
+          </SurfaceCard>
         </div>
 
         <p className="mt-6 text-sm text-[var(--color-text-muted)]">
           Already registered?{" "}
-          <Link
-            className="font-semibold text-[var(--color-primary-strong)]"
-            to="/login"
-          >
+          <Link className="link-accent font-semibold" to="/login">
             Log in
           </Link>
         </p>

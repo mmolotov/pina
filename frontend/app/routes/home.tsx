@@ -79,7 +79,7 @@ export default function Home() {
               <h3 className="mt-3 text-2xl font-semibold tracking-tight">
                 Backend status
               </h3>
-              <div className="mt-5 inline-flex items-center gap-3 rounded-full border border-[var(--color-border)] bg-[var(--color-panel-strong)] px-4 py-3 text-sm text-[var(--color-text-muted)]">
+              <div className="surface-card mt-5 inline-flex items-center gap-3 rounded-full px-4 py-3 text-sm text-[var(--color-text-muted)]">
                 <span
                   className={[
                     "status-dot",
@@ -101,14 +101,14 @@ export default function Home() {
             </div>
 
             <dl className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
-              <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-panel-strong)] p-4">
+              <div className="surface-card rounded-2xl p-4">
                 <dt className="eyebrow">Ready today</dt>
                 <dd className="mt-2 text-sm leading-7 text-[var(--color-text-muted)]">
                   JWT auth, refresh tokens, Google login, Spaces, invite links,
                   shared albums, favorites.
                 </dd>
               </div>
-              <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-panel-strong)] p-4">
+              <div className="surface-card rounded-2xl p-4">
                 <dt className="eyebrow">Next in frontend</dt>
                 <dd className="mt-2 text-sm leading-7 text-[var(--color-text-muted)]">
                   Library browsing, album flows, Space dashboards, and

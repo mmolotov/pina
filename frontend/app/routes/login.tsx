@@ -9,6 +9,7 @@ import {
   useNavigation,
 } from "react-router";
 import type { Route } from "./+types/login";
+import { InlineMessage, SurfaceCard } from "~/components/ui";
 import { login } from "~/lib/api";
 import { getRedirectTarget, toActionErrorMessage } from "~/lib/route-actions";
 import { persistSession, useSession } from "~/lib/session";
@@ -119,9 +120,7 @@ export default function LoginRoute() {
             </label>
 
             {errorMessage ? (
-              <p className="rounded-2xl border border-[rgba(161,69,63,0.25)] bg-[rgba(161,69,63,0.08)] px-4 py-3 text-sm text-[var(--color-danger)]">
-                {errorMessage}
-              </p>
+              <InlineMessage tone="danger">{errorMessage}</InlineMessage>
             ) : null}
 
             <button
@@ -133,7 +132,7 @@ export default function LoginRoute() {
             </button>
           </Form>
 
-          <div className="rounded-3xl border border-[var(--color-border)] bg-[var(--color-panel-strong)] p-5">
+          <SurfaceCard className="rounded-3xl p-5">
             <p className="eyebrow">Session target</p>
             <p className="mt-3 text-sm leading-7 text-[var(--color-text-muted)]">
               After authentication you will be redirected to{" "}
@@ -146,15 +145,12 @@ export default function LoginRoute() {
               Local username/password auth is already connected to the Phase 2
               backend. Google sign-in can be added on top later.
             </p>
-          </div>
+          </SurfaceCard>
         </div>
 
         <p className="mt-6 text-sm text-[var(--color-text-muted)]">
           Need an account?{" "}
-          <Link
-            className="font-semibold text-[var(--color-primary-strong)]"
-            to="/register"
-          >
+          <Link className="link-accent font-semibold" to="/register">
             Create one
           </Link>
         </p>

@@ -1,6 +1,12 @@
 import { Link, useSearchParams } from "react-router";
 import type { Route } from "./+types/app-search";
-import { EmptyState, PageHeader, Panel } from "~/components/ui";
+import {
+  EmptyHint,
+  EmptyState,
+  PageHeader,
+  Panel,
+  SurfaceCard,
+} from "~/components/ui";
 import { listFavorites, listPhotos, listSpaces } from "~/lib/api";
 import { formatRelativeCount } from "~/lib/format";
 import type { PhotoDto, SpaceDto } from "~/types/api";
@@ -258,13 +264,13 @@ export default function AppSearchRoute({ loaderData }: Route.ComponentProps) {
               title="Search backend not connected yet"
             />
           ) : activePreviewItems === 0 ? (
-            <div className="mt-4 rounded-2xl border border-dashed border-[var(--color-border)] px-5 py-6 text-sm leading-7 text-[var(--color-text-muted)]">
+            <EmptyHint className="mt-4 px-5 py-6 leading-7">
               No client-side preview matches were found for{" "}
               <span className="font-semibold text-[var(--color-text)]">
                 {query}
               </span>
               . Full search results will require backend indexing.
-            </div>
+            </EmptyHint>
           ) : (
             <div className="mt-4 space-y-3">
               {scope !== "spaces" ? (
@@ -276,23 +282,27 @@ export default function AppSearchRoute({ loaderData }: Route.ComponentProps) {
                     </p>
                   </div>
                   {matchingPhotos.length === 0 ? (
-                    <p className="rounded-2xl border border-dashed border-[var(--color-border)] px-4 py-4 text-sm text-[var(--color-text-muted)]">
+                    <EmptyHint>
                       No matching photos in the current local preview sample.
-                    </p>
+                    </EmptyHint>
                   ) : (
                     matchingPhotos.map((photo) => (
-                      <Link
-                        className="block rounded-2xl border border-[var(--color-border)] bg-[var(--color-panel-strong)] p-4 hover:bg-white"
+                      <SurfaceCard
+                        className="rounded-2xl p-0 hover:bg-white"
                         key={photo.id}
-                        to={`/app/library/photos/${photo.id}`}
                       >
-                        <p className="text-sm font-semibold">
-                          {photo.originalFilename}
-                        </p>
-                        <p className="mt-1 text-xs text-[var(--color-text-muted)]">
-                          Photo metadata preview
-                        </p>
-                      </Link>
+                        <Link
+                          className="block p-4"
+                          to={`/app/library/photos/${photo.id}`}
+                        >
+                          <p className="text-sm font-semibold">
+                            {photo.originalFilename}
+                          </p>
+                          <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+                            Photo metadata preview
+                          </p>
+                        </Link>
+                      </SurfaceCard>
                     ))
                   )}
                 </div>
@@ -306,21 +316,25 @@ export default function AppSearchRoute({ loaderData }: Route.ComponentProps) {
                     </p>
                   </div>
                   {matchingSpaces.length === 0 ? (
-                    <p className="rounded-2xl border border-dashed border-[var(--color-border)] px-4 py-4 text-sm text-[var(--color-text-muted)]">
+                    <EmptyHint>
                       No matching Spaces in the current local preview sample.
-                    </p>
+                    </EmptyHint>
                   ) : (
                     matchingSpaces.map((space) => (
-                      <Link
-                        className="block rounded-2xl border border-[var(--color-border)] bg-[var(--color-panel-strong)] p-4 hover:bg-white"
+                      <SurfaceCard
+                        className="rounded-2xl p-0 hover:bg-white"
                         key={space.id}
-                        to={`/app/spaces/${space.id}`}
                       >
-                        <p className="text-sm font-semibold">{space.name}</p>
-                        <p className="mt-1 text-xs text-[var(--color-text-muted)]">
-                          Space name preview
-                        </p>
-                      </Link>
+                        <Link
+                          className="block p-4"
+                          to={`/app/spaces/${space.id}`}
+                        >
+                          <p className="text-sm font-semibold">{space.name}</p>
+                          <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+                            Space name preview
+                          </p>
+                        </Link>
+                      </SurfaceCard>
                     ))
                   )}
                 </div>

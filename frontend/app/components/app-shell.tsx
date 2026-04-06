@@ -2,6 +2,7 @@ import { useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router";
 import { logout } from "~/lib/api";
 import { useSession } from "~/lib/session";
+import { useTheme } from "~/lib/theme";
 
 const navItems = [
   { to: "/app", label: "Overview" },
@@ -15,6 +16,7 @@ const navItems = [
 export function AppShell() {
   const navigate = useNavigate();
   const session = useSession();
+  const { theme, toggleTheme } = useTheme();
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
 
   async function handleLogout() {
@@ -29,17 +31,29 @@ export function AppShell() {
           <p className="eyebrow">Phase 3 Frontend</p>
           <h1 className="mt-1 text-2xl font-semibold tracking-tight">PINA</h1>
         </div>
-        <button
-          aria-expanded={isMobileNavOpen}
-          aria-label={isMobileNavOpen ? "Close navigation" : "Open navigation"}
-          className="button-secondary"
-          onClick={() => {
-            setIsMobileNavOpen((current) => !current);
-          }}
-          type="button"
-        >
-          {isMobileNavOpen ? "Close" : "Menu"}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            aria-label={`Switch to ${theme === "light" ? "dark" : "light"} theme`}
+            className="button-secondary"
+            onClick={toggleTheme}
+            type="button"
+          >
+            {theme === "light" ? "Dark theme" : "Light theme"}
+          </button>
+          <button
+            aria-expanded={isMobileNavOpen}
+            aria-label={
+              isMobileNavOpen ? "Close navigation" : "Open navigation"
+            }
+            className="button-secondary"
+            onClick={() => {
+              setIsMobileNavOpen((current) => !current);
+            }}
+            type="button"
+          >
+            {isMobileNavOpen ? "Close" : "Menu"}
+          </button>
+        </div>
       </div>
 
       <div className="mx-auto flex min-h-[calc(100vh-2rem)] max-w-7xl flex-col gap-4 lg:grid lg:grid-cols-[280px_minmax(0,1fr)]">
@@ -64,10 +78,8 @@ export function AppShell() {
                 key={item.to}
                 className={({ isActive }) =>
                   [
-                    "rounded-2xl px-4 py-3 text-sm font-medium transition",
-                    isActive
-                      ? "bg-[var(--color-primary)] text-white shadow-[0_16px_32px_rgba(111,67,34,0.22)]"
-                      : "bg-[var(--color-panel-strong)] text-[var(--color-text)] hover:bg-white",
+                    "nav-link",
+                    isActive ? "nav-link-active" : "nav-link-idle",
                   ].join(" ")
                 }
                 end={item.to === "/app"}
@@ -81,7 +93,7 @@ export function AppShell() {
             ))}
           </nav>
 
-          <div className="rounded-3xl border border-[var(--color-border)] bg-[var(--color-panel-strong)] p-4">
+          <div className="surface-card rounded-3xl p-4">
             <p className="eyebrow">Signed in as</p>
             <p className="mt-2 text-lg font-semibold tracking-tight">
               {session?.user.name ?? "Unknown user"}
@@ -89,8 +101,21 @@ export function AppShell() {
             <p className="mt-1 break-all text-sm text-[var(--color-text-muted)]">
               {session?.user.email ?? "No email configured"}
             </p>
+            <div className="mt-4 flex items-center gap-3">
+              <span className="badge-neutral rounded-full px-3 py-1 text-xs font-semibold">
+                {theme === "light" ? "Light theme" : "Dark theme"}
+              </span>
+              <button
+                aria-label={`Switch to ${theme === "light" ? "dark" : "light"} theme`}
+                className="link-accent text-sm font-semibold"
+                onClick={toggleTheme}
+                type="button"
+              >
+                Switch theme
+              </button>
+            </div>
             <NavLink
-              className="mt-4 inline-flex text-sm font-semibold text-[var(--color-primary-strong)]"
+              className="link-accent mt-4 inline-flex text-sm font-semibold"
               onClick={() => {
                 setIsMobileNavOpen(false);
               }}

@@ -7,7 +7,14 @@ import {
   useNavigation,
   useRevalidator,
 } from "react-router";
-import { EmptyState, PageHeader, Panel } from "~/components/ui";
+import {
+  Badge,
+  EmptyState,
+  FilterToolbar,
+  InlineMessage,
+  PageHeader,
+  Panel,
+} from "~/components/ui";
 import { createSpace, listSpaces } from "~/lib/api";
 import { formatDateTime } from "~/lib/format";
 import { toActionErrorMessage } from "~/lib/route-actions";
@@ -195,9 +202,7 @@ export default function AppSpacesRoute({ loaderData }: Route.ComponentProps) {
             </label>
 
             {createError ? (
-              <p className="rounded-2xl border border-[rgba(161,69,63,0.25)] bg-[rgba(161,69,63,0.08)] px-4 py-3 text-sm text-[var(--color-danger)]">
-                {createError}
-              </p>
+              <InlineMessage tone="danger">{createError}</InlineMessage>
             ) : null}
 
             <button
@@ -218,43 +223,48 @@ export default function AppSpacesRoute({ loaderData }: Route.ComponentProps) {
             />
           ) : (
             <>
-              <Panel className="mb-4 p-4">
-                <div className="grid gap-3 md:grid-cols-[1fr_220px_auto]">
-                  <input
-                    aria-label="Filter spaces"
-                    className="field"
-                    onChange={(event) => {
-                      setSearchTerm(event.target.value);
-                    }}
-                    placeholder="Filter by name or description"
-                    value={searchTerm}
-                  />
-                  <select
-                    aria-label="Filter visibility"
-                    className="field"
-                    onChange={(event) => {
-                      setVisibilityFilter(
-                        event.target.value as "ALL" | SpaceVisibility,
-                      );
-                    }}
-                    value={visibilityFilter}
-                  >
-                    <option value="ALL">All visibility</option>
-                    <option value="PRIVATE">Private only</option>
-                    <option value="PUBLIC">Public only</option>
-                  </select>
-                  <button
-                    className="button-secondary"
-                    onClick={() => {
-                      setSearchTerm("");
-                      setVisibilityFilter("ALL");
-                    }}
-                    type="button"
-                  >
-                    Clear filters
-                  </button>
-                </div>
-              </Panel>
+              <FilterToolbar
+                className="mb-4 p-4"
+                controls={
+                  <div className="grid gap-3 md:grid-cols-[1fr_220px_auto]">
+                    <input
+                      aria-label="Filter spaces"
+                      className="field"
+                      onChange={(event) => {
+                        setSearchTerm(event.target.value);
+                      }}
+                      placeholder="Filter by name or description"
+                      value={searchTerm}
+                    />
+                    <select
+                      aria-label="Filter visibility"
+                      className="field"
+                      onChange={(event) => {
+                        setVisibilityFilter(
+                          event.target.value as "ALL" | SpaceVisibility,
+                        );
+                      }}
+                      value={visibilityFilter}
+                    >
+                      <option value="ALL">All visibility</option>
+                      <option value="PRIVATE">Private only</option>
+                      <option value="PUBLIC">Public only</option>
+                    </select>
+                    <button
+                      className="button-secondary"
+                      onClick={() => {
+                        setSearchTerm("");
+                        setVisibilityFilter("ALL");
+                      }}
+                      type="button"
+                    >
+                      Clear filters
+                    </button>
+                  </div>
+                }
+                description="Filter accessible Spaces by name, description, and visibility."
+                title="Filters"
+              />
 
               {filteredSpaces.length === 0 ? (
                 <EmptyState
@@ -266,9 +276,12 @@ export default function AppSpacesRoute({ loaderData }: Route.ComponentProps) {
                   {filteredSpaces.map((space) => (
                     <Panel className="p-6" key={space.id}>
                       <div className="flex flex-wrap items-center gap-3">
-                        <span className="rounded-full bg-[rgba(150,93,52,0.12)] px-3 py-1 text-xs font-semibold text-[var(--color-primary-strong)]">
+                        <Badge
+                          className="rounded-full px-3 py-1 text-xs font-semibold"
+                          tone="accent"
+                        >
                           {space.visibility.toLowerCase()}
-                        </span>
+                        </Badge>
                         <span className="rounded-full border border-[var(--color-border)] px-3 py-1 text-xs font-semibold text-[var(--color-text-muted)]">
                           depth {space.depth}
                         </span>

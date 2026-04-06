@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { createRoutesStub } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AppShell } from "~/components/app-shell";
+import { ThemeProvider } from "~/lib/theme";
 
 const apiMocks = vi.hoisted(() => ({
   logout: vi.fn(),
@@ -50,7 +51,11 @@ describe("AppShell", () => {
       },
     ]);
 
-    render(<Stub initialEntries={["/app"]} />);
+    render(
+      <ThemeProvider>
+        <Stub initialEntries={["/app"]} />
+      </ThemeProvider>,
+    );
 
     const menuButton = screen.getByRole("button", { name: "Open navigation" });
     expect(menuButton).toHaveAttribute("aria-expanded", "false");
@@ -68,5 +73,33 @@ describe("AppShell", () => {
     expect(
       screen.getByRole("button", { name: "Open navigation" }),
     ).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("switches theme from the shell and updates the document theme", () => {
+    const Stub = createRoutesStub([
+      {
+        path: "/app",
+        Component: AppShell,
+        children: [
+          {
+            index: true,
+            Component: () => <div>Overview content</div>,
+          },
+        ],
+      },
+    ]);
+
+    render(
+      <ThemeProvider>
+        <Stub initialEntries={["/app"]} />
+      </ThemeProvider>,
+    );
+
+    fireEvent.click(
+      screen.getAllByRole("button", { name: "Switch to dark theme" })[0]!,
+    );
+
+    expect(document.documentElement.dataset.theme).toBe("dark");
+    expect(screen.getAllByText("Dark theme").length).toBeGreaterThan(0);
   });
 });

@@ -14,7 +14,16 @@ import {
   useRevalidator,
   useSearchParams,
 } from "react-router";
-import { EmptyState, PageHeader, Panel } from "~/components/ui";
+import {
+  Badge,
+  EmptyHint,
+  EmptyState,
+  FilterToolbar,
+  InlineMessage,
+  PageHeader,
+  Panel,
+  SurfaceCard,
+} from "~/components/ui";
 import {
   ApiError,
   addFavorite,
@@ -780,51 +789,56 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
         title="Photos and albums"
       />
 
-      <Panel className="p-3 sm:p-4">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex flex-wrap gap-2">
-            {[
-              { id: "everything", label: "Everything" },
-              { id: "photos", label: "Photos only" },
-              { id: "timeline", label: "Timeline" },
-              { id: "map", label: "Map" },
-              { id: "albums", label: "Albums only" },
-            ].map((option) => (
+      <FilterToolbar
+        className="p-3 sm:p-4"
+        controls={
+          <div className="flex w-full flex-col gap-4 lg:w-auto lg:flex-row lg:items-center">
+            <div className="flex flex-wrap gap-2">
+              {[
+                { id: "everything", label: "Everything" },
+                { id: "photos", label: "Photos only" },
+                { id: "timeline", label: "Timeline" },
+                { id: "map", label: "Map" },
+                { id: "albums", label: "Albums only" },
+              ].map((option) => (
+                <button
+                  aria-pressed={libraryView === option.id}
+                  className={
+                    libraryView === option.id
+                      ? "button-primary"
+                      : "button-secondary"
+                  }
+                  key={option.id}
+                  onClick={() => activateLibraryView(option.id as LibraryView)}
+                  type="button"
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+            <div className="flex w-full flex-col gap-3 md:w-auto md:flex-row">
+              <input
+                aria-label="Filter library"
+                className="field min-w-0 md:min-w-80"
+                onChange={(event) => setLibraryFilter(event.target.value)}
+                placeholder="Filter photos and albums by name"
+                type="search"
+                value={libraryFilter}
+              />
               <button
-                aria-pressed={libraryView === option.id}
-                className={
-                  libraryView === option.id
-                    ? "button-primary"
-                    : "button-secondary"
-                }
-                key={option.id}
-                onClick={() => activateLibraryView(option.id as LibraryView)}
+                className="button-secondary"
+                disabled={normalizedLibraryFilter.length === 0}
+                onClick={() => setLibraryFilter("")}
                 type="button"
               >
-                {option.label}
+                Clear filter
               </button>
-            ))}
+            </div>
           </div>
-          <div className="flex w-full flex-col gap-3 md:w-auto md:flex-row">
-            <input
-              aria-label="Filter library"
-              className="field min-w-0 md:min-w-80"
-              onChange={(event) => setLibraryFilter(event.target.value)}
-              placeholder="Filter photos and albums by name"
-              type="search"
-              value={libraryFilter}
-            />
-            <button
-              className="button-secondary"
-              disabled={normalizedLibraryFilter.length === 0}
-              onClick={() => setLibraryFilter("")}
-              type="button"
-            >
-              Clear filter
-            </button>
-          </div>
-        </div>
-      </Panel>
+        }
+        description="Switch between library views and narrow photos or albums by filename or collection name."
+        title="Library controls"
+      />
 
       <section className="grid gap-4 md:grid-cols-4">
         <Panel className="p-5">
@@ -857,7 +871,7 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
 
       {errorMessage ? (
         <Panel className="p-4">
-          <p className="text-sm text-[var(--color-danger)]">{errorMessage}</p>
+          <p className="alert-danger">{errorMessage}</p>
         </Panel>
       ) : null}
 
@@ -942,7 +956,7 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
               <>
                 <div className="mt-5 grid gap-3 lg:grid-cols-[0.72fr_0.28fr]">
                   <div className="space-y-3">
-                    <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-panel-strong)] px-4 py-3 text-sm text-[var(--color-text-muted)]">
+                    <SurfaceCard className="rounded-2xl px-4 py-3 text-sm text-[var(--color-text-muted)]">
                       <p className="font-semibold text-[var(--color-text)]">
                         Map legend
                       </p>
@@ -957,7 +971,7 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
                           {libraryFilter}&quot;.
                         </p>
                       ) : null}
-                    </div>
+                    </SurfaceCard>
                     <div className="flex flex-wrap items-center gap-2">
                       <button
                         className="button-secondary"
@@ -996,10 +1010,10 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
                         Pan south
                       </button>
                     </div>
-                    <div className="rounded-3xl border border-[var(--color-border)] bg-[linear-gradient(180deg,rgba(203,227,236,0.88)_0%,rgba(201,225,215,0.78)_55%,rgba(229,217,185,0.88)_100%)] p-3">
-                      <div className="relative min-h-[28rem] overflow-hidden rounded-[1.25rem] border border-[rgba(0,0,0,0.08)] bg-[linear-gradient(90deg,rgba(255,255,255,0.28)_1px,transparent_1px),linear-gradient(180deg,rgba(255,255,255,0.28)_1px,transparent_1px)] bg-[size:12.5%_12.5%]">
+                    <div className="map-shell rounded-3xl p-3">
+                      <div className="map-canvas relative min-h-[28rem] overflow-hidden rounded-[1.25rem]">
                         {geoMapState.loading ? (
-                          <div className="absolute inset-0 flex items-center justify-center bg-[rgba(247,244,236,0.72)] text-sm font-semibold text-[var(--color-text-muted)]">
+                          <div className="map-overlay absolute inset-0 flex items-center justify-center text-sm font-semibold">
                             Loading map markers...
                           </div>
                         ) : null}
@@ -1029,7 +1043,7 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
                                   : "h-4 w-4"
                               } ${
                                 isSelected
-                                  ? "bg-[var(--color-primary-strong)] text-white ring-4 ring-[rgba(150,93,52,0.18)]"
+                                  ? "bg-[var(--color-primary-strong)] text-white ring-4 ring-[var(--map-selected-ring)]"
                                   : "bg-[var(--color-accent-strong)] text-[var(--color-text)] hover:bg-[var(--color-primary-strong)] hover:text-white"
                               }`}
                               key={cluster.id}
@@ -1099,14 +1113,14 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
                     </dl>
 
                     {geoMapState.errorMessage ? (
-                      <p className="mt-4 rounded-2xl border border-[rgba(161,69,63,0.25)] bg-[rgba(161,69,63,0.08)] px-4 py-3 text-sm text-[var(--color-danger)]">
+                      <InlineMessage className="mt-4" tone="danger">
                         {geoMapState.errorMessage}
-                      </p>
+                      </InlineMessage>
                     ) : null}
 
                     {selectedGeoCluster &&
                     selectedGeoCluster.photos.length > 1 ? (
-                      <div className="mt-5 space-y-3 rounded-2xl border border-[var(--color-border)] bg-[var(--color-panel-strong)] p-4">
+                      <SurfaceCard className="mt-5 space-y-3 rounded-2xl p-4">
                         <p className="text-sm font-semibold text-[var(--color-text)]">
                           Cluster of {selectedGeoCluster.photos.length} photos
                         </p>
@@ -1154,9 +1168,9 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
                             into smaller groups.
                           </p>
                         ) : null}
-                      </div>
+                      </SurfaceCard>
                     ) : selectedGeoPhoto ? (
-                      <div className="mt-5 space-y-3 rounded-2xl border border-[var(--color-border)] bg-[var(--color-panel-strong)] p-4">
+                      <SurfaceCard className="mt-5 space-y-3 rounded-2xl p-4">
                         <p className="text-sm font-semibold text-[var(--color-text)]">
                           {selectedGeoPhoto.originalFilename}
                         </p>
@@ -1200,13 +1214,13 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
                         >
                           Open photo detail
                         </Link>
-                      </div>
+                      </SurfaceCard>
                     ) : (
-                      <div className="mt-5 rounded-2xl border border-dashed border-[var(--color-border)] px-4 py-5 text-sm text-[var(--color-text-muted)]">
+                      <EmptyHint className="mt-5 py-5">
                         {geoMapState.loading
                           ? "Loading the current viewport."
                           : "Select a marker to inspect the photo and jump to the detail screen."}
-                      </div>
+                      </EmptyHint>
                     )}
                   </Panel>
                 </div>
@@ -1257,10 +1271,10 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
             ) : (
               <>
                 <div
-                  className={`mt-5 rounded-3xl border border-dashed px-5 py-6 transition ${
+                  className={`surface-dashed mt-5 rounded-3xl px-5 py-6 transition ${
                     isUploadTargetActive
-                      ? "border-[var(--color-accent)] bg-[rgba(190,138,43,0.12)]"
-                      : "border-[var(--color-border)] bg-[var(--color-panel)]"
+                      ? "dropzone-active"
+                      : "bg-[var(--color-panel)]"
                   }`}
                   onDragEnter={(event) => {
                     event.preventDefault();
@@ -1298,7 +1312,7 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
                     queue finishes.
                   </p>
                   {uploadProgress ? (
-                    <p className="mt-3 text-sm text-[var(--color-primary-strong)]">
+                    <p className="link-accent mt-3 text-sm font-semibold">
                       Uploading {uploadProgress.completed + 1} of{" "}
                       {uploadProgress.total}
                       {uploadProgress.currentFileName
@@ -1309,15 +1323,15 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
                 </div>
 
                 {uploadError ? (
-                  <p className="mt-4 rounded-2xl border border-[rgba(161,69,63,0.25)] bg-[rgba(161,69,63,0.08)] px-4 py-3 text-sm text-[var(--color-danger)]">
+                  <InlineMessage className="mt-4" tone="danger">
                     {uploadError}
-                  </p>
+                  </InlineMessage>
                 ) : null}
 
                 {uploadSuccessMessage ? (
-                  <p className="mt-4 rounded-2xl border border-[rgba(43,112,72,0.24)] bg-[rgba(43,112,72,0.09)] px-4 py-3 text-sm text-[rgb(43,112,72)]">
+                  <InlineMessage className="mt-4" tone="success">
                     {uploadSuccessMessage}
-                  </p>
+                  </InlineMessage>
                 ) : null}
               </>
             )}
@@ -1350,14 +1364,11 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
 
                     <div className="mt-4 grid gap-4 md:grid-cols-2">
                       {group.photos.map((photo) => (
-                        <article
-                          key={photo.id}
-                          className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-panel-strong)] p-4"
-                        >
+                        <SurfaceCard className="rounded-2xl p-4" key={photo.id}>
                           <div className="flex items-start justify-between gap-3">
                             <div>
                               <Link
-                                className="text-lg font-semibold tracking-tight hover:text-[var(--color-primary-strong)]"
+                                className="link-accent text-lg font-semibold tracking-tight"
                                 to={`/app/library/photos/${photo.id}`}
                               >
                                 {photo.originalFilename}
@@ -1368,16 +1379,19 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
                                   : "Not favorited"}
                               </p>
                             </div>
-                            <span className="rounded-full bg-[rgba(150,93,52,0.12)] px-3 py-1 text-xs font-semibold text-[var(--color-primary-strong)]">
+                            <Badge
+                              className="rounded-full px-3 py-1 text-xs font-semibold"
+                              tone="accent"
+                            >
                               {(photo.takenAt ?? photo.createdAt).slice(11, 16)}
-                            </span>
+                            </Badge>
                           </div>
 
                           <p className="mt-3 text-sm text-[var(--color-text-muted)]">
                             {photo.width ?? "?"}x{photo.height ?? "?"} ·{" "}
                             {formatBytes(photo.sizeBytes)}
                           </p>
-                        </article>
+                        </SurfaceCard>
                       ))}
                     </div>
                   </section>
@@ -1386,14 +1400,11 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
             ) : (
               <div className="mt-6 grid gap-4 md:grid-cols-2">
                 {filteredPhotos.map((photo) => (
-                  <article
-                    key={photo.id}
-                    className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-panel-strong)] p-4"
-                  >
+                  <SurfaceCard className="rounded-2xl p-4" key={photo.id}>
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <Link
-                          className="text-lg font-semibold tracking-tight hover:text-[var(--color-primary-strong)]"
+                          className="link-accent text-lg font-semibold tracking-tight"
                           to={`/app/library/photos/${photo.id}`}
                         >
                           {photo.originalFilename}
@@ -1411,7 +1422,7 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
                               ? `Remove ${photo.originalFilename} from favorites`
                               : `Add ${photo.originalFilename} to favorites`
                           }
-                          className="text-sm font-semibold text-[var(--color-primary-strong)]"
+                          className="link-accent text-sm font-semibold"
                           disabled={favoriteBusyKey === `photo:${photo.id}`}
                           onClick={() => {
                             void handlePhotoFavoriteToggle(photo.id);
@@ -1425,7 +1436,7 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
                               : "Favorite"}
                         </button>
                         <button
-                          className="text-sm font-semibold text-[var(--color-danger)]"
+                          className="text-link-danger text-sm font-semibold"
                           disabled={
                             pendingIntent === "delete-photo" &&
                             pendingPhotoId === photo.id
@@ -1473,7 +1484,7 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
                         <dd>{formatDateTime(photo.createdAt)}</dd>
                       </div>
                     </dl>
-                  </article>
+                  </SurfaceCard>
                 ))}
               </div>
             )}
@@ -1524,9 +1535,9 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
                 </label>
 
                 {albumActionError ? (
-                  <p className="rounded-2xl border border-[rgba(161,69,63,0.25)] bg-[rgba(161,69,63,0.08)] px-4 py-3 text-sm text-[var(--color-danger)]">
+                  <InlineMessage tone="danger">
                     {albumActionError}
-                  </p>
+                  </InlineMessage>
                 ) : null}
 
                 <button
@@ -1548,13 +1559,13 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
               </h2>
 
               {albums.length === 0 ? (
-                <div className="mt-6 rounded-2xl border border-dashed border-[var(--color-border)] px-5 py-6 text-sm leading-7 text-[var(--color-text-muted)]">
+                <EmptyHint className="mt-6 px-5 py-6 leading-7">
                   No albums yet. Use the form above to create one.
-                </div>
+                </EmptyHint>
               ) : filteredAlbums.length === 0 ? (
-                <div className="mt-6 rounded-2xl border border-dashed border-[var(--color-border)] px-5 py-6 text-sm leading-7 text-[var(--color-text-muted)]">
+                <EmptyHint className="mt-6 px-5 py-6 leading-7">
                   No albums match the current filter.
-                </div>
+                </EmptyHint>
               ) : (
                 <div className="mt-6 space-y-4">
                   {filteredAlbums.map((album) => {
@@ -1566,10 +1577,7 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
                       unassignedPhotosByAlbum[album.id] ?? [];
 
                     return (
-                      <article
-                        key={album.id}
-                        className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-panel-strong)] p-4"
-                      >
+                      <SurfaceCard className="rounded-2xl p-4" key={album.id}>
                         <div className="flex items-start justify-between gap-3">
                           <div>
                             <p className="eyebrow">Album</p>
@@ -1584,7 +1592,7 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
                                   ? `Remove ${album.name} from favorites`
                                   : `Add ${album.name} to favorites`
                               }
-                              className="text-sm font-semibold text-[var(--color-primary-strong)]"
+                              className="link-accent text-sm font-semibold"
                               disabled={favoriteBusyKey === `album:${album.id}`}
                               onClick={() => {
                                 void handleAlbumFavoriteToggle(album.id);
@@ -1598,7 +1606,7 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
                                   : "Favorite"}
                             </button>
                             <button
-                              className="text-sm font-semibold text-[var(--color-danger)]"
+                              className="text-link-danger text-sm font-semibold"
                               disabled={
                                 pendingIntent === "delete-album" &&
                                 pendingAlbumId === album.id
@@ -1747,7 +1755,7 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
                                     </p>
                                   </div>
                                   <button
-                                    className="text-sm font-semibold text-[var(--color-danger)]"
+                                    className="text-link-danger text-sm font-semibold"
                                     disabled={
                                       pendingIntent ===
                                         "remove-photo-from-album" &&
@@ -1784,7 +1792,7 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
                             </div>
                           )}
                         </div>
-                      </article>
+                      </SurfaceCard>
                     );
                   })}
                 </div>
