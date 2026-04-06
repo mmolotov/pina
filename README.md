@@ -13,6 +13,8 @@ shell, auth flows, library, timeline, batch photo upload UX, favorites, Spaces, 
 albums, geo map browsing, search shell, and settings already wired to the backend. The frontend
 quality layer now also includes a semantic design system, explicit light/dark theme switching,
 shared UI primitives, accessibility automation, and browser-level responsive/visual regression tests.
+The current frontend follow-up scope also includes a media-first web app redesign and baseline UI
+localization for English and Russian.
 
 The repository is organized as a monorepo. See [Milestones](MILESTONES.md) for current scope
 and progress.

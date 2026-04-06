@@ -17,7 +17,8 @@ import {
   listSpaceAlbums,
   listSpaces,
 } from "~/lib/api";
-import { formatBytes, formatDateTime } from "~/lib/format";
+import { formatBytes, formatDateTime, formatRelativeCount } from "~/lib/format";
+import { useI18n } from "~/lib/i18n";
 import type { AlbumDto, FavoriteDto, PhotoDto, SpaceDto } from "~/types/api";
 
 type FavoritesView = "all" | "photos" | "albums";
@@ -110,6 +111,7 @@ export async function clientLoader() {
 export default function AppFavoritesRoute({
   loaderData,
 }: Route.ComponentProps) {
+  const { locale, t } = useI18n();
   const [view, setView] = useState<FavoritesView>("all");
   const [filter, setFilter] = useState("");
   const data = loaderData;
@@ -150,95 +152,130 @@ export default function AppFavoritesRoute({
     }),
     [data.favoriteAlbums.length, data.favoritePhotos.length],
   );
+  const favoriteSpaceCount = useMemo(
+    () =>
+      new Set(
+        data.favoriteAlbums
+          .map(({ space }) => space?.id ?? null)
+          .filter((value): value is string => value !== null),
+      ).size,
+    [data.favoriteAlbums],
+  );
+  const countFormatter = new Intl.NumberFormat(locale);
+  const albumForms = {
+    one: t("unit.album.one"),
+    few: t("unit.album.few"),
+    many: t("unit.album.many"),
+    other: t("unit.album.other"),
+  };
 
   return (
     <div className="space-y-8">
       <PageHeader
         actions={
           <>
-            <Link className="button-secondary" to="/app/library">
-              Open library
+            <Link className="button-secondary" to="/app/library?view=albums">
+              {t("app.library.openAlbums")}
             </Link>
-            <Link className="button-primary" to="/app/spaces">
-              Explore Spaces
+            <Link className="button-primary" to="/app/library">
+              {t("app.favorites.openLibrary")}
             </Link>
           </>
         }
-        description="Collected favorites across personal photos and accessible albums, including Space albums."
-        eyebrow="Favorites"
-        title="Saved highlights"
+        description={t("app.favorites.description")}
+        eyebrow={t("app.favorites.eyebrow")}
+        title={t("app.favorites.title")}
       />
 
       <section className="grid gap-4 md:grid-cols-3">
         <Panel className="p-5">
-          <p className="eyebrow">Saved photos</p>
+          <p className="eyebrow">{t("app.favorites.savedPhotos")}</p>
           <p className="mt-3 text-2xl font-semibold tracking-tight">
-            {counts.photos}
+            {countFormatter.format(counts.photos)}
           </p>
         </Panel>
         <Panel className="p-5">
-          <p className="eyebrow">Saved albums</p>
+          <p className="eyebrow">{t("app.favorites.curatedAlbums")}</p>
           <p className="mt-3 text-2xl font-semibold tracking-tight">
-            {counts.albums}
+            {countFormatter.format(counts.albums)}
+          </p>
+          <p className="mt-2 text-sm text-[var(--color-text-muted)]">
+            {t("app.favorites.curatedAlbumsDescription")}
           </p>
         </Panel>
-        <Panel className="p-3 sm:p-5">
-          <p className="eyebrow">Filter</p>
-          <div className="mt-3 flex flex-wrap gap-2">
-            {[
-              { id: "all", label: "Everything" },
-              { id: "photos", label: "Photos" },
-              { id: "albums", label: "Albums" },
-            ].map((option) => (
-              <button
-                aria-pressed={view === option.id}
-                className={
-                  view === option.id ? "button-primary" : "button-secondary"
-                }
-                key={option.id}
-                onClick={() => {
-                  setView(option.id as FavoritesView);
-                }}
-                type="button"
-              >
-                {option.label}
-              </button>
-            ))}
-          </div>
-        </Panel>
+        <SurfaceCard className="rounded-3xl p-5" tone="subtle">
+          <p className="eyebrow">{t("app.favorites.albumsSpacesEyebrow")}</p>
+          <h2 className="mt-2 text-xl font-semibold tracking-tight">
+            {t("app.favorites.albumsSpacesTitle")}
+          </h2>
+          <p className="mt-3 text-sm leading-7 text-[var(--color-text-muted)]">
+            {t("app.favorites.albumsSpacesDescription")}
+          </p>
+          <p className="mt-3 text-sm text-[var(--color-text-muted)]">
+            {t("app.favorites.favoritedAlbumsFromSpaces", {
+              count: formatRelativeCount(favoriteSpaceCount, albumForms),
+            })}
+          </p>
+          <Link className="button-secondary mt-4 w-full" to="/app/spaces">
+            {t("app.favorites.browseSpaces")}
+          </Link>
+        </SurfaceCard>
       </section>
 
       {hasAnyFavorites ? (
         <FilterToolbar
           controls={
-            <div className="flex w-full flex-col gap-3 md:w-auto md:flex-row">
-              <input
-                aria-label="Filter favorites"
-                className="field min-w-0 md:min-w-80"
-                onChange={(event) => setFilter(event.target.value)}
-                placeholder="Filter favorites by text"
-                type="search"
-                value={filter}
-              />
-              <button
-                className="button-secondary"
-                disabled={normalizedFilter.length === 0}
-                onClick={() => setFilter("")}
-                type="button"
-              >
-                Clear filter
-              </button>
+            <div className="flex w-full flex-col gap-3 xl:w-auto xl:flex-row xl:items-center">
+              <div className="flex flex-wrap gap-2">
+                {[
+                  { id: "all", label: t("app.favorites.view.all") },
+                  { id: "photos", label: t("app.favorites.view.photos") },
+                  { id: "albums", label: t("app.favorites.view.albums") },
+                ].map((option) => (
+                  <button
+                    aria-pressed={view === option.id}
+                    className={
+                      view === option.id ? "button-primary" : "button-secondary"
+                    }
+                    key={option.id}
+                    onClick={() => {
+                      setView(option.id as FavoritesView);
+                    }}
+                    type="button"
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+              <div className="flex w-full flex-col gap-3 md:w-auto md:flex-row">
+                <input
+                  aria-label={t("app.favorites.filterLabel")}
+                  className="field min-w-0 md:min-w-80"
+                  onChange={(event) => setFilter(event.target.value)}
+                  placeholder={t("app.favorites.filterPlaceholder")}
+                  type="search"
+                  value={filter}
+                />
+                <button
+                  className="button-secondary"
+                  disabled={normalizedFilter.length === 0}
+                  onClick={() => setFilter("")}
+                  type="button"
+                >
+                  {t("common.clearFilter")}
+                </button>
+              </div>
             </div>
           }
-          description="Narrow favorite items by filename, album name, or Space name."
-          title="Local filter"
+          description={t("app.favorites.toolbarDescription")}
+          title={t("app.favorites.toolbarTitle")}
         />
       ) : null}
 
       {!hasAnyFavorites ? (
         <EmptyState
-          description="Add favorites from your library or Space flows and they will appear here."
-          title="No favorites yet"
+          description={t("app.favorites.emptyDescription")}
+          title={t("app.favorites.emptyTitle")}
         />
       ) : (
         <section className="grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
@@ -246,23 +283,27 @@ export default function AppFavoritesRoute({
             <Panel className="p-6">
               <div className="flex items-end justify-between gap-4">
                 <div>
-                  <p className="eyebrow">Photo favorites</p>
+                  <p className="eyebrow">
+                    {t("app.favorites.photoFavoritesEyebrow")}
+                  </p>
                   <h2 className="mt-2 text-2xl font-semibold tracking-tight">
-                    Personal photo picks
+                    {t("app.favorites.photoFavoritesTitle")}
                   </h2>
                 </div>
                 <Badge className="rounded-full px-3 py-1 text-xs font-semibold">
-                  {counts.photos} saved
+                  {t("app.favorites.savedBadge", {
+                    count: countFormatter.format(counts.photos),
+                  })}
                 </Badge>
               </div>
 
               {data.favoritePhotos.length === 0 ? (
                 <p className="mt-6 text-sm text-[var(--color-text-muted)]">
-                  No favorite photos yet.
+                  {t("app.favorites.noFavoritePhotos")}
                 </p>
               ) : filteredFavoritePhotos.length === 0 ? (
                 <EmptyHint className="mt-6">
-                  No favorite photos match the current filter.
+                  {t("app.favorites.noFavoritePhotosMatch")}
                 </EmptyHint>
               ) : (
                 <div className="mt-6 grid gap-4 md:grid-cols-2">
@@ -282,18 +323,20 @@ export default function AppFavoritesRoute({
                           className="rounded-full px-3 py-1 text-xs font-semibold"
                           tone="accent"
                         >
-                          Photo
+                          {t("app.favorites.photoBadge")}
                         </Badge>
                       </div>
                       <p className="mt-3 text-sm text-[var(--color-text-muted)]">
-                        {formatBytes(photo.sizeBytes)} · saved{" "}
-                        {formatDateTime(favorite.createdAt)}
+                        {t("app.favorites.savedAt", {
+                          size: formatBytes(photo.sizeBytes),
+                          date: formatDateTime(favorite.createdAt),
+                        })}
                       </p>
                       <Link
                         className="button-secondary mt-5 w-full"
                         to={`/app/library/photos/${photo.id}`}
                       >
-                        Open photo
+                        {t("app.favorites.openPhoto")}
                       </Link>
                     </SurfaceCard>
                   ))}
@@ -306,23 +349,27 @@ export default function AppFavoritesRoute({
             <Panel className="p-6">
               <div className="flex items-end justify-between gap-4">
                 <div>
-                  <p className="eyebrow">Album favorites</p>
+                  <p className="eyebrow">
+                    {t("app.favorites.albumFavoritesEyebrow")}
+                  </p>
                   <h2 className="mt-2 text-2xl font-semibold tracking-tight">
-                    Collections worth revisiting
+                    {t("app.favorites.albumFavoritesTitle")}
                   </h2>
                 </div>
                 <Badge className="rounded-full px-3 py-1 text-xs font-semibold">
-                  {counts.albums} saved
+                  {t("app.favorites.savedBadge", {
+                    count: countFormatter.format(counts.albums),
+                  })}
                 </Badge>
               </div>
 
               {data.favoriteAlbums.length === 0 ? (
                 <p className="mt-6 text-sm text-[var(--color-text-muted)]">
-                  No favorite albums yet.
+                  {t("app.favorites.noFavoriteAlbums")}
                 </p>
               ) : filteredFavoriteAlbums.length === 0 ? (
                 <EmptyHint className="mt-6">
-                  No favorite albums match the current filter.
+                  {t("app.favorites.noFavoriteAlbumsMatch")}
                 </EmptyHint>
               ) : (
                 <div className="mt-6 space-y-4">
@@ -335,25 +382,38 @@ export default function AppFavoritesRoute({
                           </h3>
                           <p className="mt-1 text-sm text-[var(--color-text-muted)]">
                             {space
-                              ? `${space.name} Space album`
-                              : "Personal album"}
+                              ? t("app.favorites.collaborativeAlbum", {
+                                  spaceName: space.name,
+                                })
+                              : t("app.favorites.personalAlbum")}
                           </p>
                         </div>
                         <Badge className="rounded-full px-3 py-1 text-xs font-semibold">
-                          Album
+                          {t("app.favorites.albumBadge")}
                         </Badge>
                       </div>
                       <p className="mt-3 text-sm leading-7 text-[var(--color-text-muted)]">
-                        {album.description || "No description"}
+                        {album.description || t("app.favorites.noDescription")}
                       </p>
                       <p className="mt-3 text-sm text-[var(--color-text-muted)]">
-                        Saved {formatDateTime(favorite.createdAt)}
+                        {space
+                          ? t("app.favorites.spaceContext")
+                          : t("app.favorites.libraryContext")}
+                      </p>
+                      <p className="mt-3 text-sm text-[var(--color-text-muted)]">
+                        {t("app.favorites.savedDate", {
+                          date: formatDateTime(favorite.createdAt),
+                        })}
                       </p>
                       <Link
                         className="button-secondary mt-5 w-full"
                         to={space ? `/app/spaces/${space.id}` : "/app/library"}
                       >
-                        {space ? `Open ${space.name}` : "Open library"}
+                        {space
+                          ? t("app.favorites.openSpace", {
+                              spaceName: space.name,
+                            })
+                          : t("app.favorites.openLibrary")}
                       </Link>
                     </SurfaceCard>
                   ))}

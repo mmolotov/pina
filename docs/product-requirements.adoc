@@ -1110,6 +1110,20 @@ a|
 * Clients: any HTTP client can integrate via the OpenAPI spec.
 |===
 
+=== NFR-6: Localization
+
+[cols="1,4"]
+|===
+| ID | NFR-6
+
+| Requirement
+a|
+* [Target] The web client supports two baseline UI languages in the current frontend roadmap: English and Russian.
+* [Target] Navigation labels, buttons, forms, helper text, empty states, feedback messages, and viewer metadata labels are sourced from a localization layer rather than hard-coded per route.
+* [Target] The active locale affects frontend formatting for dates, times, and relative counts where those values are rendered client-side.
+* [Future] The localization architecture must allow additional languages to be added without route-by-route rewrites.
+|===
+
 == Appendix A: User Journeys
 
 === A.1: Running Club Coordinator
@@ -1338,9 +1352,18 @@ Browser session notes:
 | Method | Path | Description
 
 | `GET` | `/api/v1/admin/users` | List all users
+| `GET` | `/api/v1/admin/users/{id}` | Admin user detail
 | `PUT` | `/api/v1/admin/users/{id}` | Update user (deactivate, change role)
 | `GET` | `/api/v1/admin/spaces` | List all Spaces
+| `GET` | `/api/v1/admin/spaces/{id}` | Admin Space detail
+| `DELETE` | `/api/v1/admin/spaces/{id}` | Force-delete Space
+| `GET` | `/api/v1/admin/settings` | Read instance settings
+| `PUT` | `/api/v1/admin/settings` | Update registration mode and compression defaults
 | `GET` | `/api/v1/admin/storage` | Storage usage stats
+| `GET` | `/api/v1/admin/storage/users` | Per-user storage usage stats
+| `GET` | `/api/v1/admin/storage/spaces` | Per-Space storage usage stats
+| `GET` | `/api/v1/admin/invites` | List invite links across Spaces
+| `DELETE` | `/api/v1/admin/invites/{id}` | Revoke any invite link
 | `GET` | `/api/v1/admin/ml/pipeline` | Current ML pipeline config
 | `PUT` | `/api/v1/admin/ml/pipeline` | Update ML pipeline config
 | `POST` | `/api/v1/admin/ml/reindex` | Trigger reindexing

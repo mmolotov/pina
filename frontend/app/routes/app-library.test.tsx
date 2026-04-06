@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { createRoutesStub } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { I18nProvider } from "~/lib/i18n";
 import AppLibraryRoute, {
   clientAction as appLibraryClientAction,
   clientLoader as appLibraryClientLoader,
@@ -11,6 +12,7 @@ const apiMocks = vi.hoisted(() => ({
   listAlbums: vi.fn(),
   listAllAlbumPhotos: vi.fn(),
   listGeoPhotos: vi.fn(),
+  getPhotoBlob: vi.fn(),
   uploadPhoto: vi.fn(),
   deletePhoto: vi.fn(),
   createAlbum: vi.fn(),
@@ -65,6 +67,9 @@ describe("AppLibraryRoute", () => {
       totalItems: 0,
       totalPages: 0,
     });
+    apiMocks.getPhotoBlob.mockResolvedValue(
+      new Blob(["thumb"], { type: "image/jpeg" }),
+    );
     apiMocks.listFavorites.mockImplementation(async (targetType?: string) => {
       if (targetType === "PHOTO") {
         return [];
@@ -85,7 +90,7 @@ describe("AppLibraryRoute", () => {
     apiMocks.removePhotoFromAlbum.mockResolvedValue(undefined);
   });
 
-  it("adds a photo to favorites from the library grid", async () => {
+  function renderRoute(initialEntry = "/app/library") {
     const Stub = createRoutesStub([
       {
         path: "/app/library",
@@ -96,7 +101,15 @@ describe("AppLibraryRoute", () => {
       },
     ]);
 
-    render(<Stub initialEntries={["/app/library"]} />);
+    return render(
+      <I18nProvider>
+        <Stub initialEntries={[initialEntry]} />
+      </I18nProvider>,
+    );
+  }
+
+  it("adds a photo to favorites from the library grid", async () => {
+    renderRoute();
 
     expect(await screen.findByText("beach.jpg")).toBeInTheDocument();
 
@@ -110,26 +123,20 @@ describe("AppLibraryRoute", () => {
   });
 
   it("switches to albums-only view", async () => {
-    const Stub = createRoutesStub([
-      {
-        path: "/app/library",
-        Component: AppLibraryRoute,
-        action: async ({ request }) =>
-          appLibraryClientAction({ request } as never),
-        loader: async () => appLibraryClientLoader(),
-      },
-    ]);
+    renderRoute();
 
-    render(<Stub initialEntries={["/app/library"]} />);
+    expect(await screen.findByText("beach.jpg")).toBeInTheDocument();
 
-    expect(await screen.findByText("Current uploads")).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "Albums only" }));
+    fireEvent.click(
+      screen.getAllByRole("button", { name: /albums|альбомы/i })[0]!,
+    );
 
     await waitFor(() => {
-      expect(screen.queryByText("Current uploads")).not.toBeInTheDocument();
+      expect(
+        screen.getByRole("textbox", { name: /name|название/i }),
+      ).toBeInTheDocument();
     });
-    expect(screen.getByText("New collection")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /spaces/i })).toBeInTheDocument();
   });
 
   it("switches to timeline view and groups photos by day", async () => {
@@ -164,27 +171,20 @@ describe("AppLibraryRoute", () => {
       },
     ]);
 
-    const Stub = createRoutesStub([
-      {
-        path: "/app/library",
-        Component: AppLibraryRoute,
-        action: async ({ request }) =>
-          appLibraryClientAction({ request } as never),
-        loader: async () => appLibraryClientLoader(),
-      },
-    ]);
-
-    render(<Stub initialEntries={["/app/library"]} />);
+    renderRoute();
 
     expect(await screen.findByText("beach.jpg")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Timeline" }));
+    fireEvent.click(screen.getByRole("button", { name: /timeline|таймлайн/i }));
 
     await waitFor(() => {
-      expect(screen.getByText("Photo timeline")).toBeInTheDocument();
+      expect(
+        screen.getByRole("heading", { level: 2, name: /timeline|таймлайн/i }),
+      ).toBeInTheDocument();
     });
-    expect(screen.getByText("2026-04-02")).toBeInTheDocument();
-    expect(screen.getByText("2026-04-01")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Apr 2/i })).toBeInTheDocument();
+    expect(screen.getAllByText("2026-04-02").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("2026-04-01").length).toBeGreaterThan(0);
     expect(screen.getByText("dinner.jpg")).toBeInTheDocument();
   });
 
@@ -215,25 +215,9 @@ describe("AppLibraryRoute", () => {
       totalPages: 1,
     });
 
-    const Stub = createRoutesStub([
-      {
-        path: "/app/library",
-        Component: AppLibraryRoute,
-        action: async ({ request }) =>
-          appLibraryClientAction({ request } as never),
-        loader: async () => appLibraryClientLoader(),
-      },
-    ]);
+    renderRoute("/app/library?view=map&swLat=44&swLng=20&neLat=45&neLng=21");
 
-    render(
-      <Stub
-        initialEntries={[
-          "/app/library?view=map&swLat=44&swLng=20&neLat=45&neLng=21",
-        ]}
-      />,
-    );
-
-    expect(await screen.findByText("Geo map")).toBeInTheDocument();
+    expect(await screen.findByText("belgrade.jpg")).toBeInTheDocument();
 
     await waitFor(() => {
       expect(apiMocks.listGeoPhotos).toHaveBeenCalledWith({
@@ -328,34 +312,16 @@ describe("AppLibraryRoute", () => {
         totalPages: 1,
       });
 
-    const Stub = createRoutesStub([
-      {
-        path: "/app/library",
-        Component: AppLibraryRoute,
-        action: async ({ request }) =>
-          appLibraryClientAction({ request } as never),
-        loader: async () => appLibraryClientLoader(),
-      },
-    ]);
-
-    render(
-      <Stub
-        initialEntries={[
-          "/app/library?view=map&swLat=44&swLng=20&neLat=45&neLng=21",
-        ]}
-      />,
-    );
-
-    expect(await screen.findByText("Geo map")).toBeInTheDocument();
+    renderRoute("/app/library?view=map&swLat=44&swLng=20&neLat=45&neLng=21");
 
     const clusterButton = await screen.findByRole("button", {
-      name: "Open map cluster with 2 photos",
+      name: /cluster.*2/i,
     });
     fireEvent.click(clusterButton);
 
-    expect(await screen.findByText("Cluster of 2 photos")).toBeInTheDocument();
+    expect(await screen.findByText(/cluster.*2/i)).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Zoom into cluster" }));
+    fireEvent.click(screen.getByRole("button", { name: /zoom.*cluster/i }));
 
     await waitFor(() => {
       expect(apiMocks.listGeoPhotos).toHaveBeenCalledTimes(3);
@@ -372,27 +338,13 @@ describe("AppLibraryRoute", () => {
       totalPages: 0,
     });
 
-    const Stub = createRoutesStub([
-      {
-        path: "/app/library",
-        Component: AppLibraryRoute,
-        action: async ({ request }) =>
-          appLibraryClientAction({ request } as never),
-        loader: async () => appLibraryClientLoader(),
-      },
-    ]);
+    renderRoute("/app/library?view=map&swLat=10&swLng=20&neLat=30&neLng=40");
 
-    render(
-      <Stub
-        initialEntries={[
-          "/app/library?view=map&swLat=10&swLng=20&neLat=30&neLng=40",
-        ]}
-      />,
-    );
+    expect(
+      await screen.findByRole("button", { name: /east|восток/i }),
+    ).toBeInTheDocument();
 
-    expect(await screen.findByText("Geo map")).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "Pan east" }));
+    fireEvent.click(screen.getByRole("button", { name: /east|восток/i }));
 
     await waitFor(() => {
       expect(apiMocks.listGeoPhotos).toHaveBeenLastCalledWith({
@@ -410,19 +362,7 @@ describe("AppLibraryRoute", () => {
   it("shows a clear map error state when geo loading fails", async () => {
     apiMocks.listGeoPhotos.mockRejectedValue(new Error("Geo endpoint failed"));
 
-    const Stub = createRoutesStub([
-      {
-        path: "/app/library",
-        Component: AppLibraryRoute,
-        action: async ({ request }) =>
-          appLibraryClientAction({ request } as never),
-        loader: async () => appLibraryClientLoader(),
-      },
-    ]);
-
-    render(<Stub initialEntries={["/app/library?view=map"]} />);
-
-    expect(await screen.findByText("Geo map")).toBeInTheDocument();
+    renderRoute("/app/library?view=map");
     expect(await screen.findByText("Geo endpoint failed")).toBeInTheDocument();
   });
 
@@ -503,49 +443,46 @@ describe("AppLibraryRoute", () => {
       totalPages: 1,
     });
 
-    const Stub = createRoutesStub([
-      {
-        path: "/app/library",
-        Component: AppLibraryRoute,
-        action: async ({ request }) =>
-          appLibraryClientAction({ request } as never),
-        loader: async () => appLibraryClientLoader(),
-      },
-    ]);
-
-    render(<Stub initialEntries={["/app/library?view=map"]} />);
-
-    expect(await screen.findByText("Geo map")).toBeInTheDocument();
+    renderRoute("/app/library?view=map");
     expect(
       await screen.findByRole("button", {
-        name: "Open map marker for belgrade.jpg",
+        name: /belgrade\.jpg/i,
       }),
     ).toBeInTheDocument();
 
-    fireEvent.change(screen.getByLabelText("Filter library"), {
-      target: { value: "forest" },
-    });
+    fireEvent.change(
+      screen.getByLabelText(/filter library|фильтр библиотеки/i),
+      {
+        target: { value: "forest" },
+      },
+    );
 
     await waitFor(() => {
       expect(
         screen.queryByRole("button", {
-          name: "Open map marker for belgrade.jpg",
+          name: /belgrade\.jpg/i,
         }),
       ).not.toBeInTheDocument();
     });
     expect(
-      screen.getByRole("button", { name: "Open map marker for forest.png" }),
+      screen.getByRole("button", { name: /forest\.png/i }),
     ).toBeInTheDocument();
 
-    fireEvent.change(screen.getByLabelText("Filter library"), {
-      target: { value: "desert" },
-    });
+    fireEvent.change(
+      screen.getByLabelText(/filter library|фильтр библиотеки/i),
+      {
+        target: { value: "desert" },
+      },
+    );
 
     expect(
-      await screen.findByText("No geo-tagged photos match the current filter"),
+      await screen.findByRole("heading", {
+        name: /geo-tagged photos match|фото с геотегами/i,
+      }),
     ).toBeInTheDocument();
     expect(
-      screen.getAllByRole("button", { name: "Clear filter" }).length,
+      screen.getAllByRole("button", { name: /clear filter|сбросить фильтр/i })
+        .length,
     ).toBeGreaterThan(0);
   });
 
@@ -576,58 +513,46 @@ describe("AppLibraryRoute", () => {
       totalPages: 1,
     });
 
-    const Stub = createRoutesStub([
-      {
-        path: "/app/library",
-        Component: AppLibraryRoute,
-        action: async ({ request }) =>
-          appLibraryClientAction({ request } as never),
-        loader: async () => appLibraryClientLoader(),
-      },
-    ]);
-
-    render(<Stub initialEntries={["/app/library?view=map"]} />);
-
-    expect(await screen.findByText("Geo map")).toBeInTheDocument();
+    renderRoute("/app/library?view=map");
 
     fireEvent.click(
       await screen.findByRole("button", {
-        name: "Open map marker for belgrade.jpg",
+        name: /belgrade\.jpg/i,
       }),
     );
 
-    expect(await screen.findByText("Photo selected")).toBeInTheDocument();
+    expect(
+      await screen.findByText(/photo selected|фото выбрано/i),
+    ).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Clear selection" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /clear selection|снять выделение/i }),
+    );
 
     await waitFor(() => {
-      expect(screen.getByText("Nothing selected")).toBeInTheDocument();
+      expect(
+        screen.getByText(/nothing selected|ничего не выбрано/i),
+      ).toBeInTheDocument();
     });
   });
 
   it("creates a new album through the route action", async () => {
-    const Stub = createRoutesStub([
-      {
-        path: "/app/library",
-        Component: AppLibraryRoute,
-        action: async ({ request }) =>
-          appLibraryClientAction({ request } as never),
-        loader: async () => appLibraryClientLoader(),
-      },
-    ]);
-
-    render(<Stub initialEntries={["/app/library"]} />);
+    renderRoute();
 
     expect(await screen.findByText("beach.jpg")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Albums only" }));
-    fireEvent.change(screen.getByLabelText("Name"), {
+    fireEvent.click(
+      screen.getAllByRole("button", { name: /albums|альбомы/i })[0]!,
+    );
+    fireEvent.change(screen.getByLabelText(/name|название/i), {
       target: { value: "Weekend picks" },
     });
-    fireEvent.change(screen.getByLabelText("Description"), {
+    fireEvent.change(screen.getByLabelText(/description|описание/i), {
       target: { value: "Best shots of the trip" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Create album" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /create album|создать альбом/i }),
+    );
 
     await waitFor(() => {
       expect(apiMocks.createAlbum).toHaveBeenCalledWith({
@@ -638,26 +563,18 @@ describe("AppLibraryRoute", () => {
   });
 
   it("uploads multiple photos through the batch input", async () => {
-    const Stub = createRoutesStub([
-      {
-        path: "/app/library",
-        Component: AppLibraryRoute,
-        action: async ({ request }) =>
-          appLibraryClientAction({ request } as never),
-        loader: async () => appLibraryClientLoader(),
-      },
-    ]);
+    renderRoute();
 
-    render(<Stub initialEntries={["/app/library"]} />);
-
-    expect(await screen.findByText("beach.jpg")).toBeInTheDocument();
+    expect(
+      await screen.findByRole("link", { name: "Open photo beach.jpg" }),
+    ).toBeInTheDocument();
 
     const firstFile = new File(["first"], "first.jpg", { type: "image/jpeg" });
     const secondFile = new File(["second"], "second.png", {
       type: "image/png",
     });
 
-    fireEvent.change(screen.getByLabelText("Upload photos"), {
+    fireEvent.change(screen.getByLabelText(/upload photos|загрузить фото/i), {
       target: { files: [firstFile, secondFile] },
     });
 
@@ -666,7 +583,9 @@ describe("AppLibraryRoute", () => {
       expect(apiMocks.uploadPhoto).toHaveBeenNthCalledWith(2, secondFile);
     });
 
-    expect(await screen.findByText("Uploaded 2 photos.")).toBeInTheDocument();
+    expect(
+      await screen.findByText(/uploaded 2 photos|загружено 2 фото/i),
+    ).toBeInTheDocument();
   });
 
   it("filters photos in the library view", async () => {
@@ -701,25 +620,18 @@ describe("AppLibraryRoute", () => {
       },
     ]);
 
-    const Stub = createRoutesStub([
-      {
-        path: "/app/library",
-        Component: AppLibraryRoute,
-        action: async ({ request }) =>
-          appLibraryClientAction({ request } as never),
-        loader: async () => appLibraryClientLoader(),
-      },
-    ]);
-
-    render(<Stub initialEntries={["/app/library"]} />);
+    renderRoute();
 
     expect(
       await screen.findByRole("link", { name: "forest.png" }),
     ).toBeInTheDocument();
 
-    fireEvent.change(screen.getByLabelText("Filter library"), {
-      target: { value: "beach" },
-    });
+    fireEvent.change(
+      screen.getByLabelText(/filter library|фильтр библиотеки/i),
+      {
+        target: { value: "beach" },
+      },
+    );
 
     expect(screen.getByText("beach.jpg")).toBeInTheDocument();
     expect(screen.queryByText("forest.png")).not.toBeInTheDocument();
@@ -770,26 +682,21 @@ describe("AppLibraryRoute", () => {
       },
     ]);
 
-    const Stub = createRoutesStub([
-      {
-        path: "/app/library",
-        Component: AppLibraryRoute,
-        action: async ({ request }) =>
-          appLibraryClientAction({ request } as never),
-        loader: async () => appLibraryClientLoader(),
-      },
-    ]);
-
-    render(<Stub initialEntries={["/app/library"]} />);
+    renderRoute();
 
     expect(
       await screen.findByRole("link", { name: "forest.png" }),
     ).toBeInTheDocument();
 
-    fireEvent.change(screen.getByLabelText("Filter library"), {
-      target: { value: "weekend" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Albums only" }));
+    fireEvent.change(
+      screen.getByLabelText(/filter library|фильтр библиотеки/i),
+      {
+        target: { value: "weekend" },
+      },
+    );
+    fireEvent.click(
+      screen.getAllByRole("button", { name: /albums|альбомы/i })[0]!,
+    );
 
     const select = screen.getByLabelText("Photo for album Weekend picks");
     expect(

@@ -10,24 +10,30 @@ import type { ReactNode } from "react";
 
 import type { Route } from "./+types/root";
 import "./app.css";
+import { BrandLogo } from "~/components/brand-logo";
+import { isBackendUnavailableError } from "~/lib/api";
+import { I18nProvider, localeBootstrapScript } from "~/lib/i18n";
 import { ThemeProvider, themeBootstrapScript } from "~/lib/theme";
 
 export function Layout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en">
+    <html data-locale="en" lang="en">
       <head>
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <script dangerouslySetInnerHTML={{ __html: localeBootstrapScript }} />
         <script dangerouslySetInnerHTML={{ __html: themeBootstrapScript }} />
         <Meta />
         <Links />
       </head>
       <body>
-        <ThemeProvider>
-          {children}
-          <ScrollRestoration />
-          <Scripts />
-        </ThemeProvider>
+        <I18nProvider>
+          <ThemeProvider>
+            {children}
+            <ScrollRestoration />
+            <Scripts />
+          </ThemeProvider>
+        </I18nProvider>
       </body>
     </html>
   );
@@ -41,6 +47,39 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
   let message = "Oops!";
   let details = "An unexpected error occurred.";
   let stack: string | undefined;
+
+  if (isBackendUnavailableError(error)) {
+    return (
+      <main className="app-shell flex min-h-screen items-center justify-center px-6 py-10">
+        <section className="panel w-full max-w-3xl space-y-5 p-8 sm:p-10">
+          <p className="eyebrow">Backend Connection</p>
+          <BrandLogo
+            alt="PINA"
+            className="h-12 w-auto max-w-[12rem] object-contain"
+          />
+          <h1 className="text-4xl font-semibold tracking-tight">
+            Backend is unavailable
+          </h1>
+          <p className="max-w-2xl text-base leading-7 text-[var(--color-text-muted)]">
+            The app could not connect to the API. Check that the backend is
+            running and reachable, then try again.
+          </p>
+          <div className="flex flex-wrap gap-3">
+            <button
+              className="button-primary"
+              onClick={() => window.location.reload()}
+              type="button"
+            >
+              Retry
+            </button>
+            <a className="button-secondary" href="/">
+              Open home
+            </a>
+          </div>
+        </section>
+      </main>
+    );
+  }
 
   if (isRouteErrorResponse(error)) {
     message = error.status === 404 ? "404" : "Error";

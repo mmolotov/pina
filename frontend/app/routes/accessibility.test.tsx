@@ -1,7 +1,9 @@
+import type { ReactElement } from "react";
 import { render } from "@testing-library/react";
 import { axe } from "jest-axe";
 import { createRoutesStub } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { I18nProvider } from "~/lib/i18n";
 import AppHomeRoute, {
   clientLoader as appHomeClientLoader,
 } from "~/routes/app-home";
@@ -17,6 +19,7 @@ const apiMocks = vi.hoisted(() => ({
   createAlbum: vi.fn(),
   deleteAlbum: vi.fn(),
   deletePhoto: vi.fn(),
+  getPhotoBlob: vi.fn(),
   getHealth: vi.fn(),
   listAlbums: vi.fn(),
   listAllAlbumPhotos: vi.fn(),
@@ -65,6 +68,8 @@ describe("frontend accessibility smoke", () => {
         name: "Test User",
         email: "test@example.com",
         avatarUrl: null,
+        instanceRole: "USER",
+        active: true,
       },
     });
 
@@ -132,6 +137,9 @@ describe("frontend accessibility smoke", () => {
     ]);
     apiMocks.listAlbums.mockResolvedValue([]);
     apiMocks.listAllAlbumPhotos.mockResolvedValue([]);
+    apiMocks.getPhotoBlob.mockResolvedValue(
+      new Blob(["thumb"], { type: "image/jpeg" }),
+    );
     apiMocks.listGeoPhotos.mockResolvedValue({
       items: [],
       page: 0,
@@ -162,6 +170,10 @@ describe("frontend accessibility smoke", () => {
     ).toHaveNoViolations();
   }
 
+  function renderWithI18n(element: ReactElement) {
+    return render(<I18nProvider>{element}</I18nProvider>);
+  }
+
   it("keeps the login route free from basic accessibility violations", async () => {
     sessionMocks.useSession.mockReturnValue(null);
     const Stub = createRoutesStub([
@@ -171,7 +183,7 @@ describe("frontend accessibility smoke", () => {
       },
     ]);
 
-    const { container } = render(<Stub initialEntries={["/login"]} />);
+    const { container } = renderWithI18n(<Stub initialEntries={["/login"]} />);
 
     await expectNoViolations(container);
   });
@@ -185,7 +197,9 @@ describe("frontend accessibility smoke", () => {
       },
     ]);
 
-    const { container } = render(<Stub initialEntries={["/register"]} />);
+    const { container } = renderWithI18n(
+      <Stub initialEntries={["/register"]} />,
+    );
 
     await expectNoViolations(container);
   });
@@ -199,7 +213,7 @@ describe("frontend accessibility smoke", () => {
       },
     ]);
 
-    const { container, findByText } = render(
+    const { container, findByText } = renderWithI18n(
       <Stub initialEntries={["/app"]} />,
     );
     await findByText("beach.jpg");
@@ -216,7 +230,7 @@ describe("frontend accessibility smoke", () => {
       },
     ]);
 
-    const { container, findByText } = render(
+    const { container, findByText } = renderWithI18n(
       <Stub initialEntries={["/app/library"]} />,
     );
     await findByText("beach.jpg");

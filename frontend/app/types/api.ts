@@ -8,6 +8,8 @@ export interface UserDto {
   name: string;
   email: string | null;
   avatarUrl: string | null;
+  instanceRole: "USER" | "ADMIN";
+  active: boolean;
 }
 
 export interface AuthResponse {
@@ -29,6 +31,9 @@ export interface HealthResponse {
     availableBytes: number;
   };
 }
+
+export type RegistrationMode = "OPEN" | "INVITE_ONLY" | "CLOSED";
+export type CompressionFormat = "jpeg" | "jpg" | "png";
 
 export interface PhotoVariantDto {
   type: string;
@@ -152,4 +157,100 @@ export interface PageResponse<T> {
   hasNext: boolean;
   totalItems: number | null;
   totalPages: number | null;
+}
+
+export interface AdminUserDto {
+  id: string;
+  name: string;
+  email: string | null;
+  avatarUrl: string | null;
+  instanceRole: "USER" | "ADMIN";
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+  providers: string[];
+  photoCount: number;
+  storageBytesUsed: number;
+}
+
+export interface AdminSpaceDto {
+  id: string;
+  name: string;
+  description: string | null;
+  visibility: SpaceVisibility;
+  parentId: string | null;
+  depth: number;
+  creatorId: string;
+  creatorName: string;
+  memberCount: number;
+  albumCount: number;
+  photoCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AdminInviteLinkDto {
+  id: string;
+  code: string;
+  spaceId: string;
+  spaceName: string;
+  defaultRole: SpaceRole;
+  expiration: string | null;
+  usageLimit: number | null;
+  usageCount: number;
+  active: boolean;
+  createdById: string | null;
+  createdByName: string | null;
+  createdAt: string;
+}
+
+export interface AdminHealthDto {
+  status: string;
+  version: string;
+  database: {
+    connected: boolean;
+    version: string | null;
+  };
+  storage: {
+    provider: string;
+    usedBytes: number;
+    availableBytes: number;
+  };
+  jvm: {
+    heapUsedBytes: number;
+    heapMaxBytes: number;
+    nonHeapUsedBytes: number;
+    availableProcessors: number;
+  };
+}
+
+export interface AdminStorageSummaryDto {
+  storageProvider: string;
+  totalPhotos: number;
+  totalVariants: number;
+  totalStorageBytes: number;
+  filesystemUsedBytes: number;
+  filesystemAvailableBytes: number;
+}
+
+export interface AdminUserStorageDto {
+  userId: string;
+  userName: string;
+  photoCount: number;
+  variantCount: number;
+  storageBytesUsed: number;
+}
+
+export interface AdminSpaceStorageDto {
+  spaceId: string;
+  spaceName: string;
+  albumCount: number;
+  photoCount: number;
+}
+
+export interface AdminSettingsDto {
+  registrationMode: RegistrationMode;
+  compressionFormat: CompressionFormat;
+  compressionQuality: number;
+  compressionMaxResolution: number;
 }

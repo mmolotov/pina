@@ -19,6 +19,9 @@ Current implemented scope includes:
 - automated accessibility baseline with `eslint-plugin-jsx-a11y` and route-level `jest-axe` smoke checks
 - shared UI primitives for cards, inline feedback, empty hints, and filter toolbars backed by the design system
 
+The next Phase 3 UI pass is focused on a media-first shell redesign for the authenticated app and
+baseline localization for English and Russian.
+
 ## Development
 
 ```bash
@@ -48,7 +51,7 @@ app/
 ├── app.css         # Global styles (Tailwind entry point)
 ├── components/     # Shared UI and app shell components
 ├── docs/           # Frontend design and implementation guides
-├── lib/            # API client, session store, route helpers
+├── lib/            # API client, session store, i18n/theme providers, route helpers
 ├── root.tsx        # Root layout (html shell, error boundary)
 ├── routes.ts       # Route definitions
 ├── routes/         # Route components (file-based routing)
@@ -102,6 +105,15 @@ app/
   before creating route-local layout or feedback patterns
 - Use Tailwind utility classes directly in JSX for layout and spacing; keep color/state decisions tied to semantic tokens
 
+### Localization
+
+- New user-facing strings should come from a shared localization layer instead of route-local hard-coded copy
+- The initial supported UI locales are English (`en`) and Russian (`ru`), with English fallback
+- Date, time, and relative-count formatting should follow the active locale
+- The shared locale state, catalogs, bootstrap script, and `useI18n()` hook live in `app/lib/i18n.tsx`
+- The shared shell language switcher lives in `app/components/language-switcher.tsx`
+- Formatting helpers in `app/lib/format.ts` are locale-aware and should be preferred over ad-hoc `Intl` usage inside routes
+
 ### API Integration
 
 - All backend calls go through `/api/v1/` — the Vite dev server proxies to `localhost:8080`
@@ -125,8 +137,7 @@ app/
 - Accessibility failures surface through the normal lint and test pipeline
 - Browser-level responsive and visual regression coverage now runs through Playwright as a blocking frontend CI gate
 - Frontend CI now treats `check`, Vitest, and Playwright route smoke as blocking UI gates
-- Normal UI work should also follow [`docs/design-system.md`](./docs/design-system.md) and
-  [`docs/ui-ux-implementation-plan.md`](./docs/ui-ux-implementation-plan.md)
+- Normal UI work should also follow [`docs/design-system.md`](./docs/design-system.md)
 
 ## Responsive and Visual Regression Coverage
 
@@ -200,3 +211,5 @@ Not implemented yet in the frontend:
 - Video playback and video upload UI
 - Search backend integration and real semantic results
 - Real admin panel, pending backend admin APIs
+- Media-first authenticated shell redesign with left rail navigation, top search/filter controls, and a prominent Upload action
+- Basic UI localization for English and Russian

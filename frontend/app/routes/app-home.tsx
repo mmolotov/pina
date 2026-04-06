@@ -99,8 +99,8 @@ export default function AppHomeRoute({ loaderData }: Route.ComponentProps) {
           </h2>
           <p className="mt-4 text-sm leading-7 text-[var(--color-text-muted)]">
             The app shell now covers auth, library, favorites, Spaces, settings,
-            timeline browsing, and a route-level search shell. Admin UI still
-            depends on instance-level backend endpoints that do not exist yet.
+            timeline browsing, route-level search, and the initial admin route
+            tree with capability-aware access gating.
           </p>
         </Panel>
       </section>

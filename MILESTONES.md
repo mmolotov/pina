@@ -64,6 +64,8 @@ Legend: ✅ done · 🔲 todo
 - ✅ Automated UI quality gates: accessibility checks, responsive smoke, visual regression coverage
 - 🔲 Search backend integration: text, faces, tags
 - 🔲 Admin panel: real instance administration UI, pending backend admin endpoints
+- 🔲 Media-first web app redesign: narrow left navigation rail, top search/filter bar, prominent Upload CTA, photo-library-first default route, and immersive viewer polish
+- 🔲 Basic frontend localization: English and Russian UI copy, language selection, persisted preference, and locale-aware formatting
 
 ## Phase 4: ML Service (basic)
 
@@ -102,6 +104,7 @@ Legend: ✅ done · 🔲 todo
 - 🔲 Retention / compression policies
 - 🔲 Shared links (public read-only, no auth)
 - 🔲 Scalable ML worker pool (multi-GPU)
+- 🔲 Additional frontend UI languages beyond English and Russian
 
 ## Phase 7: Video Support (backend)
 

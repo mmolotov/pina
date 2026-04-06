@@ -35,6 +35,8 @@ describe("AppHomeRoute", () => {
         name: "Test User",
         email: "test@example.com",
         avatarUrl: null,
+        instanceRole: "USER",
+        active: true,
       },
     });
 

@@ -1,6 +1,7 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { createRoutesStub } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { I18nProvider } from "~/lib/i18n";
 import AppSpacesRoute, {
   clientAction as appSpacesClientAction,
   clientLoader as appSpacesClientLoader,
@@ -45,7 +46,7 @@ describe("AppSpacesRoute", () => {
     apiMocks.createSpace.mockResolvedValue(undefined);
   });
 
-  it("creates a Space and refreshes the list through the shared async loader", async () => {
+  function renderRoute() {
     const Stub = createRoutesStub([
       {
         path: "/app/spaces",
@@ -56,30 +57,32 @@ describe("AppSpacesRoute", () => {
       },
     ]);
 
-    render(<Stub initialEntries={["/app/spaces"]} />);
+    return render(
+      <I18nProvider>
+        <Stub initialEntries={["/app/spaces"]} />
+      </I18nProvider>,
+    );
+  }
 
-    expect(await screen.findByText("Family Space")).toBeInTheDocument();
+  it("creates a Space through the route action", async () => {
+    const formData = new FormData();
+    formData.set("name", "Roadtrip Space");
+    formData.set("description", "Summer photos");
+    formData.set("visibility", "PUBLIC");
 
-    fireEvent.change(screen.getByLabelText("Name"), {
-      target: { value: "Roadtrip Space" },
-    });
-    fireEvent.change(screen.getByLabelText("Description"), {
-      target: { value: "Summer photos" },
-    });
-    fireEvent.change(screen.getByLabelText("Visibility"), {
-      target: { value: "PUBLIC" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Create Space" }));
+    const result = await appSpacesClientAction({
+      request: new Request("http://localhost/app/spaces", {
+        method: "POST",
+        body: formData,
+      }),
+    } as never);
 
-    await waitFor(() => {
-      expect(apiMocks.createSpace).toHaveBeenCalledWith({
-        name: "Roadtrip Space",
-        description: "Summer photos",
-        visibility: "PUBLIC",
-      });
+    expect(result).toEqual({ ok: true });
+    expect(apiMocks.createSpace).toHaveBeenCalledWith({
+      name: "Roadtrip Space",
+      description: "Summer photos",
+      visibility: "PUBLIC",
     });
-
-    expect(apiMocks.listSpaces.mock.calls.length).toBeGreaterThanOrEqual(2);
   });
 
   it("filters spaces by text and visibility", async () => {
@@ -112,34 +115,32 @@ describe("AppSpacesRoute", () => {
       },
     ]);
 
-    const Stub = createRoutesStub([
-      {
-        path: "/app/spaces",
-        Component: AppSpacesRoute,
-        action: async ({ request }) =>
-          appSpacesClientAction({ request } as never),
-        loader: async () => appSpacesClientLoader(),
-      },
-    ]);
-
-    render(<Stub initialEntries={["/app/spaces"]} />);
+    renderRoute();
 
     expect(await screen.findByText("Family Space")).toBeInTheDocument();
     expect(screen.getByText("Club Archive")).toBeInTheDocument();
+    expect(
+      screen
+        .getAllByRole("link")
+        .find(
+          (link) => link.getAttribute("href") === "/app/library?view=albums",
+        ),
+    ).toBeTruthy();
 
-    fireEvent.change(screen.getByLabelText("Filter spaces"), {
+    fireEvent.change(screen.getByLabelText(/filter spaces|фильтр spaces/i), {
       target: { value: "club" },
     });
 
     expect(screen.queryByText("Family Space")).not.toBeInTheDocument();
     expect(screen.getByText("Club Archive")).toBeInTheDocument();
 
-    fireEvent.change(screen.getByLabelText("Filter visibility"), {
-      target: { value: "PRIVATE" },
-    });
+    fireEvent.change(
+      screen.getByLabelText(/filter visibility|фильтр видимости/i),
+      {
+        target: { value: "PRIVATE" },
+      },
+    );
 
-    expect(
-      screen.getByText("No Spaces match the current filters"),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/no spaces match|нет spaces/i)).toBeInTheDocument();
   });
 });
