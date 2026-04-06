@@ -20,16 +20,20 @@ Current implemented scope includes:
 
 ```bash
 npm install         # Install dependencies
-npm run dev         # Dev server with HMR at http://localhost:5173
+npm run dev         # Dev server with HMR at http://localhost:5173 and http://<your-ip>:5173
 npm run format      # Prettier auto-format
 npm run lint        # ESLint static analysis
-npm run check       # format check + lint + typecheck
+npm run stylelint   # CSS static analysis
+npm run check       # format check + lint + stylelint + typecheck
 npm run build       # Production build (SPA, output in build/client/)
 npm run typecheck   # TypeScript type checking
 npm run test        # Vitest route and component tests
 ```
 
-The dev server currently proxies `/api` requests to the backend at `http://localhost:8080`.
+The dev server listens on all interfaces (`0.0.0.0`) so it is reachable both via `localhost`
+and the machine's LAN IP. It proxies `/api` requests to the backend at `http://localhost:8080`.
+In backend dev mode, CORS accepts arbitrary origins so login and API calls also work when the
+frontend is opened through the machine's LAN IP.
 
 ## Project Structure
 
@@ -99,8 +103,9 @@ app/
 
 - `npm run format` uses Prettier for repo-local auto-formatting
 - `npm run lint` runs ESLint over frontend source files
+- `npm run stylelint` validates custom CSS in `app/**/*.css`
 - `npm run test` runs Vitest route and component coverage in jsdom
-- `npm run build` now includes `format:check`, `lint`, and `typecheck` before the production build
+- `npm run build` now includes `format:check`, `lint`, `stylelint`, and `typecheck` before the production build
 - Current lint setup fails the build on warnings as well as errors
 
 ## Current Functional Scope
