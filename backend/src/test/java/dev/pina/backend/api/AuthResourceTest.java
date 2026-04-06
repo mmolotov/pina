@@ -5,11 +5,21 @@ import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.notNullValue;
 
 import io.quarkus.test.junit.QuarkusTest;
+import jakarta.inject.Inject;
+import jakarta.persistence.EntityManager;
+import jakarta.transaction.UserTransaction;
 import io.restassured.http.ContentType;
+import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 @QuarkusTest
 class AuthResourceTest {
+
+	@Inject
+	EntityManager em;
+
+	@Inject
+	UserTransaction tx;
 
 	@Test
 	void registerReturnsTokenAndUser() {
@@ -108,5 +118,42 @@ class AuthResourceTest {
 		given().header("Authorization", "Bearer " + token).contentType(ContentType.JSON)
 				.body("{\"name\":\"Updated Name\"}").when().put("/api/v1/auth/me").then().statusCode(200)
 				.body("name", equalTo("Updated Name"));
+	}
+
+	@Test
+	void inactiveUserCannotLogin() throws Exception {
+		String username = "inactive-login-" + UUID.randomUUID().toString().substring(0, 8);
+		String userId = given().contentType(ContentType.JSON)
+				.body("{\"username\":\"" + username + "\",\"password\":\"password123\"}").when()
+				.post("/api/v1/auth/register").then().statusCode(201).extract().path("user.id");
+
+		deactivateUser(userId);
+
+		given().contentType(ContentType.JSON).body("{\"username\":\"" + username + "\",\"password\":\"password123\"}")
+				.when().post("/api/v1/auth/login").then().statusCode(401)
+				.body("error", equalTo("unauthorized"));
+	}
+
+	@Test
+	void inactiveUserCannotRefreshToken() throws Exception {
+		String username = "inactive-refresh-" + UUID.randomUUID().toString().substring(0, 8);
+		String refreshToken = given().contentType(ContentType.JSON)
+				.body("{\"username\":\"" + username + "\",\"password\":\"password123\"}").when()
+				.post("/api/v1/auth/register").then().statusCode(201).extract().path("refreshToken");
+		String userId = given().contentType(ContentType.JSON)
+				.body("{\"username\":\"" + username + "\",\"password\":\"password123\"}").when()
+				.post("/api/v1/auth/login").then().statusCode(200).extract().path("user.id");
+
+		deactivateUser(userId);
+
+		given().contentType(ContentType.JSON).body("{\"refreshToken\":\"" + refreshToken + "\"}").when()
+				.post("/api/v1/auth/refresh").then().statusCode(401).body("error", equalTo("unauthorized"));
+	}
+
+	private void deactivateUser(String userId) throws Exception {
+		tx.begin();
+		em.createQuery("UPDATE User u SET u.active = false WHERE u.id = :id").setParameter("id", UUID.fromString(userId))
+				.executeUpdate();
+		tx.commit();
 	}
 }

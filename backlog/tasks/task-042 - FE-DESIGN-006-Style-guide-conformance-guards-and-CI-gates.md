@@ -19,7 +19,6 @@ dependencies:
   - TASK-040
   - TASK-041
 references:
-  - frontend/docs/ui-ux-implementation-plan.md
   - frontend/README.md
 priority: high
 ---

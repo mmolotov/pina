@@ -3,6 +3,8 @@ package dev.pina.backend.domain;
 import io.quarkus.hibernate.orm.panache.PanacheEntityBase;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -27,6 +29,15 @@ public class User extends PanacheEntityBase {
 
 	@Column
 	public String avatarUrl;
+
+	@Enumerated(EnumType.STRING)
+	@Column(nullable = false)
+	@ColumnDefault("'USER'")
+	public InstanceRole instanceRole = InstanceRole.USER;
+
+	@Column(nullable = false)
+	@ColumnDefault("true")
+	public boolean active = true;
 
 	@Column(nullable = false, updatable = false, insertable = false)
 	@ColumnDefault("now()")

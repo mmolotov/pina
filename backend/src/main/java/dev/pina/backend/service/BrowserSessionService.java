@@ -86,6 +86,9 @@ public class BrowserSessionService {
 		if (session == null || session.revokedAt != null || session.expiresAt.isBefore(OffsetDateTime.now())) {
 			return Optional.empty();
 		}
+		if (!session.user.active) {
+			return Optional.empty();
+		}
 
 		return Optional.of(new BrowserSessionAuthentication(session));
 	}
