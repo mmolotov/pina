@@ -6,9 +6,9 @@ import dev.pina.backend.domain.LinkedAccount;
 import dev.pina.backend.domain.User;
 import io.quarkus.runtime.StartupEvent;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.event.Observes;
 import jakarta.transaction.Transactional;
 import java.util.Optional;
-import jakarta.enterprise.event.Observes;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
 
@@ -35,8 +35,7 @@ public class AdminBootstrap {
 			if (account != null) {
 				account.user.instanceRole = InstanceRole.ADMIN;
 				account.user.persistAndFlush();
-				LOG.infof("Promoted user '%s' to instance admin via pina.admin.initial-username",
-						configuredUsername);
+				LOG.infof("Promoted user '%s' to instance admin via pina.admin.initial-username", configuredUsername);
 				return;
 			}
 			LOG.warnf(
