@@ -1,9 +1,20 @@
+import { getActiveLocale, translateMessage } from "~/lib/i18n";
+
+interface RelativeCountForms {
+  one: string;
+  other: string;
+  few?: string;
+  many?: string;
+}
+
 export function formatDateTime(value: string | null) {
+  const locale = getActiveLocale();
+
   if (!value) {
-    return "Not available";
+    return translateMessage(locale, "common.notAvailable");
   }
 
-  return new Intl.DateTimeFormat("en", {
+  return new Intl.DateTimeFormat(locale, {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(new Date(value));
@@ -11,15 +22,34 @@ export function formatDateTime(value: string | null) {
 
 export function formatRelativeCount(
   count: number,
-  singular: string,
-  plural: string,
+  singularOrForms: string | RelativeCountForms,
+  plural?: string,
 ) {
-  return `${count} ${count === 1 ? singular : plural}`;
+  const locale = getActiveLocale();
+  const formattedCount = new Intl.NumberFormat(locale).format(count);
+
+  if (typeof singularOrForms === "string") {
+    const category = new Intl.PluralRules(locale).select(count);
+    const unit =
+      category === "one" ? singularOrForms : (plural ?? singularOrForms);
+    return `${formattedCount} ${unit}`;
+  }
+
+  const category = new Intl.PluralRules(locale).select(count);
+  const unit =
+    (category === "few" ? singularOrForms.few : undefined) ??
+    (category === "many" ? singularOrForms.many : undefined) ??
+    (category === "one" ? singularOrForms.one : undefined) ??
+    singularOrForms.other;
+
+  return `${formattedCount} ${unit}`;
 }
 
 export function formatBytes(bytes: number) {
+  const locale = getActiveLocale();
+
   if (bytes < 1024) {
-    return `${bytes} B`;
+    return `${new Intl.NumberFormat(locale).format(bytes)} B`;
   }
 
   const units = ["KB", "MB", "GB", "TB"];
@@ -31,5 +61,10 @@ export function formatBytes(bytes: number) {
     unitIndex += 1;
   }
 
-  return `${value.toFixed(value >= 100 ? 0 : 1)} ${units[unitIndex]}`;
+  const formattedValue = new Intl.NumberFormat(locale, {
+    maximumFractionDigits: value >= 100 ? 0 : 1,
+    minimumFractionDigits: value >= 100 ? 0 : 1,
+  }).format(value);
+
+  return `${formattedValue} ${units[unitIndex]}`;
 }

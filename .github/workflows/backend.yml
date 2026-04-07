@@ -46,6 +46,13 @@ jobs:
 
       - uses: actions/checkout@v6
 
+      - name: Generate JWT keys
+        run: |
+          mkdir -p dev-keys
+          openssl genrsa -out dev-keys/privateKey.pem 2048
+          openssl rsa -in dev-keys/privateKey.pem -pubout -out dev-keys/publicKey.pem
+        working-directory: backend
+
       - uses: actions/setup-java@v5
         with:
           distribution: 'temurin'

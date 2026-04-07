@@ -1,6 +1,14 @@
 import type { Route } from "./+types/app-home";
 import { Link } from "react-router";
-import { EmptyState, PageHeader, Panel, StatCard } from "~/components/ui";
+import {
+  Badge,
+  EmptyHint,
+  EmptyState,
+  PageHeader,
+  Panel,
+  StatCard,
+  SurfaceCard,
+} from "~/components/ui";
 import { getHealth, listPhotos, listSpaces } from "~/lib/api";
 import { formatDateTime, formatRelativeCount } from "~/lib/format";
 import { useSession } from "~/lib/session";
@@ -91,8 +99,8 @@ export default function AppHomeRoute({ loaderData }: Route.ComponentProps) {
           </h2>
           <p className="mt-4 text-sm leading-7 text-[var(--color-text-muted)]">
             The app shell now covers auth, library, favorites, Spaces, settings,
-            timeline browsing, and a route-level search shell. Admin UI still
-            depends on instance-level backend endpoints that do not exist yet.
+            timeline browsing, route-level search, and the initial admin route
+            tree with capability-aware access gating.
           </p>
         </Panel>
       </section>
@@ -127,7 +135,7 @@ export default function AppHomeRoute({ loaderData }: Route.ComponentProps) {
               </h2>
             </div>
             <Link
-              className="text-sm font-semibold text-[var(--color-primary-strong)]"
+              className="link-accent text-sm font-semibold"
               to="/app/library"
             >
               View all
@@ -142,10 +150,7 @@ export default function AppHomeRoute({ loaderData }: Route.ComponentProps) {
           ) : (
             <div className="mt-6 grid gap-3">
               {state.photos.map((photo) => (
-                <article
-                  key={photo.id}
-                  className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-panel-strong)] p-4"
-                >
+                <SurfaceCard className="rounded-2xl p-4" key={photo.id}>
                   <div className="flex items-start justify-between gap-4">
                     <div>
                       <h3 className="text-lg font-semibold tracking-tight">
@@ -156,20 +161,23 @@ export default function AppHomeRoute({ loaderData }: Route.ComponentProps) {
                         {photo.height ?? "?"}
                       </p>
                     </div>
-                    <span className="rounded-full bg-[rgba(150,93,52,0.12)] px-3 py-1 text-xs font-semibold text-[var(--color-primary-strong)]">
+                    <Badge
+                      className="rounded-full px-3 py-1 text-xs font-semibold"
+                      tone="accent"
+                    >
                       {photo.variants.length} variants
-                    </span>
+                    </Badge>
                   </div>
                   <p className="mt-3 text-sm text-[var(--color-text-muted)]">
                     Uploaded {formatDateTime(photo.createdAt)}
                   </p>
                   <Link
-                    className="mt-4 inline-flex text-sm font-semibold text-[var(--color-primary-strong)]"
+                    className="link-accent mt-4 inline-flex text-sm font-semibold"
                     to={`/app/library/photos/${photo.id}`}
                   >
                     Open photo
                   </Link>
-                </article>
+                </SurfaceCard>
               ))}
             </div>
           )}
@@ -182,17 +190,14 @@ export default function AppHomeRoute({ loaderData }: Route.ComponentProps) {
           </h2>
 
           {state.spaces.length === 0 ? (
-            <div className="mt-6 rounded-2xl border border-dashed border-[var(--color-border)] px-5 py-6 text-sm leading-7 text-[var(--color-text-muted)]">
+            <EmptyHint className="mt-6 px-5 py-6 leading-7">
               No Spaces yet. Once created, the frontend already has a dedicated
               route and authenticated API boundary for them.
-            </div>
+            </EmptyHint>
           ) : (
             <div className="mt-6 space-y-3">
               {state.spaces.map((space) => (
-                <article
-                  key={space.id}
-                  className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-panel-strong)] p-4"
-                >
+                <SurfaceCard className="rounded-2xl p-4" key={space.id}>
                   <div className="flex items-center justify-between gap-3">
                     <div>
                       <h3 className="text-lg font-semibold tracking-tight">
@@ -203,11 +208,11 @@ export default function AppHomeRoute({ loaderData }: Route.ComponentProps) {
                         {space.depth}
                       </p>
                     </div>
-                    <span className="rounded-full border border-[var(--color-border)] px-3 py-1 text-xs font-semibold">
+                    <Badge className="rounded-full px-3 py-1 text-xs font-semibold">
                       {space.inheritMembers
                         ? "Inherited access"
                         : "Direct membership"}
-                    </span>
+                    </Badge>
                   </div>
                   {space.description ? (
                     <p className="mt-3 text-sm leading-7 text-[var(--color-text-muted)]">
@@ -215,12 +220,12 @@ export default function AppHomeRoute({ loaderData }: Route.ComponentProps) {
                     </p>
                   ) : null}
                   <Link
-                    className="mt-4 inline-flex text-sm font-semibold text-[var(--color-primary-strong)]"
+                    className="link-accent mt-4 inline-flex text-sm font-semibold"
                     to={`/app/spaces/${space.id}`}
                   >
                     Open Space
                   </Link>
-                </article>
+                </SurfaceCard>
               ))}
             </div>
           )}

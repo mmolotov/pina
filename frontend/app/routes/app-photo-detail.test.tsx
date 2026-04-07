@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { createRoutesStub } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { I18nProvider } from "~/lib/i18n";
 import AppPhotoDetailRoute, {
   clientLoader as appPhotoDetailClientLoader,
 } from "~/routes/app-photo-detail";
@@ -61,7 +62,7 @@ describe("AppPhotoDetailRoute", () => {
     apiMocks.deletePhoto.mockResolvedValue(undefined);
   });
 
-  it("renders photo metadata and adds favorite", async () => {
+  function renderRoute() {
     const Stub = createRoutesStub([
       {
         path: "/app/library/photos/:photoId",
@@ -71,20 +72,48 @@ describe("AppPhotoDetailRoute", () => {
       },
     ]);
 
-    render(<Stub initialEntries={["/app/library/photos/photo-1"]} />);
+    return render(
+      <I18nProvider>
+        <Stub initialEntries={["/app/library/photos/photo-1"]} />
+      </I18nProvider>,
+    );
+  }
+
+  it("renders photo metadata and adds favorite", async () => {
+    renderRoute();
 
     expect(await screen.findByText("beach.jpg")).toBeInTheDocument();
-    expect(screen.getByText("Asset details")).toBeInTheDocument();
     expect(screen.getByText('{"camera":"Phone"}')).toBeInTheDocument();
-    expect(screen.getByText("Not saved")).toBeInTheDocument();
     expect(
-      screen.getByRole("link", { name: "Open favorites" }),
+      screen.getByRole("link", { name: /favorites|избранное/i }),
     ).toHaveAttribute("href", "/app/favorites");
+    expect(
+      screen.getByRole("button", { name: /download|скачать/i }),
+    ).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Add favorite" }));
+    fireEvent.click(screen.getByRole("button", { name: /favorite|избран/i }));
 
     await waitFor(() => {
       expect(apiMocks.addFavorite).toHaveBeenCalledWith("PHOTO", "photo-1");
     });
+  });
+
+  it("downloads the original file", async () => {
+    const clickSpy = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(() => {});
+
+    renderRoute();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: /download|скачать/i }),
+    );
+
+    await waitFor(() => {
+      expect(apiMocks.getPhotoBlob).toHaveBeenCalledWith("photo-1", "ORIGINAL");
+    });
+    expect(clickSpy).toHaveBeenCalledTimes(1);
+
+    clickSpy.mockRestore();
   });
 });

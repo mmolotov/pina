@@ -5,8 +5,17 @@ import {
 } from "~/lib/session";
 import type {
   AlbumDto,
+  AdminInviteLinkDto,
+  AdminHealthDto,
+  AdminSettingsDto,
+  AdminSpaceDto,
+  AdminSpaceStorageDto,
+  AdminStorageSummaryDto,
+  AdminUserDto,
+  AdminUserStorageDto,
   ApiErrorPayload,
   AuthResponse,
+  CompressionFormat,
   FavoriteDto,
   FavoriteStatusDto,
   FavoriteTargetType,
@@ -17,6 +26,7 @@ import type {
   PhotoGeoSearchParams,
   PhotoNearbySearchParams,
   PhotoDto,
+  RegistrationMode,
   SpaceDto,
   SpaceMemberDto,
   SpaceRole,
@@ -39,6 +49,30 @@ export class ApiError extends Error {
     this.status = status;
     this.code = code;
   }
+}
+
+export function isBackendUnavailableError(error: unknown) {
+  if (error instanceof ApiError) {
+    return (
+      error.code === "backend_unavailable" ||
+      error.status === 502 ||
+      error.status === 503 ||
+      error.status === 504 ||
+      (error.status === 500 && error.code === "request_failed")
+    );
+  }
+
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  const message = error.message.toLowerCase();
+  return (
+    message.includes("failed to fetch") ||
+    message.includes("fetch failed") ||
+    message.includes("load failed") ||
+    message.includes("networkerror")
+  );
 }
 
 let refreshPromise: Promise<AuthResponse | null> | null = null;
@@ -131,19 +165,29 @@ async function request<T>(
   retried = false,
 ): Promise<T> {
   const session = getSessionSnapshot();
-  const response = await fetch(`/api/v1${path}`, {
-    ...options,
-    headers: buildHeaders(
-      options,
-      options.auth ? session?.accessToken : undefined,
-    ),
-    body:
-      options.body &&
-      !(options.body instanceof FormData) &&
-      typeof options.body !== "string"
-        ? JSON.stringify(options.body)
-        : (options.body ?? undefined),
-  });
+  let response: Response;
+
+  try {
+    response = await fetch(`/api/v1${path}`, {
+      ...options,
+      headers: buildHeaders(
+        options,
+        options.auth ? session?.accessToken : undefined,
+      ),
+      body:
+        options.body &&
+        !(options.body instanceof FormData) &&
+        typeof options.body !== "string"
+          ? JSON.stringify(options.body)
+          : (options.body ?? undefined),
+    });
+  } catch {
+    throw new ApiError(
+      503,
+      "backend_unavailable",
+      "Backend is unavailable. Check that the server is running and try again.",
+    );
+  }
 
   if (response.status === 401 && options.auth && !retried) {
     const refreshed = await refreshSession();
@@ -181,19 +225,29 @@ async function requestBlob(
   retried = false,
 ) {
   const session = getSessionSnapshot();
-  const response = await fetch(`/api/v1${path}`, {
-    ...options,
-    headers: buildHeaders(
-      options,
-      options.auth ? session?.accessToken : undefined,
-    ),
-    body:
-      options.body &&
-      !(options.body instanceof FormData) &&
-      typeof options.body !== "string"
-        ? JSON.stringify(options.body)
-        : (options.body ?? undefined),
-  });
+  let response: Response;
+
+  try {
+    response = await fetch(`/api/v1${path}`, {
+      ...options,
+      headers: buildHeaders(
+        options,
+        options.auth ? session?.accessToken : undefined,
+      ),
+      body:
+        options.body &&
+        !(options.body instanceof FormData) &&
+        typeof options.body !== "string"
+          ? JSON.stringify(options.body)
+          : (options.body ?? undefined),
+    });
+  } catch {
+    throw new ApiError(
+      503,
+      "backend_unavailable",
+      "Backend is unavailable. Check that the server is running and try again.",
+    );
+  }
 
   if (response.status === 401 && options.auth && !retried) {
     const refreshed = await refreshSession();
@@ -280,6 +334,147 @@ export function logout() {
 
 export function getCurrentUser() {
   return request<UserDto>("/auth/me", { auth: true });
+}
+
+export function listAdminUsers(params: {
+  page?: number;
+  size?: number;
+  needsTotal?: boolean;
+  search?: string;
+}) {
+  return request<PageResponse<AdminUserDto>>(
+    `/admin/users?${buildQuery({
+      page: params.page ?? 0,
+      size: params.size ?? 20,
+      needsTotal: params.needsTotal ?? true,
+      search: params.search?.trim() || null,
+    })}`,
+    { auth: true },
+  );
+}
+
+export function getAdminUser(userId: string) {
+  return request<AdminUserDto>(`/admin/users/${userId}`, { auth: true });
+}
+
+export function updateAdminUser(
+  userId: string,
+  input: { instanceRole?: "USER" | "ADMIN" | null; active?: boolean | null },
+) {
+  return request<AdminUserDto>(`/admin/users/${userId}`, {
+    auth: true,
+    method: "PUT",
+    body: input,
+  });
+}
+
+export function listAdminSpaces(params: {
+  page?: number;
+  size?: number;
+  needsTotal?: boolean;
+  search?: string;
+}) {
+  return request<PageResponse<AdminSpaceDto>>(
+    `/admin/spaces?${buildQuery({
+      page: params.page ?? 0,
+      size: params.size ?? 20,
+      needsTotal: params.needsTotal ?? true,
+      search: params.search?.trim() || null,
+    })}`,
+    { auth: true },
+  );
+}
+
+export function getAdminSpace(spaceId: string) {
+  return request<AdminSpaceDto>(`/admin/spaces/${spaceId}`, { auth: true });
+}
+
+export function deleteAdminSpace(spaceId: string) {
+  return request<void>(`/admin/spaces/${spaceId}`, {
+    auth: true,
+    method: "DELETE",
+  });
+}
+
+export function listAdminInvites(params: {
+  page?: number;
+  size?: number;
+  needsTotal?: boolean;
+  spaceId?: string | null;
+  active?: boolean | null;
+}) {
+  return request<PageResponse<AdminInviteLinkDto>>(
+    `/admin/invites?${buildQuery({
+      page: params.page ?? 0,
+      size: params.size ?? 20,
+      needsTotal: params.needsTotal ?? true,
+      spaceId: params.spaceId?.trim() || null,
+      active: params.active ?? null,
+    })}`,
+    { auth: true },
+  );
+}
+
+export function revokeAdminInvite(inviteId: string) {
+  return request<void>(`/admin/invites/${inviteId}`, {
+    auth: true,
+    method: "DELETE",
+  });
+}
+
+export function getAdminHealth() {
+  return request<AdminHealthDto>("/admin/health", { auth: true });
+}
+
+export function getAdminSettings() {
+  return request<AdminSettingsDto>("/admin/settings", { auth: true });
+}
+
+export function updateAdminSettings(input: {
+  registrationMode: RegistrationMode;
+  compressionFormat: CompressionFormat;
+  compressionQuality: number;
+  compressionMaxResolution: number;
+}) {
+  return request<AdminSettingsDto>("/admin/settings", {
+    auth: true,
+    method: "PUT",
+    body: input,
+  });
+}
+
+export function getAdminStorageSummary() {
+  return request<AdminStorageSummaryDto>("/admin/storage", { auth: true });
+}
+
+export function listAdminStorageUsers(params: {
+  page?: number;
+  size?: number;
+  needsTotal?: boolean;
+}) {
+  return request<PageResponse<AdminUserStorageDto>>(
+    `/admin/storage/users?${buildQuery({
+      page: params.page ?? 0,
+      size: params.size ?? 10,
+      needsTotal: params.needsTotal ?? true,
+    })}`,
+    { auth: true },
+  );
+}
+
+export function listAdminStorageSpaces(params: {
+  page?: number;
+  size?: number;
+  needsTotal?: boolean;
+}) {
+  return request<PageResponse<AdminSpaceStorageDto>>(
+    `/admin/storage/spaces?${buildQuery({
+      page: params.page ?? 0,
+      size: params.size ?? 10,
+      needsTotal: params.needsTotal ?? true,
+    })}`,
+    { auth: true },
+  );
 }
 
 export function updateCurrentUser(input: {

@@ -12,6 +12,9 @@ What is implemented today (Phase 1 + Phase 2):
 - Refresh token flow: short-lived access tokens (15 min) + long-lived refresh tokens (30 days) with
   rotation
 - Google OIDC login + account linking (jose4j JWKS token verification)
+- Instance-level admin role with protected admin REST endpoints
+- Runtime instance settings for registration mode and image compression defaults
+- User activation/deactivation with immediate auth/session revocation on admin disable
 - Linked accounts model supporting multiple auth providers (LOCAL, GOOGLE, TELEGRAM)
 - Ownership enforcement: users can only access their own photos/albums (404 for non-owners)
 - Spaces with subspace hierarchy (adjacency list, max depth 5)
@@ -94,6 +97,7 @@ The repository also includes a reproducible smoke runner for the backend API man
 
 ```bash
 ./scripts/manual-smoke.sh
+./scripts/manual-admin-smoke.sh
 ```
 
 Requirements:
@@ -114,12 +118,14 @@ Behavior notes:
 - the script is a smoke/integration helper, not part of `./gradlew build`
 - it covers the same end-to-end flow described in `./docs/api-manual-test-scenarios.md`
 - if `PHOTO_FILE` is not provided, the script generates a temporary 1x1 PNG and removes it on exit
+- `./scripts/manual-admin-smoke.sh` is the companion admin-focused smoke runner; it expects either a
+  clean instance where the first local signup becomes admin, or an existing admin supplied through
+  `ADMIN_ACCESS_TOKEN` / `ADMIN_USERNAME` + `ADMIN_PASSWORD`
 
 ## Planning Docs
 
 - Operational backlog: `../backlog/`
 - Manual API scenarios: `./docs/api-manual-test-scenarios.md`
-- Admin prerequisites: `./docs/admin-panel-backend-requirements.md`
 
 Use `Backlog.md` for active backend task management:
 
@@ -150,9 +156,11 @@ under `../backlog/tasks/`.
 
 ## Current Domain Model
 
-- `User`: authenticated user; resolved from bearer JWT subject or browser-session principal
+- `User`: authenticated user; resolved from bearer JWT subject or browser-session principal, with
+  instance-level role and activation flag
 - `LinkedAccount`: links a user to an auth provider (LOCAL, GOOGLE, TELEGRAM) with provider-specific
   credentials
+- `InstanceSetting`: runtime-mutable key/value settings for registration mode and compression defaults
 - `BrowserSession`: server-managed browser session with hashed session token, hashed CSRF token,
   type, expiry, revocation, and audit-oriented user-agent/IP metadata
 - `PersonalLibrary`: one per user, created automatically on registration
@@ -197,11 +205,17 @@ dev.pina.backend/
 Main services:
 
 - `AuthService`: registration, authentication (BCrypt), JWT token generation, browser-session
-  issuance/revocation, Google OIDC login + account linking
+  issuance/revocation, Google OIDC login + account linking, registration-mode enforcement, and
+  first-admin bootstrap
 - `BrowserSessionService`: persistent browser-session issuance, lookup, revocation, cleanup, and
   trusted remote-address resolution for audit metadata
 - `UserResolver`: resolves current user from either bearer JWT or browser-session identity; profile
   updates
+- `InstanceSettingsService`: reads and updates runtime instance settings exposed to instance admins
+- `AdminUserService`: global user listing, detail lookup, role changes, and account deactivation
+- `AdminSpaceService`: global Space listing, detail lookup, and force-delete operations
+- `AdminStorageService`: aggregate, per-user, and per-Space storage reporting
+- `AdminInviteService`: global invite listing and admin revocation
 - `PhotoService`: upload pipeline, dedup, variant generation, delete rules
 - `AlbumService`: create/update/delete albums, manage album references, Space album support
 - `PersonalLibraryService`: resolve or create the user's Personal Library
@@ -275,6 +289,9 @@ Auth response format (register, login, google, refresh):
 - `expiresIn`: access token lifetime in seconds
 - Refresh tokens are single-use (rotation): each refresh invalidates the old token and issues a new
   one
+- Self-service registration is controlled by the runtime `registrationMode` instance setting. Local
+  registration and first-time Google sign-up are blocked when the mode is `CLOSED` or `INVITE_ONLY`.
+- Users marked `active=false` cannot log in, create browser sessions, or rotate refresh tokens.
 
 Browser-session auth notes:
 
@@ -412,6 +429,34 @@ Notes:
 |--------|------------------|------------------------------|
 | `GET`  | `/api/v1/health` | App status and storage stats |
 
+### Admin
+
+All admin endpoints require an authenticated user with `instanceRole=ADMIN`.
+
+| Method   | Path                                    | Description                                           |
+|----------|-----------------------------------------|-------------------------------------------------------|
+| `GET`    | `/api/v1/admin/health`                  | System health, DB version, storage stats, JVM stats   |
+| `GET`    | `/api/v1/admin/settings`                | Read runtime instance settings                        |
+| `PUT`    | `/api/v1/admin/settings`                | Update registration mode and compression defaults      |
+| `GET`    | `/api/v1/admin/users?page=&size=&needsTotal=&search=` | List all users                              |
+| `GET`    | `/api/v1/admin/users/{id}`              | Get admin user detail                                 |
+| `PUT`    | `/api/v1/admin/users/{id}`              | Change instance role or activation state               |
+| `GET`    | `/api/v1/admin/spaces?page=&size=&needsTotal=&search=` | List all Spaces                            |
+| `GET`    | `/api/v1/admin/spaces/{id}`             | Get admin Space detail                                |
+| `DELETE` | `/api/v1/admin/spaces/{id}`             | Force-delete a Space                                  |
+| `GET`    | `/api/v1/admin/storage`                 | Aggregate storage summary                             |
+| `GET`    | `/api/v1/admin/storage/users?page=&size=&needsTotal=` | Per-user storage breakdown                 |
+| `GET`    | `/api/v1/admin/storage/spaces?page=&size=&needsTotal=` | Per-Space storage breakdown                |
+| `GET`    | `/api/v1/admin/invites?page=&size=&needsTotal=&spaceId=&active=` | List all invite links                 |
+| `DELETE` | `/api/v1/admin/invites/{id}`            | Revoke any invite link                                |
+
+Admin semantics:
+
+- An admin cannot demote themselves from `ADMIN` or deactivate their own account through the admin API.
+- Deactivating a user revokes their refresh tokens and browser sessions immediately.
+- `pina.admin.initial-username` can be used to promote a matching local account on startup; otherwise
+  the first eligible local self-signup becomes the initial instance admin.
+
 ## Storage
 
 Storage is selected via `pina.storage.provider`.
@@ -454,6 +499,12 @@ Current schema is defined by the consolidated `V01__core_schema.sql` file and in
 - `invite_links`
 - `favorites`
 - `refresh_tokens`
+- `instance_settings`
+
+Additional auth/admin schema changes are applied by later migrations:
+
+- `users.instance_role` for instance-level authorization
+- `users.active` for account deactivation
 
 Quarkus Dev Services starts PostgreSQL automatically in dev/test mode. Docker is required.
 
@@ -468,6 +519,7 @@ Key properties from `src/main/resources/application.properties`:
 | `pina.auth.bcrypt.cost`                 | `12`                      | BCrypt hashing cost factor                |
 | `pina.auth.google.client-id`            | —                         | Google OAuth client ID (empty = disabled) |
 | `pina.auth.refresh-token.lifespan`      | `2592000`                 | Refresh token TTL in seconds (30 days)    |
+| `pina.admin.initial-username`           | —                         | bootstrap local username for first admin  |
 | `pina.storage.provider`                 | `local`                   | active storage backend                    |
 | `pina.storage.local.base-path`          | `data`                    | local storage root                        |
 | `pina.photo.store-original`             | `true`                    | keep original uploaded file               |
@@ -494,12 +546,14 @@ Current coverage focus:
 - Refresh tokens: refresh, rotation, revocation after use, logout, invalid token handling
 - Google OIDC: login, account creation, account linking, disabled provider (
   `@InjectMock GoogleTokenVerifier`)
+- Registration-mode enforcement for self-signup and inactive-account blocking across auth flows
 - Ownership enforcement: photos and albums only accessible by owner (404 for non-owners)
 - Spaces: CRUD, subspace depth limits, membership management, role-based authorization
 - Subspace role inheritance: direct, inherited from parent, deep inheritance, override behavior
 - Subspace visibility: `inheritMembers` flag enable/disable/re-enable, deep blocking
 - Space albums: create, list, update, delete, add/remove photos, role-based access
 - Invite links: create, list, revoke, preview, join, usage limits, expiration, already member
+- Admin API: authorization, user management, settings, Space management, storage reporting, health
 - Favorites: add, remove, list with type filter, check, duplicate prevention, target validation
 - Photo upload / dedup / file serving / delete rules
 - Album create/update/delete and reference management

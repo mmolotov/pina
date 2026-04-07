@@ -1,7 +1,10 @@
 import { Link, Navigate } from "react-router";
 import type { Route } from "./+types/home";
 import { useEffect, useState } from "react";
+import { BrandLogo } from "~/components/brand-logo";
+import { LanguageSwitcher } from "~/components/language-switcher";
 import { getHealth } from "~/lib/api";
+import { useI18n } from "~/lib/i18n";
 import { useSession } from "~/lib/session";
 
 export function meta(_: Route.MetaArgs) {
@@ -15,6 +18,7 @@ type HealthStatus = "loading" | "up" | "down";
 
 export default function Home() {
   const session = useSession();
+  const { t } = useI18n();
   const [health, setHealth] = useState<HealthStatus>("loading");
 
   useEffect(() => {
@@ -28,58 +32,57 @@ export default function Home() {
   }, []);
 
   if (session) {
-    return <Navigate to="/app" replace />;
+    return <Navigate to="/app/library" replace />;
   }
 
   return (
     <main className="app-shell min-h-screen px-6 py-10 lg:px-10">
-      <div className="mx-auto flex min-h-[calc(100vh-5rem)] max-w-6xl flex-col gap-8 lg:justify-between">
+      <div className="flex min-h-[calc(100vh-5rem)] w-full flex-col gap-8 lg:justify-between">
         <header className="flex items-center justify-between gap-4">
           <div>
-            <p className="eyebrow">Phase 3 Foundation</p>
-            <h1 className="mt-2 text-3xl font-semibold tracking-tight sm:text-4xl">
-              PINA
-            </h1>
+            <p className="eyebrow">{t("public.home.phaseEyebrow")}</p>
+            <BrandLogo
+              alt="PINA"
+              className="mt-3 h-12 w-auto max-w-[12rem] object-contain sm:h-14"
+            />
           </div>
           <div className="flex items-center gap-3">
+            <LanguageSwitcher />
             <Link className="button-secondary" to="/login">
-              Log in
+              {t("public.home.login")}
             </Link>
             <Link className="button-primary" to="/register">
-              Create account
+              {t("public.home.createAccount")}
             </Link>
           </div>
         </header>
 
         <section className="grid gap-6 lg:grid-cols-[1.3fr_0.7fr]">
           <article className="panel p-8 sm:p-10">
-            <p className="eyebrow">Private Image Network Archive</p>
+            <p className="eyebrow">{t("public.home.heroEyebrow")}</p>
             <h2 className="mt-4 max-w-3xl text-5xl leading-tight font-semibold tracking-tight sm:text-6xl">
-              A collaboration-ready media library, starting with auth, photos,
-              albums, and Spaces.
+              {t("public.home.heroTitle")}
             </h2>
             <p className="mt-6 max-w-2xl text-lg leading-8 text-[var(--color-text-muted)]">
-              The backend is already on Phase 2. This frontend foundation starts
-              the real app shell: authentication, personal library access, and
-              Space-aware navigation.
+              {t("public.home.heroDescription")}
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
               <Link className="button-primary" to="/register">
-                Start with a local account
+                {t("public.home.heroPrimaryCta")}
               </Link>
               <Link className="button-secondary" to="/login">
-                Open the app
+                {t("public.home.heroSecondaryCta")}
               </Link>
             </div>
           </article>
 
           <aside className="panel flex flex-col justify-between p-8">
             <div>
-              <p className="eyebrow">Environment</p>
+              <p className="eyebrow">{t("public.home.environmentEyebrow")}</p>
               <h3 className="mt-3 text-2xl font-semibold tracking-tight">
-                Backend status
+                {t("public.home.environmentTitle")}
               </h3>
-              <div className="mt-5 inline-flex items-center gap-3 rounded-full border border-[var(--color-border)] bg-[var(--color-panel-strong)] px-4 py-3 text-sm text-[var(--color-text-muted)]">
+              <div className="surface-card mt-5 inline-flex items-center gap-3 rounded-full px-4 py-3 text-sm text-[var(--color-text-muted)]">
                 <span
                   className={[
                     "status-dot",
@@ -92,27 +95,29 @@ export default function Home() {
                 />
                 <span>
                   {health === "loading"
-                    ? "Connecting to backend"
+                    ? t("public.home.backendConnecting")
                     : health === "up"
-                      ? "Backend connected"
-                      : "Backend unavailable"}
+                      ? t("public.home.backendConnected")
+                      : t("public.home.backendUnavailable")}
                 </span>
               </div>
             </div>
 
             <dl className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
-              <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-panel-strong)] p-4">
-                <dt className="eyebrow">Ready today</dt>
+              <div className="surface-card rounded-2xl p-4">
+                <dt className="eyebrow">
+                  {t("public.home.readyTodayEyebrow")}
+                </dt>
                 <dd className="mt-2 text-sm leading-7 text-[var(--color-text-muted)]">
-                  JWT auth, refresh tokens, Google login, Spaces, invite links,
-                  shared albums, favorites.
+                  {t("public.home.readyTodayDescription")}
                 </dd>
               </div>
-              <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-panel-strong)] p-4">
-                <dt className="eyebrow">Next in frontend</dt>
+              <div className="surface-card rounded-2xl p-4">
+                <dt className="eyebrow">
+                  {t("public.home.nextFrontendEyebrow")}
+                </dt>
                 <dd className="mt-2 text-sm leading-7 text-[var(--color-text-muted)]">
-                  Library browsing, album flows, Space dashboards, and
-                  responsive app navigation.
+                  {t("public.home.nextFrontendDescription")}
                 </dd>
               </div>
             </dl>

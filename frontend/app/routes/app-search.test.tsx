@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { createRoutesStub } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { I18nProvider } from "~/lib/i18n";
 import AppSearchRoute, {
   clientLoader as appSearchClientLoader,
 } from "~/routes/app-search";
@@ -58,7 +59,7 @@ describe("AppSearchRoute", () => {
     apiMocks.listFavorites.mockResolvedValue([]);
   });
 
-  it("renders the search shell and local preview", async () => {
+  function renderRoute() {
     const Stub = createRoutesStub([
       {
         path: "/app/search",
@@ -67,76 +68,75 @@ describe("AppSearchRoute", () => {
       },
     ]);
 
-    render(<Stub initialEntries={["/app/search"]} />);
+    return render(
+      <I18nProvider>
+        <Stub initialEntries={["/app/search"]} />
+      </I18nProvider>,
+    );
+  }
 
-    expect(await screen.findByText("Discovery")).toBeInTheDocument();
+  it("renders the search shell and local preview", async () => {
+    renderRoute();
+
     expect(
-      await screen.findByText("Search backend not connected yet"),
+      await screen.findByText(/discovery|обнаружение/i),
     ).toBeInTheDocument();
     expect(
-      screen.getByText("Search backend not connected yet"),
+      await screen.findByText(/backend.*connected|не подключ/i),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Faces (Later)" }),
+      screen.getByRole("button", { name: /faces|лица/i }),
     ).toBeInTheDocument();
   });
 
   it("persists query and shows local preview matches", async () => {
-    const Stub = createRoutesStub([
-      {
-        path: "/app/search",
-        Component: AppSearchRoute,
-        loader: async () => appSearchClientLoader(),
-      },
-    ]);
+    renderRoute();
 
-    render(<Stub initialEntries={["/app/search"]} />);
+    expect(
+      await screen.findByText(/discovery|обнаружение/i),
+    ).toBeInTheDocument();
 
-    expect(await screen.findByText("Discovery")).toBeInTheDocument();
-
-    fireEvent.change(screen.getByLabelText("Search query"), {
+    fireEvent.change(screen.getByLabelText(/search query|поисковый запрос/i), {
       target: { value: "beach" },
     });
 
     expect(await screen.findByText("beach.jpg")).toBeInTheDocument();
-    expect(screen.getByText("Photo preview")).toBeInTheDocument();
+    expect(screen.getByText(/photo preview|превью фото/i)).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Spaces" }));
-    fireEvent.change(screen.getByLabelText("Search query"), {
+    fireEvent.click(screen.getByRole("button", { name: /spaces/i }));
+    fireEvent.change(screen.getByLabelText(/search query|поисковый запрос/i), {
       target: { value: "family" },
     });
 
     expect(await screen.findByText("Family Space")).toBeInTheDocument();
-    expect(screen.getByText("Space preview")).toBeInTheDocument();
+    expect(screen.getByText(/space preview|превью space/i)).toBeInTheDocument();
   });
 
   it("supports example chips and clearing the query", async () => {
-    const Stub = createRoutesStub([
-      {
-        path: "/app/search",
-        Component: AppSearchRoute,
-        loader: async () => appSearchClientLoader(),
-      },
-    ]);
+    renderRoute();
 
-    render(<Stub initialEntries={["/app/search"]} />);
+    expect(
+      await screen.findByText(/discovery|обнаружение/i),
+    ).toBeInTheDocument();
 
-    expect(await screen.findByText("Discovery")).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "Try beach" }));
+    fireEvent.click(screen.getByRole("button", { name: /beach/i }));
 
     await waitFor(() => {
-      expect(screen.getByLabelText("Search query")).toHaveValue("beach");
+      expect(
+        screen.getByLabelText(/search query|поисковый запрос/i),
+      ).toHaveValue("beach");
     });
     expect(await screen.findByText("beach.jpg")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Clear query" }));
+    fireEvent.click(screen.getByRole("button", { name: /clear|очист/i }));
 
     await waitFor(() => {
-      expect(screen.getByLabelText("Search query")).toHaveValue("");
+      expect(
+        screen.getByLabelText(/search query|поисковый запрос/i),
+      ).toHaveValue("");
     });
     expect(
-      screen.getByRole("link", { name: "Open timeline instead" }),
+      screen.getByRole("link", { name: /timeline|таймлайн/i }),
     ).toHaveAttribute("href", "/app/library?view=timeline");
   });
 });

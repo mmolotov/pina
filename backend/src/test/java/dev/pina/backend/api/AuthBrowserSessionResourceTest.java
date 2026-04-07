@@ -16,6 +16,7 @@ import io.restassured.response.ExtractableResponse;
 import io.restassured.response.Response;
 import jakarta.inject.Inject;
 import jakarta.persistence.EntityManager;
+import jakarta.transaction.UserTransaction;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -28,6 +29,9 @@ class AuthBrowserSessionResourceTest {
 
 	@Inject
 	EntityManager em;
+
+	@Inject
+	UserTransaction tx;
 
 	@Test
 	void sessionRegisterCreatesCookiesAndAllowsMe() {
@@ -190,6 +194,21 @@ class AuthBrowserSessionResourceTest {
 				.get("/api/v1/auth/me").then().statusCode(200);
 	}
 
+	@Test
+	void deactivatedUserCannotContinueBrowserSession() throws Exception {
+		String username = "session-inactive-" + UUID.randomUUID().toString().substring(0, 8);
+		ExtractableResponse<Response> response = given().contentType(ContentType.JSON)
+				.body("{\"username\":\"" + username + "\",\"password\":\"password123\"}").when()
+				.post("/api/v1/auth/session/register").then().statusCode(200).extract();
+
+		String sessionCookie = response.cookie("PINA_SESSION");
+		String userId = response.path("id");
+
+		deactivateUser(userId);
+
+		given().cookie("PINA_SESSION", sessionCookie).when().get("/api/v1/auth/me").then().statusCode(401);
+	}
+
 	private BrowserSession latestSessionForUser(String userId) {
 		return em
 				.createQuery("SELECT bs FROM BrowserSession bs WHERE bs.user.id = :userId ORDER BY bs.createdAt DESC",
@@ -204,5 +223,12 @@ class AuthBrowserSessionResourceTest {
 		} catch (NoSuchAlgorithmException e) {
 			throw new IllegalStateException("SHA-256 not available", e);
 		}
+	}
+
+	private void deactivateUser(String userId) throws Exception {
+		tx.begin();
+		em.createQuery("UPDATE User u SET u.active = false WHERE u.id = :id").setParameter("id", UUID.fromString(userId))
+				.executeUpdate();
+		tx.commit();
 	}
 }

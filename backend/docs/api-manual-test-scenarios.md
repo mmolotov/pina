@@ -13,9 +13,12 @@ All examples assume the backend is running locally on `http://localhost:8080`.
 For a reproducible end-to-end smoke run of this document, use
 `../scripts/manual-smoke.sh`. The script exercises the same non-admin backend API flow with
 generated test users and automatic assertions. It intentionally covers the current authenticated,
-library, Spaces, invites, and favorites surface; instance-level admin endpoints are out of scope
-until the ADMIN-001 backend subtasks are implemented. It is intended for local release/smoke
+library, Spaces, invites, and favorites surface. Instance-level admin endpoints are implemented,
+but they remain out of scope for this smoke script and are covered by dedicated integration tests.
+It is intended for local release/smoke
 verification, not as a replacement for automated integration tests in `../src/test`.
+
+For a separate admin-focused smoke path, use `../scripts/manual-admin-smoke.sh`.
 
 ## Preconditions
 

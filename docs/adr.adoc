@@ -76,7 +76,7 @@ If Quarkus drops a critical extension or a competing framework offers a signific
 
 Status:: Implemented
 Date:: 2026-03-25
-Implementation notes:: Phase 3 SPA now includes the authenticated app shell, library, Spaces, favorites, settings, search shell, and URL-driven geo map browsing with client-side clustering.
+Implementation notes:: Phase 3 SPA now includes the authenticated app shell, library, Spaces, favorites, settings, search shell, and URL-driven geo map browsing with client-side clustering. The frontend also now uses semantic light/dark theme tokens, a documented design system, shared UI primitives, automated accessibility checks through `eslint-plugin-jsx-a11y` plus route-level `jest-axe` smoke tests, and Playwright-based responsive/visual regression coverage for critical routes across desktop, tablet, and mobile viewports.
 
 ==== Context
 
@@ -96,6 +96,7 @@ TypeScript SPA with React, React Router 7 (file-based routing), Vite, and Tailwi
 - Access to the largest ecosystem of media/gallery components.
 - Vite provides instant HMR.
 - Adds a Node.js dependency to the development toolchain.
+- The frontend now carries explicit design-system governance: semantic tokens, theme switching, shared primitives, and automated accessibility validation are treated as part of the architecture, not just local styling choices.
 
 ==== Review trigger
 

@@ -3,8 +3,10 @@ package dev.pina.backend.service;
 import at.favre.lib.crypto.bcrypt.BCrypt;
 import dev.pina.backend.domain.AuthProvider;
 import dev.pina.backend.domain.BrowserSessionType;
+import dev.pina.backend.domain.InstanceRole;
 import dev.pina.backend.domain.LinkedAccount;
 import dev.pina.backend.domain.RefreshToken;
+import dev.pina.backend.domain.RegistrationMode;
 import dev.pina.backend.domain.User;
 import dev.pina.backend.service.GoogleTokenVerifier.GoogleIdToken;
 import io.smallrye.jwt.build.Jwt;
@@ -28,6 +30,7 @@ public class AuthService {
 
 	private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 	private static final int REFRESH_TOKEN_BYTES = 32;
+	private static final String INSTANCE_ADMIN_BOOTSTRAP_LOCK = "instance-admin-bootstrap";
 
 	@Inject
 	PersonalLibraryService personalLibraryService;
@@ -41,6 +44,9 @@ public class AuthService {
 	@Inject
 	BrowserSessionService browserSessionService;
 
+	@Inject
+	InstanceSettingsService instanceSettingsService;
+
 	@ConfigProperty(name = "pina.auth.bcrypt.cost", defaultValue = "12")
 	int bcryptCost;
 
@@ -50,8 +56,13 @@ public class AuthService {
 	@ConfigProperty(name = "pina.auth.refresh-token.lifespan", defaultValue = "2592000")
 	long refreshTokenLifespan;
 
+	@ConfigProperty(name = "pina.admin.initial-username")
+	Optional<String> initialUsername;
+
 	@Transactional
 	public User register(String username, String password, String name) {
+		enforceSelfSignupAllowed();
+
 		lockLinkedAccount(AuthProvider.LOCAL, username);
 
 		long exists = LinkedAccount.count("provider = ?1 and providerAccountId = ?2", AuthProvider.LOCAL, username);
@@ -81,6 +92,7 @@ public class AuthService {
 		}
 
 		personalLibraryService.getOrCreate(user);
+		promoteInitialAdminIfEligible(user, AuthProvider.LOCAL, username);
 
 		return user;
 	}
@@ -89,6 +101,9 @@ public class AuthService {
 		LinkedAccount account = LinkedAccount
 				.find("provider = ?1 and providerAccountId = ?2", AuthProvider.LOCAL, username).firstResult();
 		if (account == null) {
+			return Optional.empty();
+		}
+		if (!account.user.active) {
 			return Optional.empty();
 		}
 		BCrypt.Result result = BCrypt.verifyer().verify(password.toCharArray(), account.credentials);
@@ -107,8 +122,11 @@ public class AuthService {
 				LinkedAccount.class).setParameter("provider", AuthProvider.GOOGLE)
 				.setParameter("accountId", googleToken.subject()).getResultStream().findFirst().orElse(null);
 		if (existing != null) {
+			requireActive(existing.user);
 			return existing.user;
 		}
+
+		enforceSelfSignupAllowed();
 
 		if (googleToken.email() != null && User.count("email", googleToken.email()) > 0) {
 			throw new EmailAlreadyExistsException(
@@ -163,7 +181,8 @@ public class AuthService {
 	}
 
 	public String generateAccessToken(User user) {
-		return Jwt.subject(user.id.toString()).claim("name", user.name).sign();
+		return Jwt.subject(user.id.toString()).claim("name", user.name).claim("instanceRole", user.instanceRole.name())
+				.sign();
 	}
 
 	public long getAccessTokenLifespan() {
@@ -194,6 +213,12 @@ public class AuthService {
 			return Optional.empty();
 		}
 
+		if (!existing.user.active) {
+			existing.revoked = true;
+			existing.persistAndFlush();
+			return Optional.empty();
+		}
+
 		existing.revoked = true;
 		existing.persistAndFlush();
 
@@ -218,6 +243,7 @@ public class AuthService {
 	@Transactional
 	public BrowserSessionService.BrowserSessionTokens createBrowserSession(User user, BrowserSessionType sessionType,
 			String userAgent, String remoteAddress) {
+		requireActive(user);
 		return browserSessionService.createBrowserSession(user, sessionType, userAgent, remoteAddress);
 	}
 
@@ -241,6 +267,38 @@ public class AuthService {
 
 	private void lockLinkedAccount(AuthProvider provider, String providerAccountId) {
 		lockService.lock("linked-account", provider.name() + ":" + providerAccountId);
+	}
+
+	private void enforceSelfSignupAllowed() {
+		RegistrationMode mode = instanceSettingsService.getRegistrationMode();
+		if (mode == RegistrationMode.CLOSED || mode == RegistrationMode.INVITE_ONLY) {
+			throw new RegistrationClosedException();
+		}
+	}
+
+	private void requireActive(User user) {
+		if (!user.active) {
+			throw new InactiveUserException();
+		}
+	}
+
+	private void promoteInitialAdminIfEligible(User user, AuthProvider provider, String providerAccountId) {
+		if (provider != AuthProvider.LOCAL) {
+			return;
+		}
+		lockService.lock(INSTANCE_ADMIN_BOOTSTRAP_LOCK);
+		long adminCount = User.count("instanceRole", InstanceRole.ADMIN);
+		if (adminCount > 0) {
+			return;
+		}
+
+		String configuredUsername = initialUsername.map(String::trim).filter(value -> !value.isBlank()).orElse(null);
+		if (configuredUsername != null && !configuredUsername.equals(providerAccountId)) {
+			return;
+		}
+
+		user.instanceRole = InstanceRole.ADMIN;
+		user.persistAndFlush();
 	}
 
 	private RefreshToken findRefreshTokenForMutation(String tokenHash) {

@@ -5,13 +5,32 @@ EXTENSION IF NOT EXISTS vector;
 -- Users
 CREATE TABLE users
 (
-    id         UUID PRIMARY KEY                  DEFAULT gen_random_uuid(),
-    email      VARCHAR(255) UNIQUE,
-    name       VARCHAR(255)             NOT NULL,
-    avatar_url VARCHAR(1024),
-    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+    id            UUID PRIMARY KEY                  DEFAULT gen_random_uuid(),
+    email         VARCHAR(255) UNIQUE,
+    name          VARCHAR(255)             NOT NULL,
+    avatar_url    VARCHAR(1024),
+    instance_role VARCHAR(10)              NOT NULL DEFAULT 'USER',
+    active        BOOLEAN                  NOT NULL DEFAULT true,
+    created_at    TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+    updated_at    TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+    CONSTRAINT chk_users_instance_role CHECK (instance_role IN ('USER', 'ADMIN'))
+);
+
+CREATE INDEX idx_users_instance_role ON users (instance_role) WHERE instance_role != 'USER';
+
+-- Runtime-mutable instance settings (key-value)
+CREATE TABLE instance_settings
+(
+    key        VARCHAR(100) PRIMARY KEY,
+    value      TEXT                     NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
 );
+
+INSERT INTO instance_settings (key, value)
+VALUES ('registration_mode', 'OPEN'),
+       ('compression_format', 'jpeg'),
+       ('compression_quality', '82'),
+       ('compression_max_resolution', '2560');
 
 -- Personal libraries
 CREATE TABLE personal_libraries

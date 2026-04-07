@@ -7,7 +7,15 @@ import {
   useNavigate,
   useNavigation,
 } from "react-router";
+import { LanguageSwitcher } from "~/components/language-switcher";
+import { InlineMessage, SurfaceCard } from "~/components/ui";
 import { joinInvite, previewInvite } from "~/lib/api";
+import {
+  getActiveLocale,
+  type MessageKey,
+  translateMessage,
+  useI18n,
+} from "~/lib/i18n";
 import { toActionErrorMessage } from "~/lib/route-actions";
 import { getSessionSnapshot, useSession } from "~/lib/session";
 
@@ -19,6 +27,19 @@ export async function clientLoader({ params }: Route.ClientLoaderArgs) {
 type JoinInviteActionResult =
   | { ok: true }
   | { ok: false; errorMessage?: string; redirectTo?: string };
+
+function getRoleMessageKey(role: string): MessageKey {
+  switch (role) {
+    case "OWNER":
+      return "role.owner";
+    case "ADMIN":
+      return "role.admin";
+    case "MEMBER":
+      return "role.member";
+    default:
+      return "role.viewer";
+  }
+}
 
 export async function clientAction({
   params,
@@ -39,7 +60,10 @@ export async function clientAction({
   } catch (error) {
     return {
       ok: false,
-      errorMessage: toActionErrorMessage(error, "Failed to join invite."),
+      errorMessage: toActionErrorMessage(
+        error,
+        translateMessage(getActiveLocale(), "public.joinInvite.errorFallback"),
+      ),
     };
   }
 }
@@ -47,6 +71,7 @@ export async function clientAction({
 export default function JoinInviteRoute({ loaderData }: Route.ComponentProps) {
   const navigate = useNavigate();
   const session = useSession();
+  const { t } = useI18n();
   const actionData = useActionData<typeof clientAction>();
   const navigation = useNavigation();
   const isJoining = navigation.state !== "idle";
@@ -71,53 +96,63 @@ export default function JoinInviteRoute({ loaderData }: Route.ComponentProps) {
   return (
     <main className="app-shell flex min-h-screen items-center justify-center px-6 py-10">
       <section className="panel w-full max-w-2xl p-8 sm:p-10">
-        <p className="eyebrow">Invite Link</p>
+        <div className="flex items-start justify-between gap-4">
+          <p className="eyebrow">{t("public.joinInvite.eyebrow")}</p>
+          <LanguageSwitcher />
+        </div>
         <h1 className="mt-3 text-4xl font-semibold tracking-tight">
-          Join Space
+          {t("public.joinInvite.title")}
         </h1>
 
         {errorMessage ? (
-          <p className="mt-5 rounded-2xl border border-[rgba(161,69,63,0.25)] bg-[rgba(161,69,63,0.08)] px-4 py-3 text-sm text-[var(--color-danger)]">
+          <InlineMessage className="mt-5" tone="danger">
             {errorMessage}
-          </p>
+          </InlineMessage>
         ) : null}
 
         {loaderData ? (
           <div className="mt-6 space-y-4">
-            <div className="rounded-3xl border border-[var(--color-border)] bg-[var(--color-panel-strong)] p-5">
-              <p className="eyebrow">Space</p>
+            <SurfaceCard className="rounded-3xl p-5">
+              <p className="eyebrow">{t("public.joinInvite.spaceEyebrow")}</p>
               <h2 className="mt-2 text-3xl font-semibold tracking-tight">
                 {loaderData.spaceName}
               </h2>
               <p className="mt-3 text-sm leading-7 text-[var(--color-text-muted)]">
-                {loaderData.spaceDescription || "No description"}
+                {loaderData.spaceDescription ||
+                  t("public.joinInvite.noDescription")}
               </p>
               <p className="mt-4 text-sm text-[var(--color-text-muted)]">
-                Default role:{" "}
+                {t("public.joinInvite.defaultRole")}:{" "}
                 <span className="font-semibold text-[var(--color-text)]">
-                  {loaderData.defaultRole}
+                  {t(getRoleMessageKey(loaderData.defaultRole))}
                 </span>
               </p>
               <p className="mt-3 text-sm leading-7 text-[var(--color-text-muted)]">
                 {session
-                  ? "Your current account can accept this invite immediately."
-                  : "Log in first and then return here to join the Space."}
+                  ? t("public.joinInvite.sessionCanJoin")
+                  : t("public.joinInvite.loginFirst")}
               </p>
-            </div>
+            </SurfaceCard>
 
             <div className="grid gap-4 md:grid-cols-2">
-              <div className="rounded-3xl border border-[var(--color-border)] bg-[var(--color-panel)] p-5">
-                <p className="eyebrow">Join role</p>
-                <p className="mt-2 text-2xl font-semibold tracking-tight">
-                  {loaderData.defaultRole}
+              <SurfaceCard className="rounded-3xl p-5" tone="subtle">
+                <p className="eyebrow">
+                  {t("public.joinInvite.joinRoleEyebrow")}
                 </p>
-              </div>
-              <div className="rounded-3xl border border-[var(--color-border)] bg-[var(--color-panel)] p-5">
-                <p className="eyebrow">Session state</p>
                 <p className="mt-2 text-2xl font-semibold tracking-tight">
-                  {session ? "Authenticated" : "Login required"}
+                  {t(getRoleMessageKey(loaderData.defaultRole))}
                 </p>
-              </div>
+              </SurfaceCard>
+              <SurfaceCard className="rounded-3xl p-5" tone="subtle">
+                <p className="eyebrow">
+                  {t("public.joinInvite.sessionStateEyebrow")}
+                </p>
+                <p className="mt-2 text-2xl font-semibold tracking-tight">
+                  {session
+                    ? t("public.joinInvite.authenticated")
+                    : t("public.joinInvite.loginRequired")}
+                </p>
+              </SurfaceCard>
             </div>
 
             <div className="flex flex-wrap gap-3">
@@ -128,20 +163,20 @@ export default function JoinInviteRoute({ loaderData }: Route.ComponentProps) {
                   type="submit"
                 >
                   {isJoining
-                    ? "Joining..."
+                    ? t("public.joinInvite.joining")
                     : session
-                      ? "Join Space"
-                      : "Log in to join"}
+                      ? t("public.joinInvite.joinSpace")
+                      : t("public.joinInvite.loginToJoin")}
                 </button>
               </Form>
               <Link className="button-secondary" to="/">
-                Back home
+                {t("public.joinInvite.backHome")}
               </Link>
             </div>
           </div>
         ) : !errorMessage ? (
           <p className="mt-5 text-sm text-[var(--color-text-muted)]">
-            Loading invite preview...
+            {t("public.joinInvite.loadingPreview")}
           </p>
         ) : null}
       </section>

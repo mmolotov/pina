@@ -1,6 +1,7 @@
 package dev.pina.backend.service;
 
 import dev.pina.backend.api.dto.UpdateProfileRequest;
+import dev.pina.backend.domain.InstanceRole;
 import dev.pina.backend.domain.User;
 import io.quarkus.security.identity.SecurityIdentity;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -31,6 +32,17 @@ public class UserResolver {
 		User user = User.findById(userId);
 		if (user == null) {
 			throw new WebApplicationException(Response.Status.UNAUTHORIZED);
+		}
+		if (!user.active) {
+			throw new WebApplicationException(Response.Status.UNAUTHORIZED);
+		}
+		return user;
+	}
+
+	public User requireAdmin() {
+		User user = currentUser();
+		if (user.instanceRole != InstanceRole.ADMIN) {
+			throw new WebApplicationException(Response.Status.FORBIDDEN);
 		}
 		return user;
 	}
