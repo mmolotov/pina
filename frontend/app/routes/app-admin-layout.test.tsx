@@ -60,7 +60,9 @@ describe("AppAdminLayoutRoute", () => {
 
     expect(await screen.findByText("Instance control")).toBeInTheDocument();
     expect(screen.getByText("Users section")).toBeInTheDocument();
-    expect(screen.getByText("Global administration")).toBeInTheDocument();
+    expect(
+      screen.getByText("Instance-wide administration"),
+    ).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Users/i })).toHaveAttribute(
       "href",
       "/app/admin/users",

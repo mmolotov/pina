@@ -5,7 +5,7 @@ export default defineConfig({
   fullyParallel: true,
   retries: 0,
   snapshotPathTemplate:
-    "{testDir}/{testFilePath}-snapshots/{arg}-{projectName}{ext}",
+    "{testDir}/{testFilePath}-snapshots/{platform}/{arg}-{projectName}{ext}",
   use: {
     baseURL: "http://127.0.0.1:4173",
     trace: "on-first-retry",

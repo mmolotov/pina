@@ -1,9 +1,11 @@
 import type { Route } from "./+types/app-library";
 import {
   startTransition,
+  useCallback,
   useDeferredValue,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import {
@@ -15,12 +17,9 @@ import {
   useSearchParams,
 } from "react-router";
 import {
-  Badge,
   EmptyHint,
   EmptyState,
-  FilterToolbar,
   InlineMessage,
-  PageHeader,
   Panel,
   SurfaceCard,
 } from "~/components/ui";
@@ -42,7 +41,7 @@ import {
   updateAlbum,
   uploadPhoto,
 } from "~/lib/api";
-import { formatBytes, formatDateTime, formatRelativeCount } from "~/lib/format";
+import { formatBytes, formatRelativeCount } from "~/lib/format";
 import {
   applyGeoViewportToSearchParams,
   buildGeoClusters,
@@ -184,19 +183,475 @@ function buildDaySectionId(dayKey: string) {
   return `library-day-${dayKey}`;
 }
 
+/**
+ * Minimum fraction of a month's photos a single day must have
+ * to appear as its own dot on the proportional timeline.
+ */
+const DAY_SIGNIFICANCE_THRESHOLD = 0.15;
+
+interface TimelineMarker {
+  type: "year" | "month" | "day";
+  key: string;
+  label: string;
+  scrollToDayKey: string;
+  photoCount: number;
+  /** 0-1 position along the full rail height */
+  position: number;
+}
+
+function buildProportionalTimeline(
+  timelineGroups: TimelineGroup[],
+  locale: Locale,
+): TimelineMarker[] {
+  if (timelineGroups.length === 0) return [];
+
+  // Group photos by year and month
+  const yearMap = new Map<
+    number,
+    {
+      count: number;
+      months: Map<
+        number,
+        { count: number; days: Map<string, { count: number; dayKey: string }> }
+      >;
+    }
+  >();
+
+  for (const group of timelineGroups) {
+    const date = new Date(`${group.dayKey}T00:00:00Z`);
+    const year = date.getFullYear();
+    const month = date.getMonth();
+
+    if (!yearMap.has(year)) {
+      yearMap.set(year, { count: 0, months: new Map() });
+    }
+    const yearEntry = yearMap.get(year)!;
+    yearEntry.count += group.photos.length;
+
+    if (!yearEntry.months.has(month)) {
+      yearEntry.months.set(month, { count: 0, days: new Map() });
+    }
+    const monthEntry = yearEntry.months.get(month)!;
+    monthEntry.count += group.photos.length;
+    monthEntry.days.set(group.dayKey, {
+      count: group.photos.length,
+      dayKey: group.dayKey,
+    });
+  }
+
+  // Total photos for proportional sizing
+  const totalPhotos = timelineGroups.reduce(
+    (sum, group) => sum + group.photos.length,
+    0,
+  );
+  if (totalPhotos === 0) return [];
+
+  // Sort years descending (newest first = top)
+  const sortedYears = Array.from(yearMap.entries()).sort(([a], [b]) => b - a);
+
+  const markers: TimelineMarker[] = [];
+  let cumulativePhotos = 0;
+
+  for (const [year, yearEntry] of sortedYears) {
+    // Year marker at start of this year's segment
+    const yearPosition = cumulativePhotos / totalPhotos;
+    const sortedMonths = Array.from(yearEntry.months.entries()).sort(
+      ([a], [b]) => b - a,
+    );
+    const firstMonthDays = sortedMonths[0]?.[1].days;
+    const firstDayKey = firstMonthDays
+      ? Array.from(firstMonthDays.keys()).sort().reverse()[0]!
+      : timelineGroups[0]!.dayKey;
+
+    markers.push({
+      type: "year",
+      key: `${year}`,
+      label: `${year}`,
+      scrollToDayKey: firstDayKey,
+      photoCount: yearEntry.count,
+      position: yearPosition,
+    });
+
+    for (const [month, monthEntry] of sortedMonths) {
+      const monthPosition = cumulativePhotos / totalPhotos;
+      const monthDate = new Date(Date.UTC(year, month, 1));
+      const monthLabel = monthDate.toLocaleString(locale, { month: "short" });
+      const sortedDays = Array.from(monthEntry.days.entries()).sort(
+        ([a], [b]) => b.localeCompare(a),
+      );
+      const firstMonthDayKey = sortedDays[0]?.[1].dayKey ?? firstDayKey;
+
+      markers.push({
+        type: "month",
+        key: `${year}-${String(month + 1).padStart(2, "0")}`,
+        label: monthLabel,
+        scrollToDayKey: firstMonthDayKey,
+        photoCount: monthEntry.count,
+        position: monthPosition,
+      });
+
+      // Add significant days
+      for (const [, dayEntry] of sortedDays) {
+        const dayPosition = cumulativePhotos / totalPhotos;
+        const fraction = dayEntry.count / monthEntry.count;
+
+        if (fraction >= DAY_SIGNIFICANCE_THRESHOLD) {
+          const dayDate = new Date(`${dayEntry.dayKey}T00:00:00Z`);
+          markers.push({
+            type: "day",
+            key: dayEntry.dayKey,
+            label: dayDate.toLocaleString(locale, {
+              month: "short",
+              day: "numeric",
+            }),
+            scrollToDayKey: dayEntry.dayKey,
+            photoCount: dayEntry.count,
+            position: dayPosition,
+          });
+        }
+
+        cumulativePhotos += dayEntry.count;
+      }
+    }
+  }
+
+  // Blend proportional positions with uniform spacing to guarantee
+  // a minimum gap between labels while preserving proportionality.
+  // MIN_LABEL_GAP_PX ≈ minimum pixels between labels at typical rail height.
+  // The blend factor is just enough to prevent overlap.
+  markers.sort((a, b) => a.position - b.position);
+  const n = markers.length;
+  if (n > 1) {
+    const MIN_GAP = 0.025; // minimum gap as fraction of rail
+    // Check if any gaps are too small
+    let needsBlend = false;
+    for (let i = 1; i < n; i++) {
+      if (markers[i]!.position - markers[i - 1]!.position < MIN_GAP) {
+        needsBlend = true;
+        break;
+      }
+    }
+    if (needsBlend) {
+      // Find the smallest blend factor (0–1) that gives every pair >= MIN_GAP.
+      // uniform(i) = i / (n - 1), blended = (1-t)*proportional + t*uniform
+      // We binary-search for the smallest t.
+      let lo = 0;
+      let hi = 1;
+      for (let iter = 0; iter < 20; iter++) {
+        const mid = (lo + hi) / 2;
+        let ok = true;
+        let prevPos = (1 - mid) * markers[0]!.position;
+        for (let i = 1; i < n; i++) {
+          const uniform = i / (n - 1);
+          const blended = (1 - mid) * markers[i]!.position + mid * uniform;
+          if (blended - prevPos < MIN_GAP) {
+            ok = false;
+            break;
+          }
+          prevPos = blended;
+        }
+        if (ok) {
+          hi = mid;
+        } else {
+          lo = mid;
+        }
+      }
+      const t = hi;
+      for (let i = 0; i < n; i++) {
+        const uniform = i / (n - 1);
+        markers[i]!.position = (1 - t) * markers[i]!.position + t * uniform;
+      }
+    }
+  }
+
+  // Remap positions from [0,1] to [pad, 1-pad] so top/bottom markers
+  // don't sit flush against the container edges (toolbar overlap fix).
+  const pad = 0.04;
+  const range = 1 - 2 * pad;
+  for (const m of markers) {
+    m.position = pad + m.position * range;
+  }
+
+  return markers;
+}
+
+function dateAtPosition(
+  position: number,
+  timelineGroups: TimelineGroup[],
+  locale: Locale,
+): { label: string; dayKey: string } | null {
+  if (timelineGroups.length === 0) return null;
+
+  const totalPhotos = timelineGroups.reduce(
+    (sum, g) => sum + g.photos.length,
+    0,
+  );
+  const targetCount = Math.floor(position * totalPhotos);
+
+  let cumulative = 0;
+  for (const group of timelineGroups) {
+    cumulative += group.photos.length;
+    if (cumulative >= targetCount) {
+      const date = new Date(`${group.dayKey}T00:00:00Z`);
+      return {
+        label: date.toLocaleDateString(locale, {
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+        }),
+        dayKey: group.dayKey,
+      };
+    }
+  }
+
+  const last = timelineGroups[timelineGroups.length - 1]!;
+  const date = new Date(`${last.dayKey}T00:00:00Z`);
+  return {
+    label: date.toLocaleDateString(locale, {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    }),
+    dayKey: last.dayKey,
+  };
+}
+
+function ProportionalTimelineRail(props: {
+  timelineGroups: TimelineGroup[];
+  markers: TimelineMarker[];
+  locale: Locale;
+  totalPhotos: number;
+  totalDays: number;
+  photoForms: Record<string, string>;
+  dayGroupForms: Record<string, string>;
+}) {
+  const railRef = useRef<HTMLDivElement>(null);
+  const isDraggingRef = useRef(false);
+  const [hoverState, setHoverState] = useState<{
+    label: string;
+    topPx: number;
+  } | null>(null);
+  const [isHovering, setIsHovering] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+
+  const positionToInfo = useCallback(
+    (clientY: number) => {
+      const el = railRef.current;
+      if (!el) return null;
+      const rect = el.getBoundingClientRect();
+      const position = Math.max(
+        0,
+        Math.min(1, (clientY - rect.top) / rect.height),
+      );
+      const info = dateAtPosition(position, props.timelineGroups, props.locale);
+      return info ? { ...info, topPx: clientY - rect.top, position } : null;
+    },
+    [props.timelineGroups, props.locale],
+  );
+
+  const scrollToPosition = useCallback(
+    (clientY: number) => {
+      const info = positionToInfo(clientY);
+      if (info) {
+        document
+          .getElementById(buildDaySectionId(info.dayKey))
+          ?.scrollIntoView({ behavior: "auto", block: "start" });
+      }
+    },
+    [positionToInfo],
+  );
+
+  const handleMouseMove = useCallback(
+    (e: React.MouseEvent) => {
+      const info = positionToInfo(e.clientY);
+      setHoverState(info ? { label: info.label, topPx: info.topPx } : null);
+      if (isDraggingRef.current) {
+        scrollToPosition(e.clientY);
+      }
+    },
+    [positionToInfo, scrollToPosition],
+  );
+
+  const handleMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      // Only left button
+      if (e.button !== 0) return;
+      e.preventDefault();
+      isDraggingRef.current = true;
+      setIsDragging(true);
+      scrollToPosition(e.clientY);
+
+      const handleGlobalMove = (ev: MouseEvent) => {
+        if (!isDraggingRef.current) return;
+        const info = positionToInfo(ev.clientY);
+        if (info) {
+          setHoverState({ label: info.label, topPx: info.topPx });
+          scrollToPosition(ev.clientY);
+        }
+      };
+
+      const handleGlobalUp = () => {
+        isDraggingRef.current = false;
+        setIsDragging(false);
+        document.removeEventListener("mousemove", handleGlobalMove);
+        document.removeEventListener("mouseup", handleGlobalUp);
+      };
+
+      document.addEventListener("mousemove", handleGlobalMove);
+      document.addEventListener("mouseup", handleGlobalUp);
+    },
+    [positionToInfo, scrollToPosition],
+  );
+
+  const handleMouseEnter = useCallback(() => {
+    setIsHovering(true);
+  }, []);
+
+  const handleMouseLeave = useCallback(() => {
+    // Don't clear hover state while dragging — global mousemove handles it
+    setIsHovering(false);
+    if (!isDraggingRef.current) {
+      setHoverState(null);
+    }
+  }, []);
+
+  // Build visible labels: years always show, months always show but
+  // get combined with their year if at the same position.
+  const visibleLabels = useMemo(() => {
+    const yearAndMonthMarkers = props.markers.filter(
+      (m) => m.type === "year" || m.type === "month",
+    );
+
+    // First pass: merge year + its first month into "Mon Year" label.
+    // The first month is the one closest to the year marker's position.
+    const merged: TimelineMarker[] = [];
+    const consumedMonths = new Set<string>();
+
+    for (const marker of yearAndMonthMarkers) {
+      if (marker.type === "year") {
+        // Find the first month belonging to this year (closest position)
+        const yearMonths = yearAndMonthMarkers
+          .filter(
+            (m) => m.type === "month" && m.key.startsWith(marker.key + "-"),
+          )
+          .sort((a, b) => a.position - b.position);
+        const firstMonth = yearMonths[0];
+        if (firstMonth) {
+          merged.push({
+            ...marker,
+            label: `${firstMonth.label} ${marker.label}`,
+          });
+          consumedMonths.add(firstMonth.key);
+        } else {
+          merged.push(marker);
+        }
+      } else if (!consumedMonths.has(marker.key)) {
+        merged.push(marker);
+      }
+    }
+
+    // Second pass: remove labels that are too close to each other.
+    // Minimum gap = 2.5% of rail height.
+    const minGap = 0.025;
+    const result: TimelineMarker[] = [];
+    let lastPos = -1;
+
+    for (const marker of merged) {
+      if (result.length === 0 || marker.position - lastPos >= minGap) {
+        result.push(marker);
+        lastPos = marker.position;
+      } else if (marker.type === "year") {
+        // Year always wins over a close month
+        const prev = result[result.length - 1];
+        if (prev && prev.type === "month") {
+          result[result.length - 1] = marker;
+          lastPos = marker.position;
+        }
+      }
+    }
+
+    return result;
+  }, [props.markers]);
+
+  const showMagnifier = (isHovering || isDragging) && hoverState;
+
+  return (
+    <div className="flex h-full gap-3">
+      {/* Rail + dots — acts as a drag-scrollbar */}
+      <div
+        className="relative cursor-grab select-none active:cursor-grabbing"
+        onMouseDown={handleMouseDown}
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
+        onMouseMove={handleMouseMove}
+        ref={railRef}
+        role="presentation"
+        style={{ width: 16 }}
+      >
+        <div className="timeline-rail mx-auto" style={{ height: "100%" }} />
+        {props.markers.map((marker) => (
+          <button
+            aria-label={`${marker.label} — ${marker.photoCount}`}
+            className={
+              marker.type === "year"
+                ? "timeline-year-dot"
+                : marker.type === "month"
+                  ? "timeline-month-dot"
+                  : "timeline-day-dot"
+            }
+            key={marker.key}
+            onClick={(e) => {
+              e.stopPropagation();
+              document
+                .getElementById(buildDaySectionId(marker.scrollToDayKey))
+                ?.scrollIntoView({ behavior: "smooth", block: "start" });
+            }}
+            style={{ top: `${(marker.position * 100).toFixed(2)}%` }}
+            type="button"
+          />
+        ))}
+
+        {/* Magnifier tooltip — oval pill that follows cursor */}
+        <div
+          className={`timeline-magnifier ${showMagnifier ? "timeline-magnifier-visible" : ""}`}
+          style={{ top: hoverState?.topPx ?? 0 }}
+        >
+          {hoverState?.label}
+        </div>
+      </div>
+
+      {/* Labels column */}
+      <div className="relative min-w-0 flex-1">
+        {visibleLabels.map((marker) => (
+          <button
+            className={`absolute left-0 -translate-y-1/2 text-left ${
+              marker.type === "year"
+                ? "text-xs font-semibold text-[var(--color-text)]"
+                : "text-[0.6875rem] text-[var(--color-text-muted)]"
+            }`}
+            key={marker.key}
+            onClick={() => {
+              document
+                .getElementById(buildDaySectionId(marker.scrollToDayKey))
+                ?.scrollIntoView({ behavior: "smooth", block: "start" });
+            }}
+            style={{ top: `${(marker.position * 100).toFixed(2)}%` }}
+            type="button"
+          >
+            {marker.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function formatDayLabel(dayKey: string, locale: Locale) {
   return new Intl.DateTimeFormat(locale, {
     weekday: "short",
     month: "long",
     day: "numeric",
     year: "numeric",
-  }).format(new Date(`${dayKey}T00:00:00Z`));
-}
-
-function formatDayChipLabel(dayKey: string, locale: Locale) {
-  return new Intl.DateTimeFormat(locale, {
-    month: "short",
-    day: "numeric",
   }).format(new Date(`${dayKey}T00:00:00Z`));
 }
 
@@ -240,7 +695,7 @@ function LibraryPhotoTile(props: {
   const capturedAt = props.photo.takenAt ?? props.photo.createdAt;
 
   return (
-    <SurfaceCard className="overflow-hidden rounded-[1.5rem]">
+    <div className="group overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]">
       <Link
         aria-label={t("app.library.photoTileAria", {
           fileName: props.photo.originalFilename,
@@ -248,71 +703,39 @@ function LibraryPhotoTile(props: {
         className="block"
         to={`/app/library/photos/${props.photo.id}`}
       >
-        <div className="preview-frame relative aspect-[4/3] overflow-hidden border-0 border-b border-[var(--color-border)]">
+        <div className="preview-frame relative aspect-[4/3] overflow-hidden border-0">
           {previewUrl ? (
             <img
               alt={t("app.library.photoPreviewAlt", {
                 fileName: props.photo.originalFilename,
               })}
-              className="h-full w-full object-cover"
+              className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-105"
               src={previewUrl}
             />
           ) : (
-            <div className="preview-placeholder flex h-full items-end p-4">
-              <div>
-                <p className="text-xs uppercase tracking-[0.18em]">
-                  {props.photo.mimeType}
-                </p>
-                <p className="mt-1 text-base font-semibold tracking-tight text-[var(--color-text)]">
-                  {props.photo.originalFilename}
-                </p>
-              </div>
+            <div className="preview-placeholder flex h-full items-center justify-center">
+              <span className="text-xs text-[var(--color-text-muted)]">
+                {props.photo.originalFilename}
+              </span>
             </div>
           )}
-
-          <div className="absolute inset-x-0 top-0 flex items-start justify-between gap-3 p-3">
-            <Badge
-              className="rounded-full px-3 py-1 text-xs font-semibold"
-              tone="accent"
-            >
-              {capturedAt.slice(11, 16)}
-            </Badge>
-            {props.photo.latitude != null && props.photo.longitude != null ? (
-              <Badge className="rounded-full px-3 py-1 text-xs font-semibold">
-                {t("app.photoDetail.badgeGeotagged")}
-              </Badge>
-            ) : null}
-          </div>
         </div>
       </Link>
 
-      <div className="space-y-3 p-4">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <Link
-              className="link-accent block truncate text-base font-semibold tracking-tight"
-              to={`/app/library/photos/${props.photo.id}`}
-            >
-              {props.photo.originalFilename}
-            </Link>
-            <p className="mt-1 text-xs uppercase tracking-[0.18em] text-[var(--color-text-muted)]">
-              {props.photo.width ?? "?"}x{props.photo.height ?? "?"} ·{" "}
-              {props.photo.mimeType}
-            </p>
-          </div>
-          <p className="text-xs text-[var(--color-text-muted)]">
-            {props.isFavorite
-              ? t("app.library.photoTileSaved")
-              : t("app.library.photoTileLibrary")}
-          </p>
+      <div className="space-y-1.5 px-3 py-2">
+        <div className="flex items-center justify-between gap-2">
+          <Link
+            className="min-w-0 truncate text-sm font-medium"
+            to={`/app/library/photos/${props.photo.id}`}
+          >
+            {props.photo.originalFilename}
+          </Link>
+          <span className="shrink-0 text-xs text-[var(--color-text-muted)]">
+            {capturedAt.slice(11, 16)}
+          </span>
         </div>
 
-        <p className="text-sm text-[var(--color-text-muted)]">
-          {formatBytes(props.photo.sizeBytes)} ·{" "}
-          {formatDateTime(props.photo.takenAt ?? props.photo.createdAt)}
-        </p>
-
-        <div className="flex flex-wrap items-center gap-3 text-sm">
+        <div className="flex items-center gap-2 text-xs">
           <button
             aria-label={
               props.isFavorite
@@ -323,7 +746,7 @@ function LibraryPhotoTile(props: {
                     fileName: props.photo.originalFilename,
                   })
             }
-            className="link-accent font-semibold"
+            className="link-accent font-medium"
             disabled={props.isFavoriteBusy}
             onClick={props.onFavoriteToggle}
             type="button"
@@ -335,7 +758,7 @@ function LibraryPhotoTile(props: {
                 : t("common.favorite")}
           </button>
           <button
-            className="text-link-danger font-semibold"
+            className="text-link-danger font-medium"
             disabled={props.isDeleteBusy}
             form={`delete-photo-${props.photo.id}`}
             type="submit"
@@ -348,7 +771,7 @@ function LibraryPhotoTile(props: {
           </Form>
         </div>
       </div>
-    </SurfaceCard>
+    </div>
   );
 }
 
@@ -603,6 +1026,10 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
         }),
       }));
   }, [filteredPhotos]);
+  const timelineMarkers = useMemo(
+    () => buildProportionalTimeline(timelineGroups, locale),
+    [timelineGroups, locale],
+  );
   const geoTaggedPhotoCount = useMemo(
     () =>
       photos.filter(
@@ -638,7 +1065,7 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
     return null;
   }, [filteredGeoItems, selectedGeoCluster, selectedGeoTarget]);
   const selectedGeoClusterPhotos = selectedGeoCluster?.photos ?? [];
-  const countFormatter = new Intl.NumberFormat(locale);
+  const countFormatter = useMemo(() => new Intl.NumberFormat(locale), [locale]);
   const photoForms = {
     one: t("unit.photo.one"),
     few: t("unit.photo.few"),
@@ -1005,62 +1432,59 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
   }
 
   return (
-    <div className="space-y-8">
-      <PageHeader
-        description={t("app.library.description")}
-        eyebrow={t("app.library.eyebrow")}
-        title={t("app.library.title")}
-      />
-
-      <FilterToolbar
-        className="p-3 sm:p-4"
-        controls={
-          <div className="flex w-full flex-col gap-4 lg:w-auto lg:flex-row lg:items-center">
-            <div className="flex flex-wrap gap-2">
-              {[
-                { id: "photos", label: t("app.library.view.photos") },
-                { id: "timeline", label: t("app.library.view.timeline") },
-                { id: "map", label: t("app.library.view.map") },
-                { id: "albums", label: t("app.library.view.albums") },
-              ].map((option) => (
-                <button
-                  aria-pressed={libraryView === option.id}
-                  className={
-                    libraryView === option.id
-                      ? "button-primary"
-                      : "button-secondary"
-                  }
-                  key={option.id}
-                  onClick={() => activateLibraryView(option.id as LibraryView)}
-                  type="button"
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
-            <div className="flex w-full flex-col gap-3 md:w-auto md:flex-row">
-              <input
-                aria-label={t("app.library.filterLabel")}
-                className="field min-w-0 md:min-w-80"
-                onChange={(event) => updateLibraryFilter(event.target.value)}
-                placeholder={t("app.library.filterPlaceholder")}
-                type="search"
-                value={libraryFilter}
-              />
+    <div className="space-y-4">
+      <div className="sticky top-0 z-10 -mx-4 -mt-4 border-b border-[var(--color-border)] bg-[var(--color-bg)] px-4 py-2 sm:-mx-6 sm:-mt-6 sm:px-6">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex gap-1">
+            {[
+              { id: "photos", label: t("app.library.view.photos") },
+              { id: "timeline", label: t("app.library.view.timeline") },
+              { id: "map", label: t("app.library.view.map") },
+              { id: "albums", label: t("app.library.view.albums") },
+            ].map((option) => (
               <button
-                className="button-secondary"
-                disabled={normalizedLibraryFilter.length === 0}
-                onClick={() => updateLibraryFilter("")}
+                aria-pressed={libraryView === option.id}
+                className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                  libraryView === option.id
+                    ? "bg-[var(--nav-active-bg)] text-[var(--nav-active-text)]"
+                    : "text-[var(--color-text-muted)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text)]"
+                }`}
+                key={option.id}
+                onClick={() => activateLibraryView(option.id as LibraryView)}
                 type="button"
               >
-                {t("common.clearFilter")}
+                {option.label}
               </button>
-            </div>
+            ))}
           </div>
-        }
-        description={t("app.library.toolbarDescription")}
-        title={t("app.library.toolbarTitle")}
-      />
+          <div className="ml-auto flex items-center gap-2">
+            <input
+              aria-label={t("app.library.filterLabel")}
+              className="field w-48 py-1.5 text-sm lg:w-64"
+              onChange={(event) => updateLibraryFilter(event.target.value)}
+              placeholder={t("app.library.filterPlaceholder")}
+              type="search"
+              value={libraryFilter}
+            />
+            {libraryView !== "map" ? (
+              <label className="button-primary cursor-pointer py-1.5 text-sm">
+                <input
+                  accept="image/jpeg,image/png"
+                  aria-label={t("app.library.uploadPhotos")}
+                  className="hidden"
+                  disabled={uploadingPhoto}
+                  multiple
+                  onChange={handlePhotoUpload}
+                  type="file"
+                />
+                {uploadingPhoto
+                  ? t("app.library.uploadingPhotos")
+                  : t("app.library.uploadPhotos")}
+              </label>
+            ) : null}
+          </div>
+        </div>
+      </div>
 
       {errorMessage ? (
         <Panel className="p-4">
@@ -1080,48 +1504,16 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
         {(libraryView === "photos" ||
           libraryView === "timeline" ||
           libraryView === "map") && (
-          <Panel className="p-6">
-            <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-              <div>
-                <p className="eyebrow">{t("app.library.photosEyebrow")}</p>
-                <h2 className="mt-2 text-2xl font-semibold tracking-tight">
-                  {libraryView === "timeline"
-                    ? t("app.library.timelineTitle")
-                    : libraryView === "map"
-                      ? t("app.library.mapTitle")
-                      : t("app.library.photosTitle")}
-                </h2>
-                <p className="mt-2 text-sm text-[var(--color-text-muted)]">
-                  {libraryView === "map"
-                    ? t("app.library.mapDescription")
-                    : normalizedLibraryFilter.length === 0
-                      ? t("app.library.visiblePhotosByDay", {
-                          count: countFormatter.format(filteredPhotos.length),
-                        })
-                      : t("app.library.filteringDescription", {
-                          filter: libraryFilter,
-                        })}
-                </p>
-                {libraryView !== "map" ? (
-                  <p className="mt-2 text-sm text-[var(--color-text-muted)]">
-                    {t("app.library.summaryLine", {
-                      dayGroups: formatRelativeCount(
-                        timelineGroups.length,
-                        dayGroupForms,
-                      ),
-                      geoPhotos: formatRelativeCount(
-                        geoTaggedPhotoCount,
-                        geoPhotoForms,
-                      ),
-                    })}
-                  </p>
-                ) : null}
-              </div>
-
-              {libraryView === "map" ? (
-                <div className="flex flex-wrap gap-2">
+          <div>
+            {libraryView === "map" ? (
+              <div className="mb-3 flex flex-wrap items-center gap-2">
+                <span className="text-sm text-[var(--color-text-muted)]">
+                  {countFormatter.format(filteredGeoItems.length)}{" "}
+                  {formatRelativeCount(filteredGeoItems.length, geoPhotoForms)}
+                </span>
+                <div className="ml-auto flex flex-wrap gap-1">
                   <button
-                    className="button-secondary"
+                    className="button-secondary py-1 text-sm"
                     disabled={selectedGeoTarget == null}
                     onClick={() => setSelectedGeoTarget(null)}
                     type="button"
@@ -1129,14 +1521,14 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
                     {t("app.library.clearSelection")}
                   </button>
                   <button
-                    className="button-secondary"
+                    className="button-secondary py-1 text-sm"
                     onClick={() => setMapViewport(DEFAULT_GEO_VIEWPORT)}
                     type="button"
                   >
                     {t("app.library.worldView")}
                   </button>
                   <button
-                    className="button-secondary"
+                    className="button-secondary py-1 text-sm"
                     onClick={() =>
                       setMapViewport(zoomGeoViewport(geoViewport, "in"))
                     }
@@ -1145,7 +1537,7 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
                     {t("app.library.zoomIn")}
                   </button>
                   <button
-                    className="button-secondary"
+                    className="button-secondary py-1 text-sm"
                     onClick={() =>
                       setMapViewport(zoomGeoViewport(geoViewport, "out"))
                     }
@@ -1154,46 +1546,16 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
                     {t("app.library.zoomOut")}
                   </button>
                 </div>
-              ) : (
-                <label className="button-primary cursor-pointer">
-                  <input
-                    accept="image/jpeg,image/png"
-                    aria-label={t("app.library.uploadPhotos")}
-                    className="hidden"
-                    disabled={uploadingPhoto}
-                    multiple
-                    onChange={handlePhotoUpload}
-                    type="file"
-                  />
-                  {uploadingPhoto
-                    ? t("app.library.uploadingPhotos")
-                    : t("app.library.uploadPhotos")}
-                </label>
-              )}
-            </div>
+              </div>
+            ) : null}
 
             {libraryView === "map" ? (
               <>
-                <div className="mt-5 grid gap-3 lg:grid-cols-[0.72fr_0.28fr]">
-                  <div className="space-y-3">
-                    <SurfaceCard className="rounded-2xl px-4 py-3 text-sm text-[var(--color-text-muted)]">
-                      <p className="font-semibold text-[var(--color-text)]">
-                        {t("app.library.mapLegendTitle")}
-                      </p>
-                      <p className="mt-2">
-                        {t("app.library.mapLegendDescription")}
-                      </p>
-                      {normalizedLibraryFilter.length > 0 ? (
-                        <p className="mt-2">
-                          {t("app.library.mapLegendFilter", {
-                            filter: libraryFilter,
-                          })}
-                        </p>
-                      ) : null}
-                    </SurfaceCard>
-                    <div className="flex flex-wrap items-center gap-2">
+                <div className="grid gap-3 lg:grid-cols-[0.72fr_0.28fr]">
+                  <div className="space-y-2">
+                    <div className="flex flex-wrap items-center gap-1">
                       <button
-                        className="button-secondary"
+                        className="button-secondary py-1 text-sm"
                         onClick={() =>
                           setMapViewport(panGeoViewport(geoViewport, "west"))
                         }
@@ -1202,7 +1564,7 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
                         {t("app.library.panWest")}
                       </button>
                       <button
-                        className="button-secondary"
+                        className="button-secondary py-1 text-sm"
                         onClick={() =>
                           setMapViewport(panGeoViewport(geoViewport, "east"))
                         }
@@ -1211,7 +1573,7 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
                         {t("app.library.panEast")}
                       </button>
                       <button
-                        className="button-secondary"
+                        className="button-secondary py-1 text-sm"
                         onClick={() =>
                           setMapViewport(panGeoViewport(geoViewport, "north"))
                         }
@@ -1220,7 +1582,7 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
                         {t("app.library.panNorth")}
                       </button>
                       <button
-                        className="button-secondary"
+                        className="button-secondary py-1 text-sm"
                         onClick={() =>
                           setMapViewport(panGeoViewport(geoViewport, "south"))
                         }
@@ -1229,7 +1591,7 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
                         {t("app.library.panSouth")}
                       </button>
                     </div>
-                    <div className="map-shell rounded-3xl p-3">
+                    <div className="map-shell rounded-lg p-2">
                       <div className="map-canvas relative min-h-[28rem] overflow-hidden rounded-[1.25rem]">
                         {geoMapState.loading ? (
                           <div className="map-overlay absolute inset-0 flex items-center justify-center text-sm font-semibold">
@@ -1299,25 +1661,8 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
                       </div>
                     </div>
                   </div>
-                  <Panel className="p-4">
-                    <p className="eyebrow">
-                      {t("app.library.viewportEyebrow")}
-                    </p>
-                    <dl className="mt-3 space-y-2 text-sm text-[var(--color-text-muted)]">
-                      <div className="flex justify-between gap-4">
-                        <dt>{t("app.library.viewportSouthWest")}</dt>
-                        <dd>
-                          {geoViewport.swLat.toFixed(2)},{" "}
-                          {geoViewport.swLng.toFixed(2)}
-                        </dd>
-                      </div>
-                      <div className="flex justify-between gap-4">
-                        <dt>{t("app.library.viewportNorthEast")}</dt>
-                        <dd>
-                          {geoViewport.neLat.toFixed(2)},{" "}
-                          {geoViewport.neLng.toFixed(2)}
-                        </dd>
-                      </div>
+                  <div className="space-y-3">
+                    <dl className="space-y-1 text-xs text-[var(--color-text-muted)]">
                       <div className="flex justify-between gap-4">
                         <dt>{t("app.library.viewportMarkers")}</dt>
                         <dd>{geoClusters.length}</dd>
@@ -1351,19 +1696,16 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
 
                     {selectedGeoCluster &&
                     selectedGeoCluster.photos.length > 1 ? (
-                      <SurfaceCard className="mt-5 space-y-3 rounded-2xl p-4">
-                        <p className="text-sm font-semibold text-[var(--color-text)]">
+                      <div className="space-y-2">
+                        <p className="text-sm font-medium">
                           {t("app.library.clusterTitle", {
                             count: countFormatter.format(
                               selectedGeoCluster.photos.length,
                             ),
                           })}
                         </p>
-                        <p className="text-xs uppercase tracking-[0.18em] text-[var(--color-text-muted)]">
-                          {t("app.library.clusterHint")}
-                        </p>
                         <button
-                          className="button-secondary w-full"
+                          className="button-secondary w-full py-1 text-sm"
                           onClick={() =>
                             setMapViewport(
                               zoomToClusterBounds(selectedGeoCluster.bounds),
@@ -1373,10 +1715,10 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
                         >
                           {t("app.library.zoomIntoCluster")}
                         </button>
-                        <div className="space-y-2">
+                        <div className="space-y-1">
                           {selectedGeoClusterPhotos.slice(0, 6).map((photo) => (
                             <button
-                              className="flex w-full items-center justify-between gap-3 rounded-2xl border border-[var(--color-border)] px-3 py-3 text-left hover:border-[var(--color-accent-strong)]"
+                              className="flex w-full items-center justify-between gap-3 rounded-lg border border-[var(--color-border)] px-2 py-1.5 text-left text-sm hover:border-[var(--color-accent-strong)]"
                               key={photo.id}
                               onClick={() =>
                                 setSelectedGeoTarget({
@@ -1386,7 +1728,7 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
                               }
                               type="button"
                             >
-                              <span className="text-sm font-semibold text-[var(--color-text)]">
+                              <span className="font-medium text-[var(--color-text)]">
                                 {photo.originalFilename}
                               </span>
                               <span className="text-xs text-[var(--color-text-muted)]">
@@ -1405,61 +1747,32 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
                             })}
                           </p>
                         ) : null}
-                      </SurfaceCard>
+                      </div>
                     ) : selectedGeoPhoto ? (
-                      <SurfaceCard className="mt-5 space-y-3 rounded-2xl p-4">
-                        <p className="text-sm font-semibold text-[var(--color-text)]">
+                      <div className="space-y-2">
+                        <p className="text-sm font-medium">
                           {selectedGeoPhoto.originalFilename}
                         </p>
-                        <p className="text-xs uppercase tracking-[0.18em] text-[var(--color-text-muted)]">
-                          {t("app.library.photoSelected")}
+                        <p className="text-xs text-[var(--color-text-muted)]">
+                          {t("app.library.photoSelected")} ·{" "}
+                          {formatCoordinate(selectedGeoPhoto.latitude)},{" "}
+                          {formatCoordinate(selectedGeoPhoto.longitude)}
                         </p>
-                        <dl className="space-y-2 text-sm text-[var(--color-text-muted)]">
-                          <div className="flex justify-between gap-4">
-                            <dt>{t("app.library.latitude")}</dt>
-                            <dd>
-                              {formatCoordinate(selectedGeoPhoto.latitude)}
-                            </dd>
-                          </div>
-                          <div className="flex justify-between gap-4">
-                            <dt>{t("app.library.longitude")}</dt>
-                            <dd>
-                              {formatCoordinate(selectedGeoPhoto.longitude)}
-                            </dd>
-                          </div>
-                          <div className="flex justify-between gap-4">
-                            <dt>{t("app.library.taken")}</dt>
-                            <dd>
-                              {formatDateTime(
-                                selectedGeoPhoto.takenAt ??
-                                  selectedGeoPhoto.createdAt,
-                              )}
-                            </dd>
-                          </div>
-                          <div className="flex justify-between gap-4">
-                            <dt>{t("app.library.viewportStatus")}</dt>
-                            <dd>
-                              {normalizedLibraryFilter.length === 0
-                                ? t("app.library.visibleInViewport")
-                                : t("app.library.visibleInViewportAndFilter")}
-                            </dd>
-                          </div>
-                        </dl>
                         <Link
-                          className="button-secondary inline-flex"
+                          className="button-secondary inline-flex py-1 text-sm"
                           to={`/app/library/photos/${selectedGeoPhoto.id}`}
                         >
                           {t("app.library.openPhotoDetail")}
                         </Link>
-                      </SurfaceCard>
+                      </div>
                     ) : (
-                      <EmptyHint className="mt-5 py-5">
+                      <p className="text-xs text-[var(--color-text-muted)]">
                         {geoMapState.loading
                           ? t("app.library.loadingViewport")
                           : t("app.library.selectMarkerHint")}
-                      </EmptyHint>
+                      </p>
                     )}
-                  </Panel>
+                  </div>
                 </div>
 
                 {!geoMapState.loading &&
@@ -1510,7 +1823,7 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
             ) : (
               <>
                 <div
-                  className={`surface-dashed mt-5 rounded-3xl px-5 py-6 transition ${
+                  className={`surface-dashed rounded-lg px-4 py-3 text-center transition ${
                     isUploadTargetActive
                       ? "dropzone-active"
                       : "bg-[var(--color-panel)]"
@@ -1542,35 +1855,42 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
                     );
                   }}
                 >
-                  <p className="text-sm font-semibold text-[var(--color-text)]">
-                    {t("app.library.dropzoneTitle")}
-                  </p>
-                  <p className="mt-2 text-sm text-[var(--color-text-muted)]">
-                    {t("app.library.dropzoneDescription")}
-                  </p>
                   {uploadProgress ? (
-                    <p className="link-accent mt-3 text-sm font-semibold">
-                      {t("app.library.uploadProgress", {
-                        current: countFormatter.format(
-                          uploadProgress.completed + 1,
-                        ),
-                        total: countFormatter.format(uploadProgress.total),
-                        fileSuffix: uploadProgress.currentFileName
-                          ? `: ${uploadProgress.currentFileName}`
-                          : "",
-                      })}
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="min-w-0 truncate text-sm font-medium text-[var(--color-text)]">
+                          {uploadProgress.currentFileName ??
+                            t("app.library.uploadingPhotos")}
+                        </p>
+                        <span className="shrink-0 text-xs tabular-nums text-[var(--color-text-muted)]">
+                          {countFormatter.format(uploadProgress.completed)}/
+                          {countFormatter.format(uploadProgress.total)}
+                        </span>
+                      </div>
+                      <div className="upload-progress-track">
+                        <div
+                          className="upload-progress-bar"
+                          style={{
+                            width: `${Math.round((uploadProgress.completed / uploadProgress.total) * 100)}%`,
+                          }}
+                        />
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-[var(--color-text-muted)]">
+                      {t("app.library.dropzoneTitle")}
                     </p>
-                  ) : null}
+                  )}
                 </div>
 
                 {uploadError ? (
-                  <InlineMessage className="mt-4" tone="danger">
+                  <InlineMessage className="mt-2" tone="danger">
                     {uploadError}
                   </InlineMessage>
                 ) : null}
 
                 {uploadSuccessMessage ? (
-                  <InlineMessage className="mt-4" tone="success">
+                  <InlineMessage className="mt-2" tone="success">
                     {uploadSuccessMessage}
                   </InlineMessage>
                 ) : null}
@@ -1588,27 +1908,24 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
                 title={t("app.library.noPhotosMatchTitle")}
               />
             ) : (
-              <div className="mt-6 space-y-8">
+              <div className="space-y-6" id="library-photo-grid">
                 {timelineGroups.map((group) => (
                   <section
-                    className="scroll-mt-24"
+                    className="scroll-mt-16"
                     id={buildDaySectionId(group.dayKey)}
                     key={group.dayKey}
                   >
-                    <div className="flex flex-col gap-3 border-b border-[var(--color-border)] pb-4 sm:flex-row sm:items-end sm:justify-between">
-                      <div>
-                        <p className="eyebrow">{group.dayKey}</p>
-                        <h3 className="mt-2 text-2xl font-semibold tracking-tight">
-                          {formatDayLabel(group.dayKey, locale)}
-                        </h3>
-                      </div>
-                      <p className="text-sm text-[var(--color-text-muted)]">
+                    <div className="flex items-baseline justify-between gap-3 pb-2">
+                      <h3 className="text-sm font-semibold">
+                        {formatDayLabel(group.dayKey, locale)}
+                      </h3>
+                      <span className="text-xs text-[var(--color-text-muted)]">
                         {formatRelativeCount(group.photos.length, photoForms)}
-                      </p>
+                      </span>
                     </div>
 
                     <div
-                      className={`mt-5 grid gap-4 ${
+                      className={`grid gap-3 ${
                         libraryView === "timeline"
                           ? "sm:grid-cols-2 xl:grid-cols-3"
                           : "sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4"
@@ -1636,97 +1953,38 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
                 ))}
               </div>
             )}
-          </Panel>
+          </div>
         )}
 
         {(libraryView === "photos" || libraryView === "timeline") && (
-          <div className="space-y-6">
-            <Panel className="p-4 xl:sticky xl:top-4">
-              <p className="eyebrow">{t("app.library.timelineRailEyebrow")}</p>
-              <h2 className="mt-2 text-xl font-semibold tracking-tight">
-                {t("app.library.timelineRailTitle")}
-              </h2>
-              <p className="mt-3 text-sm leading-6 text-[var(--color-text-muted)]">
-                {t("app.library.timelineRailDescription")}
-              </p>
-
-              <div className="mt-5 space-y-2">
-                {timelineGroups.map((group) => (
-                  <button
-                    className="surface-card-subtle flex w-full items-center justify-between rounded-2xl px-3 py-3 text-left transition-transform duration-150 hover:-translate-y-0.5"
-                    key={group.dayKey}
-                    onClick={() => {
-                      document
-                        .getElementById(buildDaySectionId(group.dayKey))
-                        ?.scrollIntoView({
-                          behavior: "smooth",
-                          block: "start",
-                        });
-                    }}
-                    type="button"
-                  >
-                    <span>
-                      <span className="block text-sm font-semibold">
-                        {formatDayChipLabel(group.dayKey, locale)}
-                      </span>
-                      <span className="mt-1 block text-xs text-[var(--color-text-muted)]">
-                        {group.dayKey}
-                      </span>
-                    </span>
-                    <span className="text-xs text-[var(--color-text-muted)]">
-                      {group.photos.length}
-                    </span>
-                  </button>
-                ))}
-              </div>
-
-              <SurfaceCard className="mt-5 rounded-2xl p-4" tone="subtle">
-                <p className="eyebrow">{t("app.library.atGlanceEyebrow")}</p>
-                <dl className="mt-3 space-y-2 text-sm text-[var(--color-text-muted)]">
-                  <div className="flex items-center justify-between gap-3">
-                    <dt>{t("app.library.atGlanceVisiblePhotos")}</dt>
-                    <dd className="font-semibold text-[var(--color-text)]">
-                      {countFormatter.format(filteredPhotos.length)}
-                    </dd>
-                  </div>
-                  <div className="flex items-center justify-between gap-3">
-                    <dt>{t("app.library.atGlanceDayGroups")}</dt>
-                    <dd className="font-semibold text-[var(--color-text)]">
-                      {countFormatter.format(timelineGroups.length)}
-                    </dd>
-                  </div>
-                  <div className="flex items-center justify-between gap-3">
-                    <dt>{t("app.library.atGlanceAlbums")}</dt>
-                    <dd className="font-semibold text-[var(--color-text)]">
-                      {countFormatter.format(filteredAlbums.length)}
-                    </dd>
-                  </div>
-                </dl>
-
-                <button
-                  className="button-secondary mt-4 w-full"
-                  onClick={() => activateLibraryView("albums")}
-                  type="button"
-                >
-                  {t("app.library.openAlbums")}
-                </button>
-              </SurfaceCard>
-            </Panel>
+          <div className="xl:sticky xl:self-start" style={{ top: "3.5rem" }}>
+            <div style={{ height: "calc(100vh - 6rem)" }}>
+              <ProportionalTimelineRail
+                dayGroupForms={dayGroupForms}
+                locale={locale}
+                markers={timelineMarkers}
+                photoForms={photoForms}
+                timelineGroups={timelineGroups}
+                totalDays={timelineGroups.length}
+                totalPhotos={filteredPhotos.length}
+              />
+            </div>
+            <div className="mt-2 text-xs text-[var(--color-text-muted)]">
+              {countFormatter.format(filteredPhotos.length)}{" "}
+              {formatRelativeCount(filteredPhotos.length, photoForms)} ·{" "}
+              {countFormatter.format(timelineGroups.length)}{" "}
+              {formatRelativeCount(timelineGroups.length, dayGroupForms)}
+            </div>
           </div>
         )}
 
         {libraryView === "albums" && (
-          <div className="space-y-6">
-            <Panel className="p-6">
-              <p className="eyebrow">{t("app.library.createAlbumEyebrow")}</p>
-              <h2 className="mt-2 text-2xl font-semibold tracking-tight">
+          <div className="space-y-4">
+            <Panel className="p-4">
+              <h2 className="text-sm font-semibold">
                 {t("app.library.createAlbumTitle")}
               </h2>
-              <p className="mt-3 text-sm leading-7 text-[var(--color-text-muted)]">
-                {t("app.library.createAlbumDescription")}
-              </p>
-
-              <Form className="mt-5 space-y-4" method="post">
+              <Form className="mt-3 space-y-3" method="post">
                 <input name="intent" type="hidden" value="create-album" />
                 <label className="block">
                   <span className="mb-2 block text-sm font-medium">
@@ -1781,22 +2039,17 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
               </Form>
             </Panel>
 
-            <SurfaceCard className="rounded-3xl p-5" tone="subtle">
-              <p className="eyebrow">{t("app.library.albumsSpacesEyebrow")}</p>
-              <h2 className="mt-2 text-xl font-semibold tracking-tight">
-                {t("app.library.albumsSpacesTitle")}
-              </h2>
-              <p className="mt-3 text-sm leading-7 text-[var(--color-text-muted)]">
-                {t("app.library.albumsSpacesDescription")}
-              </p>
-              <Link className="button-secondary mt-4 w-full" to="/app/spaces">
+            <div className="flex items-center justify-between">
+              <Link
+                className="text-sm text-[var(--color-link)] hover:text-[var(--color-link-hover)]"
+                to="/app/spaces"
+              >
                 {t("app.library.openSpaces")}
               </Link>
-            </SurfaceCard>
+            </div>
 
-            <Panel className="p-6">
-              <p className="eyebrow">{t("app.library.albumsEyebrow")}</p>
-              <h2 className="mt-2 text-2xl font-semibold tracking-tight">
+            <Panel className="p-4">
+              <h2 className="text-sm font-semibold">
                 {t("app.library.albumsTitle")}
               </h2>
 
@@ -1809,7 +2062,7 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
                   {t("app.library.noAlbumsMatch")}
                 </EmptyHint>
               ) : (
-                <div className="mt-6 space-y-4">
+                <div className="mt-3 space-y-3">
                   {filteredAlbums.map((album) => {
                     const draft = albumEditorDrafts[album.id] ?? {
                       name: album.name,
@@ -1819,16 +2072,11 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
                       unassignedPhotosByAlbum[album.id] ?? [];
 
                     return (
-                      <SurfaceCard className="rounded-2xl p-4" key={album.id}>
+                      <SurfaceCard className="rounded-lg p-3" key={album.id}>
                         <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <p className="eyebrow">
-                              {t("app.library.albumEyebrow")}
-                            </p>
-                            <h3 className="mt-1 text-lg font-semibold tracking-tight">
-                              {album.name}
-                            </h3>
-                          </div>
+                          <h3 className="text-sm font-semibold">
+                            {album.name}
+                          </h3>
                           <div className="flex items-center gap-3">
                             <button
                               aria-label={

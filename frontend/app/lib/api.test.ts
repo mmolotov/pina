@@ -82,8 +82,9 @@ describe("api helpers", () => {
         ),
       )
       .mockResolvedValueOnce(
-        new Response(new Blob(["preview"], { type: "image/jpeg" }), {
+        new Response("preview", {
           status: 200,
+          headers: { "Content-Type": "image/jpeg" },
         }),
       );
 

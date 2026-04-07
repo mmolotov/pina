@@ -123,10 +123,12 @@ describe("AppShell", () => {
     );
 
     expect(document.documentElement.dataset.theme).toBe("dark");
-    expect(screen.getAllByText("Light theme").length).toBeGreaterThan(0);
+    expect(
+      screen.getAllByRole("button", { name: "Switch to light theme" }).length,
+    ).toBeGreaterThan(0);
   });
 
-  it("renders top controls and filter shortcuts for the media-first shell", () => {
+  it("renders search bar and upload link", () => {
     const Stub = createRoutesStub([
       {
         path: "/app",
@@ -149,15 +151,6 @@ describe("AppShell", () => {
       "href",
       "/app/library",
     );
-
-    fireEvent.click(screen.getByRole("button", { name: "Open filters" }));
-
-    expect(
-      screen.getByText("Open curated personal collections.").closest("a"),
-    ).toHaveAttribute("href", "/app/library?view=albums");
-    expect(
-      screen.getByText("Switch into place-based browsing.").closest("a"),
-    ).toHaveAttribute("href", "/app/library?view=map");
     expect(screen.queryByText("Admin")).not.toBeInTheDocument();
   });
 
@@ -193,7 +186,6 @@ describe("AppShell", () => {
     renderWithProviders(<Stub initialEntries={["/app"]} />);
 
     expect(screen.getAllByText("Admin").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Instance control").length).toBeGreaterThan(0);
   });
 
   it("switches the active language from the shell and persists it", () => {

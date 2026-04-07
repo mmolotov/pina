@@ -35,23 +35,28 @@ test("login route stays usable across supported viewports", async ({
   });
 });
 
-test("overview route keeps navigation and key actions reachable", async ({
+test("app shell keeps navigation and key actions reachable", async ({
   page,
 }) => {
   await bootstrapAuthenticatedPage(page);
   await mockCoreApi(page);
 
-  await page.goto("/app");
+  await page.goto("/app/library");
 
   await expect(
-    page.getByRole("heading", { name: /Welcome back, Test User/i }),
+    page.getByRole("button", { name: "Photos", pressed: true }),
   ).toBeVisible();
   await expect(
-    page.getByRole("link", { name: "Open personal library" }),
+    page.getByRole("link", { name: "Photos" }).first(),
   ).toBeVisible();
-  await expect(page.getByRole("link", { name: "Open timeline" })).toBeVisible();
+  await expect(
+    page.getByRole("searchbox", { name: "Search media library" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Switch to dark theme" }),
+  ).toBeVisible();
   await expectNoHorizontalOverflow(page);
-  await expect(page).toHaveScreenshot("overview-route.png", {
+  await expect(page).toHaveScreenshot("app-shell.png", {
     fullPage: true,
     animations: "disabled",
   });
@@ -66,9 +71,11 @@ test("library route keeps upload and view controls reachable", async ({
   await page.goto("/app/library");
 
   await expect(
-    page.getByRole("heading", { name: "Photos and albums" }),
+    page.getByRole("button", { name: "Photos", pressed: true }),
   ).toBeVisible();
-  await expect(page.getByRole("button", { name: "Everything" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Timeline" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Map" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Albums" })).toBeVisible();
   await expect(page.getByLabel("Filter library")).toBeVisible();
   await expect(page.getByText("Upload photos")).toBeVisible();
   await expectNoHorizontalOverflow(page);

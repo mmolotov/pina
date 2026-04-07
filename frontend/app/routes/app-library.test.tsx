@@ -179,12 +179,12 @@ describe("AppLibraryRoute", () => {
 
     await waitFor(() => {
       expect(
-        screen.getByRole("heading", { level: 2, name: /timeline|таймлайн/i }),
-      ).toBeInTheDocument();
+        screen.getByRole("button", { name: /timeline|таймлайн/i }),
+      ).toHaveAttribute("aria-pressed", "true");
     });
-    expect(screen.getByRole("button", { name: /Apr 2/i })).toBeInTheDocument();
-    expect(screen.getAllByText("2026-04-02").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("2026-04-01").length).toBeGreaterThan(0);
+    expect(
+      screen.getByRole("button", { name: /Apr 2026/i }),
+    ).toBeInTheDocument();
     expect(screen.getByText("dinner.jpg")).toBeInTheDocument();
   });
 
@@ -237,7 +237,7 @@ describe("AppLibraryRoute", () => {
       }),
     );
 
-    expect(screen.getByText("Photo selected")).toBeInTheDocument();
+    expect(screen.getByText(/photo selected/i)).toBeInTheDocument();
     expect(
       screen.getByRole("link", { name: "Open photo detail" }),
     ).toHaveAttribute("href", "/app/library/photos/photo-map-1");

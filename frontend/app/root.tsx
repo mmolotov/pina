@@ -50,7 +50,7 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
 
   if (isBackendUnavailableError(error)) {
     return (
-      <main className="app-shell flex min-h-screen items-center justify-center px-6 py-10">
+      <main className="flex min-h-screen items-center justify-center px-6 py-10">
         <section className="panel w-full max-w-3xl space-y-5 p-8 sm:p-10">
           <p className="eyebrow">Backend Connection</p>
           <BrandLogo
