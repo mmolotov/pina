@@ -121,6 +121,64 @@ class AuthResourceTest {
 	}
 
 	@Test
+	void updateProfileWithBlankNameDoesNotChangeName() {
+		String username = "blank-name-" + UUID.randomUUID().toString().substring(0, 8);
+		String token = given().contentType(ContentType.JSON)
+				.body("{\"username\":\"" + username + "\",\"password\":\"password123\",\"name\":\"Original\"}").when()
+				.post("/api/v1/auth/register").then().statusCode(201).extract().path("accessToken");
+
+		given().header("Authorization", "Bearer " + token).contentType(ContentType.JSON).body("{\"name\":\"\"}").when()
+				.put("/api/v1/auth/me").then().statusCode(200).body("name", equalTo("Original"));
+	}
+
+	@Test
+	void updateProfileSetsEmail() {
+		String username = "set-email-" + UUID.randomUUID().toString().substring(0, 8);
+		String token = given().contentType(ContentType.JSON)
+				.body("{\"username\":\"" + username + "\",\"password\":\"password123\"}").when()
+				.post("/api/v1/auth/register").then().statusCode(201).extract().path("accessToken");
+
+		given().header("Authorization", "Bearer " + token).contentType(ContentType.JSON)
+				.body("{\"email\":\"" + username + "@example.com\"}").when().put("/api/v1/auth/me").then()
+				.statusCode(200).body("email", equalTo(username + "@example.com"));
+	}
+
+	@Test
+	void updateProfileClearsEmailWhenBlank() {
+		String username = "clear-email-" + UUID.randomUUID().toString().substring(0, 8);
+		String token = given().contentType(ContentType.JSON)
+				.body("{\"username\":\"" + username + "\",\"password\":\"password123\"}").when()
+				.post("/api/v1/auth/register").then().statusCode(201).extract().path("accessToken");
+
+		given().header("Authorization", "Bearer " + token).contentType(ContentType.JSON)
+				.body("{\"email\":\"" + username + "@example.com\"}").when().put("/api/v1/auth/me").then()
+				.statusCode(200);
+
+		given().header("Authorization", "Bearer " + token).contentType(ContentType.JSON).body("{\"email\":\"\"}").when()
+				.put("/api/v1/auth/me").then().statusCode(200);
+	}
+
+	@Test
+	void updateProfileWithDuplicateEmailReturns409() {
+		String user1 = "dup-email-a-" + UUID.randomUUID().toString().substring(0, 8);
+		String user2 = "dup-email-b-" + UUID.randomUUID().toString().substring(0, 8);
+		String sharedEmail = user1 + "@example.com";
+
+		String token1 = given().contentType(ContentType.JSON)
+				.body("{\"username\":\"" + user1 + "\",\"password\":\"password123\"}").when()
+				.post("/api/v1/auth/register").then().statusCode(201).extract().path("accessToken");
+		String token2 = given().contentType(ContentType.JSON)
+				.body("{\"username\":\"" + user2 + "\",\"password\":\"password123\"}").when()
+				.post("/api/v1/auth/register").then().statusCode(201).extract().path("accessToken");
+
+		given().header("Authorization", "Bearer " + token1).contentType(ContentType.JSON)
+				.body("{\"email\":\"" + sharedEmail + "\"}").when().put("/api/v1/auth/me").then().statusCode(200);
+
+		given().header("Authorization", "Bearer " + token2).contentType(ContentType.JSON)
+				.body("{\"email\":\"" + sharedEmail + "\"}").when().put("/api/v1/auth/me").then().statusCode(409);
+	}
+
+	@Test
 	void inactiveUserCannotLogin() throws Exception {
 		String username = "inactive-login-" + UUID.randomUUID().toString().substring(0, 8);
 		String userId = given().contentType(ContentType.JSON)

@@ -129,6 +129,41 @@ class AlbumServiceTest {
 		assertNull(page.totalPages());
 	}
 
+	@Test
+	@Transactional
+	void addPhotoReturnsNotFoundWhenAlbumNotExists() throws IOException {
+		User user = TestUserHelper.createUser("album-add-no-album");
+		Photo photo = uploadPhoto("add-no-album.jpg", user, Color.CYAN);
+		var result = albumService.addPhoto(UUID.randomUUID(), photo.id, user);
+		assertEquals(AlbumService.AddPhotoResult.NOT_FOUND, result);
+	}
+
+	@Test
+	@Transactional
+	void addPhotoReturnsNotFoundWhenPhotoNotExists() {
+		User user = TestUserHelper.createUser("album-add-no-photo");
+		Album album = albumService.create("AddNoPhoto", null, user);
+		var result = albumService.addPhoto(album.id, UUID.randomUUID(), user);
+		assertEquals(AlbumService.AddPhotoResult.NOT_FOUND, result);
+	}
+
+	@Test
+	@Transactional
+	void addPhotoReturnsPhotoNotAccessibleWhenPhotoOwnedByOther() throws IOException {
+		User owner = TestUserHelper.createUser("album-owner");
+		User other = TestUserHelper.createUser("album-other");
+		Album album = albumService.create("OwnerAlbum", null, owner);
+		Photo photo = uploadPhoto("other-owned.jpg", other, Color.MAGENTA);
+		var result = albumService.addPhoto(album.id, photo.id, owner);
+		assertEquals(AlbumService.AddPhotoResult.PHOTO_NOT_ACCESSIBLE, result);
+	}
+
+	@Test
+	@Transactional
+	void updateReturnsEmptyForNonExistentAlbum() {
+		assertTrue(albumService.update(UUID.randomUUID(), "New Name", null).isEmpty());
+	}
+
 	private Photo uploadPhoto(String filename, User user, Color color) throws IOException {
 		return photoService.upload(new ByteArrayInputStream(createJpegBytes(color, filename)), filename, "image/jpeg",
 				user);
