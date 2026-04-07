@@ -96,6 +96,7 @@ tasks.withType<com.github.spotbugs.snom.SpotBugsTask> {
 dependencyCheck {
     failBuildOnCVSS = 7.0f
     formats = listOf("HTML", "JSON")
+    nvd.apiKey = System.getenv("NVD_API_KEY") ?: ""
 }
 
 // Disable Gradle JaCoCo agent — quarkus-jacoco handles instrumentation

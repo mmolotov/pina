@@ -6,6 +6,7 @@ on:
     paths: ['backend/**']
   pull_request:
     paths: ['backend/**']
+  workflow_dispatch:
 
 defaults:
   run:
@@ -111,9 +112,11 @@ jobs:
       - name: OWASP dependency check
         run: ./gradlew dependencyCheckAnalyze
         env:
+          GRADLE_OPTS: "-Xmx2g"
           QUARKUS_DATASOURCE_JDBC_URL: jdbc:postgresql://localhost:5432/pina_test
           QUARKUS_DATASOURCE_USERNAME: pina
           QUARKUS_DATASOURCE_PASSWORD: ${{ secrets.CI_POSTGRES_PASSWORD || 'pina' }}
+          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
 
       - name: Upload OWASP report
         uses: actions/upload-artifact@v7
