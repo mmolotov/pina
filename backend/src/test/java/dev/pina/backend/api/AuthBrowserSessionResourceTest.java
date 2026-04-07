@@ -227,8 +227,8 @@ class AuthBrowserSessionResourceTest {
 
 	private void deactivateUser(String userId) throws Exception {
 		tx.begin();
-		em.createQuery("UPDATE User u SET u.active = false WHERE u.id = :id").setParameter("id", UUID.fromString(userId))
-				.executeUpdate();
+		em.createQuery("UPDATE User u SET u.active = false WHERE u.id = :id")
+				.setParameter("id", UUID.fromString(userId)).executeUpdate();
 		tx.commit();
 	}
 }

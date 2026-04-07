@@ -85,8 +85,8 @@ class AuthResourceGoogleTest {
 
 		try {
 			when(googleTokenVerifier.verify("closed-google-token"))
-					.thenReturn(Optional.of(new GoogleIdToken("google-closed-" + UUID.randomUUID(),
-							"closed@gmail.com", "Closed Google", null)));
+					.thenReturn(Optional.of(new GoogleIdToken("google-closed-" + UUID.randomUUID(), "closed@gmail.com",
+							"Closed Google", null)));
 
 			given().contentType(ContentType.JSON).body("{\"idToken\":\"closed-google-token\"}").when()
 					.post("/api/v1/auth/google").then().statusCode(403).body("error", equalTo("forbidden"));
@@ -205,8 +205,8 @@ class AuthResourceGoogleTest {
 
 	private void deactivateUser(String userId) throws Exception {
 		tx.begin();
-		em.createQuery("UPDATE User u SET u.active = false WHERE u.id = :id").setParameter("id", UUID.fromString(userId))
-				.executeUpdate();
+		em.createQuery("UPDATE User u SET u.active = false WHERE u.id = :id")
+				.setParameter("id", UUID.fromString(userId)).executeUpdate();
 		tx.commit();
 	}
 }
