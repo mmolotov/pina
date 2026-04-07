@@ -11,6 +11,8 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import javax.imageio.ImageIO;
 import org.junit.jupiter.api.Test;
 
@@ -53,6 +55,20 @@ class ExifExtractorTest {
 		// No EXIF data in synthetic image, json may be null or empty object
 		if (result.json() != null) {
 			assertNotNull(result.json());
+		}
+	}
+
+	@Test
+	void extractWithPathReturnsResultForValidJpeg() throws IOException {
+		byte[] jpeg = createTestJpeg();
+		Path tempFile = Files.createTempFile("exif-path-test-", ".jpg");
+		try {
+			Files.write(tempFile, jpeg);
+			var result = exifExtractor.extract(tempFile);
+			assertNotNull(result);
+			assertNull(result.takenAt());
+		} finally {
+			Files.deleteIfExists(tempFile);
 		}
 	}
 
