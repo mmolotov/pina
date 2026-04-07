@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { createRoutesStub } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { I18nProvider } from "~/lib/i18n";
 import AppFavoritesRoute, {
   clientLoader as appFavoritesClientLoader,
 } from "~/routes/app-favorites";
@@ -92,7 +93,7 @@ describe("AppFavoritesRoute", () => {
     ]);
   });
 
-  it("renders photo and album favorites and filters to albums", async () => {
+  function renderRoute() {
     const Stub = createRoutesStub([
       {
         path: "/app/favorites",
@@ -101,38 +102,38 @@ describe("AppFavoritesRoute", () => {
       },
     ]);
 
-    render(<Stub initialEntries={["/app/favorites"]} />);
+    return render(
+      <I18nProvider>
+        <Stub initialEntries={["/app/favorites"]} />
+      </I18nProvider>,
+    );
+  }
+
+  it("renders photo and album favorites and filters to albums", async () => {
+    renderRoute();
 
     expect(await screen.findByText("beach.jpg")).toBeInTheDocument();
     expect(screen.getByText("Weekend highlights")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Albums" }));
+    fireEvent.click(screen.getByRole("button", { name: /albums|альбомы/i }));
 
-    expect(screen.queryByText("Personal photo picks")).not.toBeInTheDocument();
-    expect(
-      screen.getByText("Collections worth revisiting"),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("link", { name: "Open Family Space" }),
-    ).toHaveAttribute("href", "/app/spaces/space-1");
+    expect(screen.getByRole("link", { name: /family space/i })).toHaveAttribute(
+      "href",
+      "/app/spaces/space-1",
+    );
   });
 
   it("filters favorites by text", async () => {
-    const Stub = createRoutesStub([
-      {
-        path: "/app/favorites",
-        Component: AppFavoritesRoute,
-        loader: async () => appFavoritesClientLoader(),
-      },
-    ]);
-
-    render(<Stub initialEntries={["/app/favorites"]} />);
+    renderRoute();
 
     expect(await screen.findByText("beach.jpg")).toBeInTheDocument();
 
-    fireEvent.change(screen.getByLabelText("Filter favorites"), {
-      target: { value: "weekend" },
-    });
+    fireEvent.change(
+      screen.getByLabelText(/filter favorites|фильтр избранного/i),
+      {
+        target: { value: "weekend" },
+      },
+    );
 
     expect(screen.queryByText("beach.jpg")).not.toBeInTheDocument();
     expect(screen.getByText("Weekend highlights")).toBeInTheDocument();

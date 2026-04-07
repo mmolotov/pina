@@ -52,6 +52,8 @@ describe("AppSettingsRoute", () => {
         name: "Test User",
         email: "test@example.com",
         avatarUrl: null,
+        instanceRole: "USER",
+        active: true,
       },
     });
 
@@ -60,6 +62,8 @@ describe("AppSettingsRoute", () => {
       name: "Test User",
       email: "test@example.com",
       avatarUrl: null,
+      instanceRole: "USER",
+      active: true,
     });
 
     apiMocks.updateCurrentUser.mockResolvedValue({
@@ -67,6 +71,8 @@ describe("AppSettingsRoute", () => {
       name: "Updated User",
       email: "updated@example.com",
       avatarUrl: null,
+      instanceRole: "USER",
+      active: true,
     });
   });
 
@@ -106,6 +112,8 @@ describe("AppSettingsRoute", () => {
       name: "Updated User",
       email: "updated@example.com",
       avatarUrl: null,
+      instanceRole: "USER",
+      active: true,
     });
   });
 

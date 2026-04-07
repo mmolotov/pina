@@ -1,8 +1,15 @@
 import { Link, useSearchParams } from "react-router";
 import type { Route } from "./+types/app-search";
-import { EmptyState, PageHeader, Panel } from "~/components/ui";
+import {
+  EmptyHint,
+  EmptyState,
+  PageHeader,
+  Panel,
+  SurfaceCard,
+} from "~/components/ui";
 import { listFavorites, listPhotos, listSpaces } from "~/lib/api";
 import { formatRelativeCount } from "~/lib/format";
+import { useI18n } from "~/lib/i18n";
 import type { PhotoDto, SpaceDto } from "~/types/api";
 
 type SearchScope = "all" | "library" | "spaces" | "favorites";
@@ -33,6 +40,7 @@ export async function clientLoader() {
 }
 
 export default function AppSearchRoute({ loaderData }: Route.ComponentProps) {
+  const { locale, t } = useI18n();
   const [searchParams, setSearchParams] = useSearchParams();
   const query = searchParams.get("q") ?? "";
   const scope = (searchParams.get("scope") as SearchScope | null) ?? "all";
@@ -64,12 +72,31 @@ export default function AppSearchRoute({ loaderData }: Route.ComponentProps) {
         : matchingPhotos.length + matchingSpaces.length;
   const previewScopeLabel =
     scope === "library"
-      ? "library"
+      ? t("app.search.previewScopeLibrary")
       : scope === "spaces"
-        ? "Spaces"
+        ? t("app.search.previewScopeSpaces")
         : scope === "favorites"
-          ? "favorites"
-          : "all visible content";
+          ? t("app.search.previewScopeFavorites")
+          : t("app.search.previewScopeAll");
+  const countFormatter = new Intl.NumberFormat(locale);
+  const spaceForms = {
+    one: t("unit.space.one"),
+    few: t("unit.space.few"),
+    many: t("unit.space.many"),
+    other: t("unit.space.other"),
+  };
+  const matchForms = {
+    one: t("unit.match.one"),
+    few: t("unit.match.few"),
+    many: t("unit.match.many"),
+    other: t("unit.match.other"),
+  };
+  const photoForms = {
+    one: t("unit.photo.one"),
+    few: t("unit.photo.few"),
+    many: t("unit.photo.many"),
+    other: t("unit.photo.other"),
+  };
 
   return (
     <div className="space-y-8">
@@ -77,24 +104,26 @@ export default function AppSearchRoute({ loaderData }: Route.ComponentProps) {
         actions={
           <>
             <Link className="button-secondary" to="/app/library">
-              Back to library
+              {t("app.search.backToLibrary")}
             </Link>
             <Link className="button-primary" to="/app/favorites">
-              Browse favorites
+              {t("app.search.browseFavorites")}
             </Link>
           </>
         }
-        description="The frontend route and search interaction shell are ready. Actual semantic search, face search, and tag search will be connected once the ML and indexing backend arrives."
-        eyebrow="Search"
-        title="Discovery"
+        description={t("app.search.description")}
+        eyebrow={t("app.search.eyebrow")}
+        title={t("app.search.title")}
       />
 
       <Panel className="p-6">
         <label className="block">
-          <span className="mb-2 block text-sm font-medium">Search query</span>
+          <span className="mb-2 block text-sm font-medium">
+            {t("app.search.queryLabel")}
+          </span>
           <div className="flex flex-col gap-3 md:flex-row">
             <input
-              aria-label="Search query"
+              aria-label={t("app.search.queryLabel")}
               className="field flex-1"
               onChange={(event) => {
                 const nextParams = new URLSearchParams(searchParams);
@@ -105,7 +134,7 @@ export default function AppSearchRoute({ loaderData }: Route.ComponentProps) {
                 }
                 setSearchParams(nextParams, { replace: true });
               }}
-              placeholder="Search by text, person, place, or tag"
+              placeholder={t("app.search.queryPlaceholder")}
               type="search"
               value={query}
             />
@@ -119,7 +148,7 @@ export default function AppSearchRoute({ loaderData }: Route.ComponentProps) {
               }}
               type="button"
             >
-              Clear query
+              {t("common.clear")}
             </button>
           </div>
         </label>
@@ -136,19 +165,19 @@ export default function AppSearchRoute({ loaderData }: Route.ComponentProps) {
               }}
               type="button"
             >
-              Try {example.label}
+              {t("app.search.tryExample", { label: example.label })}
             </button>
           ))}
         </div>
 
         <div className="mt-5 flex flex-wrap gap-3">
           {[
-            { id: "all", label: "All scopes" },
-            { id: "library", label: "Library" },
-            { id: "spaces", label: "Spaces" },
-            { id: "favorites", label: "Favorites" },
-            { id: "faces", label: "Faces (Later)" },
-            { id: "tags", label: "Tags (Later)" },
+            { id: "all", label: t("app.search.scope.all") },
+            { id: "library", label: t("app.search.scope.library") },
+            { id: "spaces", label: t("app.search.scope.spaces") },
+            { id: "favorites", label: t("app.search.scope.favorites") },
+            { id: "faces", label: t("app.search.scope.facesLater") },
+            { id: "tags", label: t("app.search.scope.tagsLater") },
           ].map((filter) => (
             <button
               aria-disabled={filter.id === "faces" || filter.id === "tags"}
@@ -182,26 +211,29 @@ export default function AppSearchRoute({ loaderData }: Route.ComponentProps) {
 
         <div className="mt-5 grid gap-4 lg:grid-cols-3">
           <Panel className="p-4">
-            <p className="eyebrow">Current library</p>
+            <p className="eyebrow">{t("app.search.currentLibrary")}</p>
+            <p className="mt-2 text-2xl font-semibold tracking-tight">
+              {formatRelativeCount(loaderData.photos.length, photoForms)}
+            </p>
+          </Panel>
+          <Panel className="p-4">
+            <p className="eyebrow">{t("app.search.accessibleSpaces")}</p>
+            <p className="mt-2 text-2xl font-semibold tracking-tight">
+              {formatRelativeCount(loaderData.spaces.length, spaceForms)}
+            </p>
+          </Panel>
+          <Panel className="p-4">
+            <p className="eyebrow">{t("app.search.favorites")}</p>
             <p className="mt-2 text-2xl font-semibold tracking-tight">
               {formatRelativeCount(
-                loaderData.photos.length,
-                "preview photo",
-                "preview photos",
+                loaderData.favoritePhotoCount + loaderData.favoriteAlbumCount,
+                {
+                  one: t("unit.savedItem.one"),
+                  few: t("unit.savedItem.few"),
+                  many: t("unit.savedItem.many"),
+                  other: t("unit.savedItem.other"),
+                },
               )}
-            </p>
-          </Panel>
-          <Panel className="p-4">
-            <p className="eyebrow">Accessible Spaces</p>
-            <p className="mt-2 text-2xl font-semibold tracking-tight">
-              {formatRelativeCount(loaderData.spaces.length, "Space", "Spaces")}
-            </p>
-          </Panel>
-          <Panel className="p-4">
-            <p className="eyebrow">Favorites</p>
-            <p className="mt-2 text-2xl font-semibold tracking-tight">
-              {loaderData.favoritePhotoCount + loaderData.favoriteAlbumCount}{" "}
-              saved items
             </p>
           </Panel>
         </div>
@@ -209,38 +241,37 @@ export default function AppSearchRoute({ loaderData }: Route.ComponentProps) {
 
       <section className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr_1fr]">
         <Panel className="p-6">
-          <p className="eyebrow">Planned query types</p>
+          <p className="eyebrow">{t("app.search.plannedQueryTypes")}</p>
           <ul className="mt-4 space-y-3 text-sm leading-7 text-[var(--color-text-muted)]">
-            <li>Free-text search across ML-generated captions and tags</li>
-            <li>Face/person search after clustering and identity linking</li>
-            <li>
-              Scoped search inside personal library, favorites, or a specific
-              Space
-            </li>
+            <li>{t("app.search.queryType.freeText")}</li>
+            <li>{t("app.search.queryType.faces")}</li>
+            <li>{t("app.search.queryType.scoped")}</li>
           </ul>
         </Panel>
 
         <Panel className="p-6">
-          <p className="eyebrow">Backend requirements</p>
+          <p className="eyebrow">{t("app.search.backendRequirements")}</p>
           <ul className="mt-4 space-y-3 text-sm leading-7 text-[var(--color-text-muted)]">
-            <li>Indexed text and tag search endpoints</li>
-            <li>Face and embedding-aware retrieval</li>
-            <li>Paginated result ranking with access-control filtering</li>
+            <li>{t("app.search.backendRequirement.indexed")}</li>
+            <li>{t("app.search.backendRequirement.embedding")}</li>
+            <li>{t("app.search.backendRequirement.ranking")}</li>
           </ul>
         </Panel>
 
         <Panel className="p-6">
-          <p className="eyebrow">Local preview</p>
+          <p className="eyebrow">{t("app.search.localPreview")}</p>
           <div className="mt-4 flex items-center justify-between gap-3">
             <p className="text-sm text-[var(--color-text-muted)]">
-              Preview scope:{" "}
+              {t("app.search.previewScope")}:{" "}
               <span className="font-semibold text-[var(--color-text)]">
                 {previewScopeLabel}
               </span>
             </p>
             {normalizedQuery.length > 0 ? (
               <p className="text-sm text-[var(--color-text-muted)]">
-                {activePreviewItems} lightweight matches
+                {t("app.search.lightweightMatches", {
+                  count: countFormatter.format(activePreviewItems),
+                })}
               </p>
             ) : null}
           </div>
@@ -251,48 +282,46 @@ export default function AppSearchRoute({ loaderData }: Route.ComponentProps) {
                   className="button-secondary"
                   to="/app/library?view=timeline"
                 >
-                  Open timeline instead
+                  {t("app.search.openTimelineInstead")}
                 </Link>
               }
-              description="Type a query to see a lightweight client-side preview based on filenames and Space names. This is not the final search implementation."
-              title="Search backend not connected yet"
+              description={t("app.search.emptyDescription")}
+              title={t("app.search.emptyTitle")}
             />
           ) : activePreviewItems === 0 ? (
-            <div className="mt-4 rounded-2xl border border-dashed border-[var(--color-border)] px-5 py-6 text-sm leading-7 text-[var(--color-text-muted)]">
-              No client-side preview matches were found for{" "}
-              <span className="font-semibold text-[var(--color-text)]">
-                {query}
-              </span>
-              . Full search results will require backend indexing.
-            </div>
+            <EmptyHint className="mt-4 px-5 py-6 leading-7">
+              {t("app.search.noMatches", { query })}
+            </EmptyHint>
           ) : (
             <div className="mt-4 space-y-3">
               {scope !== "spaces" ? (
                 <div className="space-y-3">
                   <div className="flex items-center justify-between gap-3">
-                    <p className="eyebrow">Photo preview</p>
+                    <p className="eyebrow">{t("app.search.photoPreview")}</p>
                     <p className="text-sm text-[var(--color-text-muted)]">
-                      {matchingPhotos.length} matches
+                      {formatRelativeCount(matchingPhotos.length, matchForms)}
                     </p>
                   </div>
                   {matchingPhotos.length === 0 ? (
-                    <p className="rounded-2xl border border-dashed border-[var(--color-border)] px-4 py-4 text-sm text-[var(--color-text-muted)]">
-                      No matching photos in the current local preview sample.
-                    </p>
+                    <EmptyHint>{t("app.search.noPhotoMatches")}</EmptyHint>
                   ) : (
                     matchingPhotos.map((photo) => (
-                      <Link
-                        className="block rounded-2xl border border-[var(--color-border)] bg-[var(--color-panel-strong)] p-4 hover:bg-white"
+                      <SurfaceCard
+                        className="rounded-2xl p-0 hover:bg-white"
                         key={photo.id}
-                        to={`/app/library/photos/${photo.id}`}
                       >
-                        <p className="text-sm font-semibold">
-                          {photo.originalFilename}
-                        </p>
-                        <p className="mt-1 text-xs text-[var(--color-text-muted)]">
-                          Photo metadata preview
-                        </p>
-                      </Link>
+                        <Link
+                          className="block p-4"
+                          to={`/app/library/photos/${photo.id}`}
+                        >
+                          <p className="text-sm font-semibold">
+                            {photo.originalFilename}
+                          </p>
+                          <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+                            {t("app.search.photoMetadataPreview")}
+                          </p>
+                        </Link>
+                      </SurfaceCard>
                     ))
                   )}
                 </div>
@@ -300,27 +329,29 @@ export default function AppSearchRoute({ loaderData }: Route.ComponentProps) {
               {scope !== "library" && scope !== "favorites" ? (
                 <div className="space-y-3">
                   <div className="flex items-center justify-between gap-3">
-                    <p className="eyebrow">Space preview</p>
+                    <p className="eyebrow">{t("app.search.spacePreview")}</p>
                     <p className="text-sm text-[var(--color-text-muted)]">
-                      {matchingSpaces.length} matches
+                      {formatRelativeCount(matchingSpaces.length, matchForms)}
                     </p>
                   </div>
                   {matchingSpaces.length === 0 ? (
-                    <p className="rounded-2xl border border-dashed border-[var(--color-border)] px-4 py-4 text-sm text-[var(--color-text-muted)]">
-                      No matching Spaces in the current local preview sample.
-                    </p>
+                    <EmptyHint>{t("app.search.noSpaceMatches")}</EmptyHint>
                   ) : (
                     matchingSpaces.map((space) => (
-                      <Link
-                        className="block rounded-2xl border border-[var(--color-border)] bg-[var(--color-panel-strong)] p-4 hover:bg-white"
+                      <SurfaceCard
+                        className="rounded-2xl p-0 hover:bg-white"
                         key={space.id}
-                        to={`/app/spaces/${space.id}`}
                       >
-                        <p className="text-sm font-semibold">{space.name}</p>
-                        <p className="mt-1 text-xs text-[var(--color-text-muted)]">
-                          Space name preview
-                        </p>
-                      </Link>
+                        <Link
+                          className="block p-4"
+                          to={`/app/spaces/${space.id}`}
+                        >
+                          <p className="text-sm font-semibold">{space.name}</p>
+                          <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+                            {t("app.search.spaceNamePreview")}
+                          </p>
+                        </Link>
+                      </SurfaceCard>
                     ))
                   )}
                 </div>

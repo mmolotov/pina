@@ -8,7 +8,14 @@ import {
   useParams,
   useRevalidator,
 } from "react-router";
-import { PageHeader, Panel } from "~/components/ui";
+import {
+  EmptyHint,
+  FilterToolbar,
+  InlineMessage,
+  PageHeader,
+  Panel,
+  SurfaceCard,
+} from "~/components/ui";
 import {
   addPhotoToSpaceAlbum,
   addSpaceMember,
@@ -514,7 +521,7 @@ export default function AppSpaceDetailRoute({
   if (!spaceId) {
     return (
       <Panel className="p-6">
-        <p className="text-sm text-[var(--color-danger)]">
+        <p className="text-sm text-[var(--color-danger-strong)]">
           Space id is missing.
         </p>
       </Panel>
@@ -572,15 +579,8 @@ export default function AppSpaceDetailRoute({
         </section>
       ) : null}
 
-      <Panel className="p-5">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <p className="eyebrow">Local filter</p>
-            <p className="mt-2 text-sm text-[var(--color-text-muted)]">
-              Narrow members, subspaces, albums, and invites without leaving the
-              current Space.
-            </p>
-          </div>
+      <FilterToolbar
+        controls={
           <div className="flex w-full flex-col gap-3 md:w-auto md:flex-row">
             <input
               aria-label="Filter Space detail"
@@ -599,8 +599,10 @@ export default function AppSpaceDetailRoute({
               Clear filter
             </button>
           </div>
-        </div>
-      </Panel>
+        }
+        description="Narrow members, subspaces, albums, and invites without leaving the current Space."
+        title="Local filter"
+      />
 
       <section className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
         <div className="space-y-6">
@@ -615,9 +617,9 @@ export default function AppSpaceDetailRoute({
             </div>
 
             {memberError ? (
-              <p className="mt-4 rounded-2xl border border-[rgba(161,69,63,0.25)] bg-[rgba(161,69,63,0.08)] px-4 py-3 text-sm text-[var(--color-danger)]">
+              <InlineMessage className="mt-4" tone="danger">
                 {memberError}
-              </p>
+              </InlineMessage>
             ) : null}
 
             <Form
@@ -665,15 +667,10 @@ export default function AppSpaceDetailRoute({
 
             <div className="mt-5 space-y-3">
               {filteredMembers.length === 0 ? (
-                <p className="rounded-2xl border border-dashed border-[var(--color-border)] px-4 py-4 text-sm text-[var(--color-text-muted)]">
-                  No members match the current filter.
-                </p>
+                <EmptyHint>No members match the current filter.</EmptyHint>
               ) : (
                 filteredMembers.map((member) => (
-                  <article
-                    className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-panel-strong)] p-4"
-                    key={member.userId}
-                  >
+                  <SurfaceCard className="rounded-2xl p-4" key={member.userId}>
                     <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                       <div>
                         <h3 className="text-lg font-semibold tracking-tight">
@@ -741,7 +738,7 @@ export default function AppSpaceDetailRoute({
                         </Form>
                       </div>
                     </div>
-                  </article>
+                  </SurfaceCard>
                 ))
               )}
             </div>
@@ -754,9 +751,9 @@ export default function AppSpaceDetailRoute({
             </h2>
 
             {subspaceError ? (
-              <p className="mt-4 rounded-2xl border border-[rgba(161,69,63,0.25)] bg-[rgba(161,69,63,0.08)] px-4 py-3 text-sm text-[var(--color-danger)]">
+              <InlineMessage className="mt-4" tone="danger">
                 {subspaceError}
-              </p>
+              </InlineMessage>
             ) : null}
 
             <Form className="mt-5 space-y-3" method="post">
@@ -820,15 +817,10 @@ export default function AppSpaceDetailRoute({
                   No subspaces yet.
                 </p>
               ) : filteredSubspaces.length === 0 ? (
-                <p className="rounded-2xl border border-dashed border-[var(--color-border)] px-4 py-4 text-sm text-[var(--color-text-muted)]">
-                  No subspaces match the current filter.
-                </p>
+                <EmptyHint>No subspaces match the current filter.</EmptyHint>
               ) : (
                 filteredSubspaces.map((subspace) => (
-                  <article
-                    className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-panel-strong)] p-4"
-                    key={subspace.id}
-                  >
+                  <SurfaceCard className="rounded-2xl p-4" key={subspace.id}>
                     <div className="flex items-center justify-between gap-3">
                       <div>
                         <h3 className="text-lg font-semibold tracking-tight">
@@ -846,7 +838,7 @@ export default function AppSpaceDetailRoute({
                         Open
                       </Link>
                     </div>
-                  </article>
+                  </SurfaceCard>
                 ))
               )}
             </div>
@@ -859,9 +851,9 @@ export default function AppSpaceDetailRoute({
             </h2>
 
             {albumError ? (
-              <p className="mt-4 rounded-2xl border border-[rgba(161,69,63,0.25)] bg-[rgba(161,69,63,0.08)] px-4 py-3 text-sm text-[var(--color-danger)]">
+              <InlineMessage className="mt-4" tone="danger">
                 {albumError}
-              </p>
+              </InlineMessage>
             ) : null}
 
             <Form className="mt-5 space-y-3" method="post">
@@ -911,16 +903,14 @@ export default function AppSpaceDetailRoute({
                     No shared albums yet.
                   </p>
                 ) : filteredAlbums.length === 0 ? (
-                  <p className="rounded-2xl border border-dashed border-[var(--color-border)] px-4 py-4 text-sm text-[var(--color-text-muted)]">
-                    No albums match the current filter.
-                  </p>
+                  <EmptyHint>No albums match the current filter.</EmptyHint>
                 ) : (
                   filteredAlbums.map((album) => (
                     <article
                       className={`rounded-2xl border p-4 ${
                         album.id === selectedAlbumId
-                          ? "border-[var(--color-accent)] bg-[rgba(190,138,43,0.12)]"
-                          : "border-[var(--color-border)] bg-[var(--color-panel-strong)]"
+                          ? "border-[var(--color-accent)] bg-[var(--color-accent-soft)]"
+                          : "surface-card"
                       }`}
                       key={album.id}
                     >
@@ -948,7 +938,7 @@ export default function AppSpaceDetailRoute({
                 )}
               </div>
 
-              <div className="rounded-3xl border border-[var(--color-border)] bg-[var(--color-panel-strong)] p-5">
+              <SurfaceCard className="rounded-3xl p-5">
                 {selectedAlbum ? (
                   <div className="space-y-5">
                     <div>
@@ -1075,7 +1065,7 @@ export default function AppSpaceDetailRoute({
                         ))}
                       </select>
                       {libraryPhotosError ? (
-                        <p className="text-sm text-[var(--color-danger)]">
+                        <p className="text-sm text-[var(--color-danger-strong)]">
                           {libraryPhotosError}
                         </p>
                       ) : null}
@@ -1116,14 +1106,15 @@ export default function AppSpaceDetailRoute({
                         </p>
                       ) : (
                         selectedAlbumPhotos.map((photo) => (
-                          <article
-                            className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-panel)] p-4"
+                          <SurfaceCard
+                            className="rounded-2xl p-4"
                             key={photo.id}
+                            tone="subtle"
                           >
                             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                               <div>
                                 <Link
-                                  className="text-base font-semibold tracking-tight hover:text-[var(--color-primary-strong)]"
+                                  className="link-accent text-base font-semibold tracking-tight"
                                   to={`/app/spaces/${spaceId}/albums/${selectedAlbumId}/photos/${photo.id}`}
                                 >
                                   {photo.originalFilename}
@@ -1180,7 +1171,7 @@ export default function AppSpaceDetailRoute({
                                 </Form>
                               </div>
                             </div>
-                          </article>
+                          </SurfaceCard>
                         ))
                       )}
                     </div>
@@ -1191,7 +1182,7 @@ export default function AppSpaceDetailRoute({
                     shared photos.
                   </p>
                 )}
-              </div>
+              </SurfaceCard>
             </div>
           </Panel>
         </div>
@@ -1203,9 +1194,9 @@ export default function AppSpaceDetailRoute({
           </h2>
 
           {inviteError ? (
-            <p className="mt-4 rounded-2xl border border-[rgba(161,69,63,0.25)] bg-[rgba(161,69,63,0.08)] px-4 py-3 text-sm text-[var(--color-danger)]">
+            <InlineMessage className="mt-4" tone="danger">
               {inviteError}
-            </p>
+            </InlineMessage>
           ) : null}
 
           <Form className="mt-5 space-y-3" method="post">
@@ -1269,15 +1260,10 @@ export default function AppSpaceDetailRoute({
                 No active invites.
               </p>
             ) : filteredInvites.length === 0 ? (
-              <p className="rounded-2xl border border-dashed border-[var(--color-border)] px-4 py-4 text-sm text-[var(--color-text-muted)]">
-                No invites match the current filter.
-              </p>
+              <EmptyHint>No invites match the current filter.</EmptyHint>
             ) : (
               filteredInvites.map((invite) => (
-                <article
-                  className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-panel-strong)] p-4"
-                  key={invite.id}
-                >
+                <SurfaceCard className="rounded-2xl p-4" key={invite.id}>
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <p className="eyebrow">Invite code</p>
@@ -1293,7 +1279,7 @@ export default function AppSpaceDetailRoute({
                       />
                       <input name="inviteId" type="hidden" value={invite.id} />
                       <button
-                        className="text-sm font-semibold text-[var(--color-danger)]"
+                        className="text-link-danger text-sm font-semibold"
                         disabled={
                           pendingIntent === "revoke-invite" &&
                           pendingInviteId === invite.id
@@ -1330,7 +1316,7 @@ export default function AppSpaceDetailRoute({
                   >
                     Open join page
                   </Link>
-                </article>
+                </SurfaceCard>
               ))
             )}
           </div>

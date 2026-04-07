@@ -1,7 +1,7 @@
 import type { Route } from "./+types/app-settings";
 import { useEffect, useRef, useState } from "react";
 import { Form, Link, useActionData, useNavigation } from "react-router";
-import { PageHeader, Panel } from "~/components/ui";
+import { Badge, InlineMessage, PageHeader, Panel } from "~/components/ui";
 import { getCurrentUser, updateCurrentUser } from "~/lib/api";
 import { toActionErrorMessage } from "~/lib/route-actions";
 import { updateSessionUser, useSession } from "~/lib/session";
@@ -113,7 +113,7 @@ export default function AppSettingsRoute({ loaderData }: Route.ComponentProps) {
         <Panel className="p-6">
           <p className="eyebrow">Current identity</p>
           <div className="mt-5 flex items-start gap-4">
-            <div className="flex h-16 w-16 items-center justify-center rounded-3xl bg-[rgba(150,93,52,0.14)] text-xl font-semibold text-[var(--color-primary-strong)]">
+            <div className="avatar-token">
               {(session?.user.name ?? "U").slice(0, 1).toUpperCase()}
             </div>
             <div className="min-w-0">
@@ -138,9 +138,9 @@ export default function AppSettingsRoute({ loaderData }: Route.ComponentProps) {
             Update visible account data
           </h2>
           <div className="mt-4 flex flex-wrap gap-3">
-            <span className="rounded-full border border-[var(--color-border)] px-3 py-1 text-xs font-semibold">
+            <Badge className="rounded-full px-3 py-1 text-xs font-semibold">
               {hasUnsavedChanges ? "Unsaved changes" : "In sync"}
-            </span>
+            </Badge>
             <Link className="button-secondary" to="/app/favorites">
               Open favorites
             </Link>
@@ -191,15 +191,11 @@ export default function AppSettingsRoute({ loaderData }: Route.ComponentProps) {
             </label>
 
             {errorMessage ? (
-              <p className="rounded-2xl border border-[rgba(161,69,63,0.25)] bg-[rgba(161,69,63,0.08)] px-4 py-3 text-sm text-[var(--color-danger)]">
-                {errorMessage}
-              </p>
+              <InlineMessage tone="danger">{errorMessage}</InlineMessage>
             ) : null}
 
             {successMessage ? (
-              <p className="rounded-2xl border border-[rgba(43,112,72,0.24)] bg-[rgba(43,112,72,0.09)] px-4 py-3 text-sm text-[rgb(43,112,72)]">
-                {successMessage}
-              </p>
+              <InlineMessage tone="success">{successMessage}</InlineMessage>
             ) : null}
 
             <div className="flex flex-col gap-3 sm:flex-row">

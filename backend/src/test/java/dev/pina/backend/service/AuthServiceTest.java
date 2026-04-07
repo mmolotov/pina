@@ -12,6 +12,7 @@ import dev.pina.backend.domain.PersonalLibrary;
 import dev.pina.backend.domain.User;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
+import jakarta.transaction.UserTransaction;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 
@@ -20,6 +21,9 @@ class AuthServiceTest {
 
 	@Inject
 	AuthService authService;
+
+	@Inject
+	UserTransaction tx;
 
 	@Test
 	void registerCreatesUserAndLinkedAccountAndLibrary() {
@@ -65,6 +69,15 @@ class AuthServiceTest {
 	}
 
 	@Test
+	void authenticateInactiveUserReturnsEmpty() {
+		User user = authService.register("inactive-auth", "password123", "Inactive Auth");
+		deactivateUser(user);
+
+		Optional<User> result = authService.authenticate("inactive-auth", "password123");
+		assertTrue(result.isEmpty());
+	}
+
+	@Test
 	void generateAccessTokenReturnsNonBlank() {
 		User user = authService.register("token-user", "password123", null);
 		String token = authService.generateAccessToken(user);
@@ -102,6 +115,15 @@ class AuthServiceTest {
 	}
 
 	@Test
+	void refreshInactiveUserReturnsEmpty() {
+		User user = authService.register("refresh-svc-inactive", "password123", null);
+		String rawToken = authService.createRefreshToken(user);
+		deactivateUser(user);
+
+		assertTrue(authService.refresh(rawToken).isEmpty());
+	}
+
+	@Test
 	void logoutRevokesToken() {
 		User user = authService.register("refresh-svc-logout", "password123", null);
 		String rawToken = authService.createRefreshToken(user);
@@ -113,5 +135,22 @@ class AuthServiceTest {
 	@Test
 	void logoutWithInvalidTokenReturnsFalse() {
 		assertFalse(authService.logout("nonexistent-token"));
+	}
+
+	private void deactivateUser(User user) {
+		try {
+			tx.begin();
+			user = User.findById(user.id);
+			user.active = false;
+			user.persistAndFlush();
+			tx.commit();
+		} catch (Exception e) {
+			try {
+				tx.rollback();
+			} catch (Exception ignored) {
+				// Ignore rollback failures in tests to preserve the original exception.
+			}
+			throw new RuntimeException(e);
+		}
 	}
 }

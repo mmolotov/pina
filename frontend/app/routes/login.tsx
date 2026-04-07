@@ -9,7 +9,11 @@ import {
   useNavigation,
 } from "react-router";
 import type { Route } from "./+types/login";
+import { BrandLogo } from "~/components/brand-logo";
+import { LanguageSwitcher } from "~/components/language-switcher";
+import { InlineMessage, SurfaceCard } from "~/components/ui";
 import { login } from "~/lib/api";
+import { getActiveLocale, translateMessage, useI18n } from "~/lib/i18n";
 import { getRedirectTarget, toActionErrorMessage } from "~/lib/route-actions";
 import { persistSession, useSession } from "~/lib/session";
 
@@ -25,7 +29,7 @@ export async function clientAction({
   request,
 }: Route.ClientActionArgs): Promise<LoginActionResult> {
   const formData = await request.formData();
-  const redirectTo = getRedirectTarget(request, "/app");
+  const redirectTo = getRedirectTarget(request, "/app/library");
 
   try {
     const authResponse = await login({
@@ -39,7 +43,7 @@ export async function clientAction({
       ok: false,
       errorMessage: toActionErrorMessage(
         error,
-        "Login failed. Please try again.",
+        translateMessage(getActiveLocale(), "public.login.errorFallback"),
       ),
     };
   }
@@ -49,11 +53,12 @@ export default function LoginRoute() {
   const navigate = useNavigate();
   const location = useLocation();
   const session = useSession();
+  const { t } = useI18n();
   const actionData = useActionData<typeof clientAction>();
   const navigation = useNavigation();
   const redirectTo = useMemo(() => {
     const params = new URLSearchParams(location.search);
-    return params.get("redirect") || "/app";
+    return params.get("redirect") || "/app/library";
   }, [location.search]);
   const [formState, setFormState] = useState({ username: "", password: "" });
 
@@ -74,18 +79,27 @@ export default function LoginRoute() {
   return (
     <main className="app-shell flex min-h-screen items-center justify-center px-6 py-10">
       <section className="panel w-full max-w-2xl p-8 sm:p-10">
-        <p className="eyebrow">Authentication</p>
+        <div className="flex items-start justify-between gap-4">
+          <p className="eyebrow">{t("public.login.eyebrow")}</p>
+          <LanguageSwitcher />
+        </div>
+        <BrandLogo
+          alt="PINA"
+          className="mt-4 h-12 w-auto max-w-[12rem] object-contain"
+        />
         <h1 className="mt-3 text-4xl font-semibold tracking-tight">
-          Log in to PINA
+          {t("public.login.title")}
         </h1>
         <p className="mt-3 text-base leading-7 text-[var(--color-text-muted)]">
-          Use your existing local account to enter the app shell.
+          {t("public.login.description")}
         </p>
 
         <div className="mt-6 grid gap-4 md:grid-cols-[1.1fr_0.9fr]">
           <Form className="space-y-5" method="post">
             <label className="block">
-              <span className="mb-2 block text-sm font-medium">Username</span>
+              <span className="mb-2 block text-sm font-medium">
+                {t("public.login.username")}
+              </span>
               <input
                 className="field"
                 name="username"
@@ -102,7 +116,9 @@ export default function LoginRoute() {
             </label>
 
             <label className="block">
-              <span className="mb-2 block text-sm font-medium">Password</span>
+              <span className="mb-2 block text-sm font-medium">
+                {t("public.login.password")}
+              </span>
               <input
                 className="field"
                 name="password"
@@ -119,9 +135,7 @@ export default function LoginRoute() {
             </label>
 
             {errorMessage ? (
-              <p className="rounded-2xl border border-[rgba(161,69,63,0.25)] bg-[rgba(161,69,63,0.08)] px-4 py-3 text-sm text-[var(--color-danger)]">
-                {errorMessage}
-              </p>
+              <InlineMessage tone="danger">{errorMessage}</InlineMessage>
             ) : null}
 
             <button
@@ -129,33 +143,29 @@ export default function LoginRoute() {
               disabled={isSubmitting}
               type="submit"
             >
-              {isSubmitting ? "Logging in..." : "Log in"}
+              {isSubmitting
+                ? t("public.login.submitting")
+                : t("public.login.submit")}
             </button>
           </Form>
 
-          <div className="rounded-3xl border border-[var(--color-border)] bg-[var(--color-panel-strong)] p-5">
-            <p className="eyebrow">Session target</p>
+          <SurfaceCard className="rounded-3xl p-5">
+            <p className="eyebrow">{t("public.login.sessionTargetEyebrow")}</p>
             <p className="mt-3 text-sm leading-7 text-[var(--color-text-muted)]">
-              After authentication you will be redirected to{" "}
-              <span className="font-semibold text-[var(--color-text)]">
-                {redirectTo}
-              </span>
-              .
+              {t("public.login.redirectDescription", {
+                redirectTo,
+              })}
             </p>
             <p className="mt-4 text-sm leading-7 text-[var(--color-text-muted)]">
-              Local username/password auth is already connected to the Phase 2
-              backend. Google sign-in can be added on top later.
+              {t("public.login.backendDescription")}
             </p>
-          </div>
+          </SurfaceCard>
         </div>
 
         <p className="mt-6 text-sm text-[var(--color-text-muted)]">
-          Need an account?{" "}
-          <Link
-            className="font-semibold text-[var(--color-primary-strong)]"
-            to="/register"
-          >
-            Create one
+          {t("public.login.needAccount")}{" "}
+          <Link className="link-accent font-semibold" to="/register">
+            {t("public.login.createOne")}
           </Link>
         </p>
       </section>

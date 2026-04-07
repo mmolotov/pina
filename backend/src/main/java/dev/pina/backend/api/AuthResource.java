@@ -14,6 +14,8 @@ import dev.pina.backend.service.AuthService;
 import dev.pina.backend.service.BrowserSessionService;
 import dev.pina.backend.service.EmailAlreadyExistsException;
 import dev.pina.backend.service.GoogleTokenVerifier;
+import dev.pina.backend.service.InactiveUserException;
+import dev.pina.backend.service.RegistrationClosedException;
 import dev.pina.backend.service.UserResolver;
 import dev.pina.backend.service.UsernameAlreadyExistsException;
 import io.vertx.ext.web.RoutingContext;
@@ -61,6 +63,8 @@ public class AuthResource {
 			return Response.status(Response.Status.CREATED).entity(buildAuthResponse(user)).build();
 		} catch (UsernameAlreadyExistsException e) {
 			return ApiErrors.conflict(e.getMessage());
+		} catch (RegistrationClosedException e) {
+			return ApiErrors.forbidden(e.getMessage());
 		}
 	}
 
@@ -82,6 +86,8 @@ public class AuthResource {
 			return buildSessionResponse(user, headers);
 		} catch (UsernameAlreadyExistsException e) {
 			return ApiErrors.conflict(e.getMessage());
+		} catch (RegistrationClosedException e) {
+			return ApiErrors.forbidden(e.getMessage());
 		}
 	}
 
@@ -104,6 +110,10 @@ public class AuthResource {
 				return Response.ok(buildAuthResponse(user)).build();
 			} catch (EmailAlreadyExistsException e) {
 				return ApiErrors.conflict(e.getMessage());
+			} catch (InactiveUserException e) {
+				return ApiErrors.unauthorized("Authentication failed");
+			} catch (RegistrationClosedException e) {
+				return ApiErrors.forbidden(e.getMessage());
 			}
 		}).orElse(ApiErrors.unauthorized("Invalid Google ID token"));
 	}

@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { createRoutesStub } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { I18nProvider } from "~/lib/i18n";
 import RegisterRoute, {
   clientAction as registerClientAction,
 } from "~/routes/register";
@@ -44,6 +45,8 @@ describe("RegisterRoute", () => {
         name: "New User",
         email: null,
         avatarUrl: null,
+        instanceRole: "USER",
+        active: true,
       },
     });
   });
@@ -60,9 +63,17 @@ describe("RegisterRoute", () => {
         path: "/app",
         Component: () => <div>App landing</div>,
       },
+      {
+        path: "/app/library",
+        Component: () => <div>Library landing</div>,
+      },
     ]);
 
-    render(<Stub initialEntries={["/register"]} />);
+    render(
+      <I18nProvider>
+        <Stub initialEntries={["/register?redirect=/app"]} />
+      </I18nProvider>,
+    );
 
     expect(screen.getByText("What happens next")).toBeInTheDocument();
     expect(
@@ -90,5 +101,39 @@ describe("RegisterRoute", () => {
     });
 
     expect(await screen.findByText("App landing")).toBeInTheDocument();
+  });
+
+  it("defaults new registrations into the library route", async () => {
+    const Stub = createRoutesStub([
+      {
+        path: "/register",
+        Component: RegisterRoute,
+        action: async ({ request }) =>
+          registerClientAction({ request } as never),
+      },
+      {
+        path: "/app/library",
+        Component: () => <div>Library landing</div>,
+      },
+    ]);
+
+    render(
+      <I18nProvider>
+        <Stub initialEntries={["/register"]} />
+      </I18nProvider>,
+    );
+
+    fireEvent.change(screen.getByLabelText("Name"), {
+      target: { value: "Manual User A" },
+    });
+    fireEvent.change(screen.getByLabelText("Username"), {
+      target: { value: "manual_user_a" },
+    });
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: "password123" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create account" }));
+
+    expect(await screen.findByText("Library landing")).toBeInTheDocument();
   });
 });

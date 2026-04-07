@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { createRoutesStub } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { I18nProvider } from "~/lib/i18n";
 import JoinInviteRoute, {
   clientAction as joinInviteClientAction,
   clientLoader as joinInviteClientLoader,
@@ -52,6 +53,8 @@ describe("JoinInviteRoute", () => {
         name: "Test User",
         email: "test@example.com",
         avatarUrl: null,
+        instanceRole: "USER",
+        active: true,
       },
     };
     sessionMocks.useSession.mockReturnValue(session);
@@ -74,7 +77,11 @@ describe("JoinInviteRoute", () => {
       },
     ]);
 
-    render(<Stub initialEntries={["/join/JOIN-123"]} />);
+    render(
+      <I18nProvider>
+        <Stub initialEntries={["/join/JOIN-123"]} />
+      </I18nProvider>,
+    );
 
     expect(await screen.findByText("Family Space")).toBeInTheDocument();
     expect(screen.getByText("Authenticated")).toBeInTheDocument();

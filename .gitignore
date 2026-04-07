@@ -42,6 +42,9 @@ venv/
 node_modules/
 dist/
 coverage/
+.playwright/
+frontend/playwright-report/
+frontend/test-results/
 .next/
 .nuxt/
 *.tsbuildinfo

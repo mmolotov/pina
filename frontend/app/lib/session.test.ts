@@ -17,6 +17,8 @@ describe("session store", () => {
       email: "user1@example.com",
       name: "User One",
       avatarUrl: null,
+      instanceRole: "USER",
+      active: true,
     },
   };
 
