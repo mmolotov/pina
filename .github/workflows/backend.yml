@@ -109,21 +109,37 @@ jobs:
       - name: Static analysis
         run: ./gradlew spotbugsMain
 
-      - name: OWASP dependency check
-        run: ./gradlew dependencyCheckAnalyze
-        env:
-          GRADLE_OPTS: "-Xmx2g -XX:MaxMetaspaceSize=512m"
-          QUARKUS_DATASOURCE_JDBC_URL: jdbc:postgresql://localhost:5432/pina_test
-          QUARKUS_DATASOURCE_USERNAME: pina
-          QUARKUS_DATASOURCE_PASSWORD: ${{ secrets.CI_POSTGRES_PASSWORD || 'pina' }}
-          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
+      - name: Scan dependencies with Trivy
+        uses: aquasecurity/trivy-action@0.35.0
+        with:
+          scan-type: 'rootfs'
+          scan-ref: 'backend/build/quarkus-app'
+          scanners: 'vuln'
+          severity: 'HIGH,CRITICAL'
+          ignore-unfixed: true
+          exit-code: '1'
+          format: 'table'
+          trivyignores: 'backend/.trivyignore'
 
-      - name: Upload OWASP report
+      - name: Generate Trivy SARIF report
+        if: always()
+        uses: aquasecurity/trivy-action@0.35.0
+        with:
+          scan-type: 'rootfs'
+          scan-ref: 'backend/build/quarkus-app'
+          scanners: 'vuln'
+          severity: 'HIGH,CRITICAL'
+          ignore-unfixed: true
+          format: 'sarif'
+          output: 'backend/trivy-results.sarif'
+          trivyignores: 'backend/.trivyignore'
+
+      - name: Upload Trivy SARIF
         uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: owasp-dependency-check
-          path: backend/build/reports/dependency-check-report.html
+          name: trivy-sarif
+          path: backend/trivy-results.sarif
 
   dependency-review:
     if: github.event_name == 'pull_request'

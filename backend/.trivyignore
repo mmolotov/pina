@@ -1,0 +1,6 @@
+# Trivy ignore file — one CVE ID per line.
+# Trivy uses PURL matching (not CPE), so CPE-based false positives
+# from OWASP Dependency-Check should not reappear here.
+#
+# Example:
+# CVE-2024-12345  # reason for suppression and expiry date if temporary

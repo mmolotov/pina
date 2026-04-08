@@ -4,7 +4,6 @@ plugins {
     id("io.quarkus")
     id("com.diffplug.spotless") version "8.4.0"
     id("com.github.spotbugs") version "6.4.8"
-    id("org.owasp.dependencycheck") version "12.2.0"
 }
 
 val quarkusPlatformVersion: String by project
@@ -92,11 +91,19 @@ tasks.withType<com.github.spotbugs.snom.SpotBugsTask> {
     reports.create("xml") { required = false }
 }
 
-// OWASP Dependency-Check
-dependencyCheck {
-    failBuildOnCVSS = 7.0f
-    formats = listOf("HTML", "JSON")
-    nvd.apiKey = System.getenv("NVD_API_KEY") ?: ""
+// Trivy vulnerability scan (requires trivy on PATH: brew install trivy)
+tasks.register<Exec>("trivy") {
+    group = "verification"
+    description = "Scan built JARs for HIGH/CRITICAL CVEs using Trivy"
+    dependsOn("quarkusBuild")
+    commandLine(
+        "trivy", "rootfs", "build/quarkus-app",
+        "--severity", "HIGH,CRITICAL",
+        "--ignore-unfixed",
+        "--exit-code", "1",
+        "--scanners", "vuln",
+        "--ignorefile", ".trivyignore"
+    )
 }
 
 // Disable Gradle JaCoCo agent — quarkus-jacoco handles instrumentation
