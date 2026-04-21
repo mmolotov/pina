@@ -45,7 +45,7 @@ dependencies {
 
     // Image processing (thumbnailator for thumbnails, metadata-extractor for EXIF)
     implementation("net.coobird:thumbnailator:0.4.21")
-    implementation("com.drewnoakes:metadata-extractor:2.19.0")
+    implementation("com.drewnoakes:metadata-extractor:2.20.0")
 
     // Testing
     testImplementation("io.quarkus:quarkus-junit5")
