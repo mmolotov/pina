@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.pina.backend.TestUserHelper;
 import dev.pina.backend.domain.Album;
+import dev.pina.backend.domain.AlbumPhoto;
 import dev.pina.backend.domain.Photo;
 import dev.pina.backend.domain.User;
 import dev.pina.backend.pagination.PageRequest;
@@ -162,6 +163,26 @@ class AlbumServiceTest {
 	@Transactional
 	void updateReturnsEmptyForNonExistentAlbum() {
 		assertTrue(albumService.update(UUID.randomUUID(), "New Name", null).isEmpty());
+	}
+
+	@Test
+	@Transactional
+	void removePhotoReturnsNotFoundWhenReferenceDisappearsBeforeDelete() throws IOException {
+		User user = TestUserHelper.createUser("album-remove-race");
+		Album album = albumService.create("Race album", null, user);
+		Photo photo = uploadPhoto("race-remove.jpg", user, Color.PINK);
+
+		assertEquals(AlbumService.AddPhotoResult.CREATED, albumService.addPhoto(album.id, photo.id, user));
+		AlbumPhoto albumPhoto = albumService.findAlbumPhotoForRemoval(album.id, photo.id).orElseThrow();
+
+		assertEquals(1,
+				em.createQuery("DELETE FROM AlbumPhoto ap WHERE ap.album.id = :albumId AND ap.photo.id = :photoId")
+						.setParameter("albumId", album.id).setParameter("photoId", photo.id).executeUpdate());
+		em.flush();
+
+		var result = albumService.removeFetchedPhotoReference(album.id, photo.id, albumPhoto, user, true);
+
+		assertEquals(AlbumService.RemovePhotoResult.NOT_FOUND, result);
 	}
 
 	private Photo uploadPhoto(String filename, User user, Color color) throws IOException {

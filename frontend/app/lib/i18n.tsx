@@ -405,7 +405,7 @@ const enMessages = {
   "app.search.eyebrow": "Search",
   "app.search.title": "Discovery",
   "app.search.description":
-    "The frontend route and search interaction shell are ready. Actual semantic search, face search, and tag search will be connected once the ML and indexing backend arrives.",
+    "Phase 3 backend search is connected for text results across your library, shared Spaces, and favorites. Face clusters and semantic ML retrieval remain later steps.",
   "app.search.backToLibrary": "Back to library",
   "app.search.browseFavorites": "Browse favorites",
   "app.search.queryLabel": "Search query",
@@ -422,7 +422,7 @@ const enMessages = {
   "app.search.favorites": "Favorites",
   "app.search.plannedQueryTypes": "Planned query types",
   "app.search.queryType.freeText":
-    "Free-text search across ML-generated captions and tags",
+    "Text matching across filenames plus album names and descriptions",
   "app.search.queryType.faces":
     "Face/person search after clustering and identity linking",
   "app.search.queryType.scoped":
@@ -434,27 +434,34 @@ const enMessages = {
     "Face and embedding-aware retrieval",
   "app.search.backendRequirement.ranking":
     "Paginated result ranking with access-control filtering",
-  "app.search.localPreview": "Local preview",
-  "app.search.previewScope": "Preview scope",
-  "app.search.previewScopeLibrary": "library",
-  "app.search.previewScopeSpaces": "Spaces",
-  "app.search.previewScopeFavorites": "favorites",
-  "app.search.previewScopeAll": "all visible content",
-  "app.search.lightweightMatches": "{count} lightweight matches",
-  "app.search.emptyTitle": "Search backend not connected yet",
+  "app.search.kind.all": "All results",
+  "app.search.kind.photo": "Photos",
+  "app.search.kind.album": "Albums",
+  "app.search.sortLabel": "Sort",
+  "app.search.sort.relevance": "Best match",
+  "app.search.sort.newest": "Newest",
+  "app.search.sort.oldest": "Oldest",
+  "app.search.resultsTitle": "Backend results",
+  "app.search.resultsDescription":
+    "Results now come from the backend contract and keep personal-library or Space navigation context per hit.",
+  "app.search.partialResults": "Showing {start}-{end} of {total} matches.",
+  "app.search.previousPage": "Previous page",
+  "app.search.nextPage": "Next page",
+  "app.search.pageIndicator": "Page {page} of {totalPages}",
+  "app.search.emptyTitle": "Start with a text query",
   "app.search.emptyDescription":
-    "Type a query to see a lightweight client-side preview based on filenames and Space names. This is not the final search implementation.",
+    "Type a query to load backend results across your library, shared Spaces, and favorites. Face search stays disabled until the dedicated API is ready.",
   "app.search.openTimelineInstead": "Open timeline instead",
-  "app.search.noMatches":
-    "No client-side preview matches were found for {query}. Full search results will require backend indexing.",
-  "app.search.photoPreview": "Photo preview",
-  "app.search.spacePreview": "Space preview",
-  "app.search.noPhotoMatches":
-    "No matching photos in the current local preview sample.",
-  "app.search.photoMetadataPreview": "Photo metadata preview",
-  "app.search.noSpaceMatches":
-    "No matching Spaces in the current local preview sample.",
-  "app.search.spaceNamePreview": "Space name preview",
+  "app.search.loadingDescription": "Loading backend search results...",
+  "app.search.errorUnavailable":
+    "The backend is unavailable right now. Start the server and try the search again.",
+  "app.search.errorBadRequest":
+    "The current search parameters are not supported by the backend contract.",
+  "app.search.errorGeneric": "Failed to load backend search results.",
+  "app.search.noResultsDescription":
+    'No backend search results match "{query}" in the current scope.',
+  "app.search.personalPhotoContext": "Personal library photo",
+  "app.search.spacePhotoContext": "Visible via {spaceName} / {albumName}",
   "app.favorites.eyebrow": "Favorites",
   "app.favorites.title": "Saved media",
   "app.favorites.description":
@@ -982,7 +989,7 @@ const ruMessages: Partial<MessageCatalog> = {
   "app.search.eyebrow": "Поиск",
   "app.search.title": "Обнаружение",
   "app.search.description":
-    "Маршрут фронтенда и оболочка search interaction уже готовы. Реальный semantic search, поиск лиц и поиск по тегам подключатся, когда появится ML и indexing backend.",
+    "Phase 3 backend search уже подключён для текстовых результатов по вашей библиотеке, доступным Spaces и избранному. Кластеры лиц и semantic ML retrieval остаются следующими шагами.",
   "app.search.backToLibrary": "Назад в библиотеку",
   "app.search.browseFavorites": "Открыть избранное",
   "app.search.queryLabel": "Поисковый запрос",
@@ -998,7 +1005,8 @@ const ruMessages: Partial<MessageCatalog> = {
   "app.search.accessibleSpaces": "Доступные Spaces",
   "app.search.favorites": "Избранное",
   "app.search.plannedQueryTypes": "Планируемые типы запросов",
-  "app.search.queryType.freeText": "Полнотекстовый поиск по ML-caption и тегам",
+  "app.search.queryType.freeText":
+    "Текстовые совпадения по именам файлов и названиям/описаниям альбомов",
   "app.search.queryType.faces":
     "Поиск лица/человека после кластеризации и связывания идентичностей",
   "app.search.queryType.scoped":
@@ -1010,27 +1018,34 @@ const ruMessages: Partial<MessageCatalog> = {
     "Извлечение с учётом лиц и эмбеддингов",
   "app.search.backendRequirement.ranking":
     "Постраничное ранжирование результатов с фильтрацией по контролю доступа",
-  "app.search.localPreview": "Локальное превью",
-  "app.search.previewScope": "Область превью",
-  "app.search.previewScopeLibrary": "библиотека",
-  "app.search.previewScopeSpaces": "Spaces",
-  "app.search.previewScopeFavorites": "избранное",
-  "app.search.previewScopeAll": "весь видимый контент",
-  "app.search.lightweightMatches": "{count} лёгких совпадений",
-  "app.search.emptyTitle": "Search backend пока не подключён",
+  "app.search.kind.all": "Все результаты",
+  "app.search.kind.photo": "Фото",
+  "app.search.kind.album": "Альбомы",
+  "app.search.sortLabel": "Сортировка",
+  "app.search.sort.relevance": "Лучшее совпадение",
+  "app.search.sort.newest": "Сначала новые",
+  "app.search.sort.oldest": "Сначала старые",
+  "app.search.resultsTitle": "Результаты бэкенда",
+  "app.search.resultsDescription":
+    "Теперь результаты приходят из backend contract и сохраняют personal-library или Space navigation context для каждого хита.",
+  "app.search.partialResults": "Показано {start}-{end} из {total} совпадений.",
+  "app.search.previousPage": "Предыдущая страница",
+  "app.search.nextPage": "Следующая страница",
+  "app.search.pageIndicator": "Страница {page} из {totalPages}",
+  "app.search.emptyTitle": "Начните с текстового запроса",
   "app.search.emptyDescription":
-    "Введите запрос, чтобы увидеть лёгкое client-side превью по именам файлов и названиям Spaces. Это ещё не финальная реализация поиска.",
+    "Введите запрос, чтобы загрузить backend results по библиотеке, доступным Spaces и избранному. Поиск лиц останется отключённым, пока не появится отдельный API.",
   "app.search.openTimelineInstead": "Открыть таймлайн",
-  "app.search.noMatches":
-    "Для {query} не найдено client-side совпадений в превью. Полные результаты потребуют индексации на бэкенде.",
-  "app.search.photoPreview": "Превью фото",
-  "app.search.spacePreview": "Превью Space",
-  "app.search.noPhotoMatches":
-    "В текущей локальной выборке превью нет подходящих фото.",
-  "app.search.photoMetadataPreview": "Превью метаданных фото",
-  "app.search.noSpaceMatches":
-    "В текущей локальной выборке превью нет подходящих Spaces.",
-  "app.search.spaceNamePreview": "Превью названия Space",
+  "app.search.loadingDescription": "Загружаю backend search results...",
+  "app.search.errorUnavailable":
+    "Бэкенд сейчас недоступен. Поднимите сервер и повторите поиск.",
+  "app.search.errorBadRequest":
+    "Текущие search parameters не поддерживаются backend contract.",
+  "app.search.errorGeneric": "Не удалось загрузить backend search results.",
+  "app.search.noResultsDescription":
+    'В текущей области нет backend search results для "{query}".',
+  "app.search.personalPhotoContext": "Фото из личной библиотеки",
+  "app.search.spacePhotoContext": "Доступно через {spaceName} / {albumName}",
   "app.favorites.eyebrow": "Избранное",
   "app.favorites.title": "Сохранённые медиа",
   "app.favorites.description":

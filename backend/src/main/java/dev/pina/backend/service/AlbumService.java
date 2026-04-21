@@ -180,20 +180,29 @@ public class AlbumService {
 
 	@Transactional
 	public RemovePhotoResult removePhoto(UUID albumId, UUID photoId, User actingUser, boolean canManageAlbum) {
-		Optional<AlbumPhoto> albumPhoto = AlbumPhoto.getEntityManager().createQuery(
-				"SELECT ap FROM AlbumPhoto ap JOIN FETCH ap.photo p JOIN FETCH p.uploader WHERE ap.album.id = :albumId AND ap.photo.id = :photoId",
-				AlbumPhoto.class).setParameter("albumId", albumId).setParameter("photoId", photoId).getResultStream()
-				.findFirst();
+		Optional<AlbumPhoto> albumPhoto = findAlbumPhotoForRemoval(albumId, photoId);
 		if (albumPhoto.isEmpty()) {
 			return RemovePhotoResult.NOT_FOUND;
 		}
+		return removeFetchedPhotoReference(albumId, photoId, albumPhoto.get(), actingUser, canManageAlbum);
+	}
 
-		if (!canManageAlbum && !albumPhoto.get().photo.uploader.id.equals(actingUser.id)) {
+	Optional<AlbumPhoto> findAlbumPhotoForRemoval(UUID albumId, UUID photoId) {
+		return AlbumPhoto.getEntityManager().createQuery(
+				"SELECT ap FROM AlbumPhoto ap JOIN FETCH ap.photo p JOIN FETCH p.uploader WHERE ap.album.id = :albumId AND ap.photo.id = :photoId",
+				AlbumPhoto.class).setParameter("albumId", albumId).setParameter("photoId", photoId).getResultStream()
+				.findFirst();
+	}
+
+	RemovePhotoResult removeFetchedPhotoReference(UUID albumId, UUID photoId, AlbumPhoto albumPhoto, User actingUser,
+			boolean canManageAlbum) {
+		if (!canManageAlbum && !albumPhoto.photo.uploader.id.equals(actingUser.id)) {
 			return RemovePhotoResult.FORBIDDEN;
 		}
 
-		albumPhoto.get().delete();
-		return RemovePhotoResult.REMOVED;
+		return AlbumPhoto.delete("album.id = ?1 and photo.id = ?2", albumId, photoId) > 0
+				? RemovePhotoResult.REMOVED
+				: RemovePhotoResult.NOT_FOUND;
 	}
 
 	@Transactional

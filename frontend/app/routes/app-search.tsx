@@ -1,30 +1,61 @@
+import { useDeferredValue, useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import type { Route } from "./+types/app-search";
 import {
+  Badge,
   EmptyHint,
   EmptyState,
+  InlineMessage,
   PageHeader,
   Panel,
   SurfaceCard,
 } from "~/components/ui";
-import { listFavorites, listPhotos, listSpaces } from "~/lib/api";
+import {
+  ApiError,
+  isBackendUnavailableError,
+  listFavorites,
+  listPhotos,
+  listSpaces,
+  searchMedia,
+} from "~/lib/api";
 import { formatRelativeCount } from "~/lib/format";
 import { useI18n } from "~/lib/i18n";
-import type { PhotoDto, SpaceDto } from "~/types/api";
+import type {
+  PageResponse,
+  SearchHitDto,
+  SearchKind,
+  SearchScope,
+  SearchSort,
+} from "~/types/api";
 
-type SearchScope = "all" | "library" | "spaces" | "favorites";
-
-interface SearchShellData {
-  photos: PhotoDto[];
-  spaces: SpaceDto[];
-  favoritePhotoCount: number;
-  favoriteAlbumCount: number;
+interface SearchOverviewData {
+  libraryCount: number;
+  spacesCount: number;
+  favoriteCount: number;
 }
+
+const EMPTY_SEARCH_PAGE: PageResponse<SearchHitDto> = {
+  items: [],
+  page: 0,
+  size: 24,
+  hasNext: false,
+  totalItems: 0,
+  totalPages: 0,
+};
+
+const SEARCH_SCOPE_OPTIONS: SearchScope[] = [
+  "all",
+  "library",
+  "spaces",
+  "favorites",
+];
+const SEARCH_KIND_OPTIONS: SearchKind[] = ["all", "photo", "album"];
+const SEARCH_SORT_OPTIONS: SearchSort[] = ["relevance", "newest", "oldest"];
 
 export async function clientLoader() {
   const [photoPage, spaces, photoFavorites, albumFavorites] = await Promise.all(
     [
-      listPhotos(0, 8),
+      listPhotos(0, 1),
       listSpaces(),
       listFavorites("PHOTO"),
       listFavorites("ALBUM"),
@@ -32,64 +63,110 @@ export async function clientLoader() {
   );
 
   return {
-    photos: photoPage.items,
-    spaces,
-    favoritePhotoCount: photoFavorites.length,
-    favoriteAlbumCount: albumFavorites.length,
-  } satisfies SearchShellData;
+    libraryCount: photoPage.totalItems ?? photoPage.items.length,
+    spacesCount: spaces.length,
+    favoriteCount: photoFavorites.length + albumFavorites.length,
+  } satisfies SearchOverviewData;
+}
+
+function parseScope(value: string | null): SearchScope {
+  return value && SEARCH_SCOPE_OPTIONS.includes(value as SearchScope)
+    ? (value as SearchScope)
+    : "all";
+}
+
+function parseKind(value: string | null): SearchKind {
+  return value && SEARCH_KIND_OPTIONS.includes(value as SearchKind)
+    ? (value as SearchKind)
+    : "all";
+}
+
+function parseSort(value: string | null): SearchSort {
+  return value && SEARCH_SORT_OPTIONS.includes(value as SearchSort)
+    ? (value as SearchSort)
+    : "relevance";
+}
+
+function parsePage(value: string | null) {
+  if (value == null || value.length === 0) {
+    return 0;
+  }
+
+  const parsed = Number.parseInt(value, 10);
+  if (Number.isNaN(parsed) || parsed < 0) {
+    return 0;
+  }
+
+  return parsed;
+}
+
+function buildPhotoResultHref(result: SearchHitDto) {
+  const photo = result.photo;
+  if (
+    result.entryScope === "SPACES" &&
+    photo?.spaceId &&
+    photo.albumId &&
+    photo.photo.id
+  ) {
+    return `/app/spaces/${photo.spaceId}/albums/${photo.albumId}/photos/${photo.photo.id}`;
+  }
+
+  return `/app/library/photos/${photo?.photo.id ?? ""}`;
+}
+
+function buildAlbumResultHref(result: SearchHitDto) {
+  const album = result.album?.album;
+  if (album?.spaceId) {
+    return `/app/spaces/${album.spaceId}`;
+  }
+
+  return "/app/library?view=albums";
+}
+
+function searchErrorMessage(
+  error: unknown,
+  t: ReturnType<typeof useI18n>["t"],
+) {
+  if (error instanceof ApiError && error.code === "bad_request") {
+    return t("app.search.errorBadRequest");
+  }
+  if (isBackendUnavailableError(error)) {
+    return t("app.search.errorUnavailable");
+  }
+  if (error instanceof Error && error.message.trim().length > 0) {
+    return error.message;
+  }
+  return t("app.search.errorGeneric");
 }
 
 export default function AppSearchRoute({ loaderData }: Route.ComponentProps) {
   const { locale, t } = useI18n();
   const [searchParams, setSearchParams] = useSearchParams();
   const query = searchParams.get("q") ?? "";
-  const scope = (searchParams.get("scope") as SearchScope | null) ?? "all";
-  const normalizedQuery = query.trim().toLowerCase();
+  const scope = parseScope(searchParams.get("scope"));
+  const kind = parseKind(searchParams.get("kind"));
+  const sort = parseSort(searchParams.get("sort"));
+  const page = parsePage(searchParams.get("page"));
+  const deferredQuery = useDeferredValue(query);
+  const normalizedQuery = query.trim();
+  const normalizedDeferredQuery = deferredQuery.trim();
+  const [searchPage, setSearchPage] =
+    useState<PageResponse<SearchHitDto>>(EMPTY_SEARCH_PAGE);
+  const [status, setStatus] = useState<
+    "idle" | "loading" | "success" | "error"
+  >("idle");
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const countFormatter = new Intl.NumberFormat(locale);
   const searchExamples = [
     { label: "beach", value: "beach" },
     { label: "family", value: "family" },
     { label: "sunset", value: "sunset" },
   ];
-
-  const matchingPhotos =
-    normalizedQuery.length === 0
-      ? []
-      : loaderData.photos.filter((photo) =>
-          photo.originalFilename.toLowerCase().includes(normalizedQuery),
-        );
-  const matchingSpaces =
-    normalizedQuery.length === 0
-      ? []
-      : loaderData.spaces.filter((space) =>
-          space.name.toLowerCase().includes(normalizedQuery),
-        );
-
-  const activePreviewItems =
-    scope === "spaces"
-      ? matchingSpaces.length
-      : scope === "library" || scope === "favorites"
-        ? matchingPhotos.length
-        : matchingPhotos.length + matchingSpaces.length;
-  const previewScopeLabel =
-    scope === "library"
-      ? t("app.search.previewScopeLibrary")
-      : scope === "spaces"
-        ? t("app.search.previewScopeSpaces")
-        : scope === "favorites"
-          ? t("app.search.previewScopeFavorites")
-          : t("app.search.previewScopeAll");
-  const countFormatter = new Intl.NumberFormat(locale);
   const spaceForms = {
     one: t("unit.space.one"),
     few: t("unit.space.few"),
     many: t("unit.space.many"),
     other: t("unit.space.other"),
-  };
-  const matchForms = {
-    one: t("unit.match.one"),
-    few: t("unit.match.few"),
-    many: t("unit.match.many"),
-    other: t("unit.match.other"),
   };
   const photoForms = {
     one: t("unit.photo.one"),
@@ -97,6 +174,122 @@ export default function AppSearchRoute({ loaderData }: Route.ComponentProps) {
     many: t("unit.photo.many"),
     other: t("unit.photo.other"),
   };
+  const resultForms = {
+    one: t("unit.match.one"),
+    few: t("unit.match.few"),
+    many: t("unit.match.many"),
+    other: t("unit.match.other"),
+  };
+
+  useEffect(() => {
+    if (normalizedDeferredQuery.length === 0) {
+      setStatus("idle");
+      setErrorMessage(null);
+      setSearchPage(EMPTY_SEARCH_PAGE);
+      return;
+    }
+
+    let isCancelled = false;
+    setStatus("loading");
+    setErrorMessage(null);
+
+    searchMedia({
+      q: normalizedDeferredQuery,
+      scope: scope === "all" ? undefined : scope,
+      kind: kind === "all" ? undefined : kind,
+      sort: sort === "relevance" ? undefined : sort,
+      page,
+      size: 24,
+      needsTotal: true,
+    })
+      .then((page) => {
+        if (isCancelled) {
+          return;
+        }
+
+        const hasReachableEarlierPage =
+          page.page > 0 &&
+          page.items.length === 0 &&
+          (page.totalItems ?? 0) > 0 &&
+          (page.totalPages ?? 0) > 0 &&
+          page.page >= (page.totalPages ?? 0);
+        if (hasReachableEarlierPage) {
+          const lastReachablePage = Math.max((page.totalPages ?? 1) - 1, 0);
+          const nextParams = new URLSearchParams();
+          if (normalizedDeferredQuery.length > 0) {
+            nextParams.set("q", normalizedDeferredQuery);
+          }
+          if (scope !== "all") {
+            nextParams.set("scope", scope);
+          }
+          if (kind !== "all") {
+            nextParams.set("kind", kind);
+          }
+          if (sort !== "relevance") {
+            nextParams.set("sort", sort);
+          }
+          if (lastReachablePage > 0) {
+            nextParams.set("page", String(lastReachablePage));
+          }
+          setSearchParams(nextParams, { replace: true });
+          return;
+        }
+
+        setSearchPage(page);
+        setStatus("success");
+      })
+      .catch((error: unknown) => {
+        if (isCancelled) {
+          return;
+        }
+
+        setSearchPage(EMPTY_SEARCH_PAGE);
+        setStatus("error");
+        setErrorMessage(searchErrorMessage(error, t));
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [kind, normalizedDeferredQuery, page, scope, setSearchParams, sort, t]);
+
+  function updateParams(
+    updates: Record<string, string | null>,
+    options: { resetPage?: boolean } = {},
+  ) {
+    const nextParams = new URLSearchParams(searchParams);
+
+    if (options.resetPage) {
+      nextParams.delete("page");
+    }
+
+    for (const [name, value] of Object.entries(updates)) {
+      if (value == null || value.length === 0) {
+        nextParams.delete(name);
+      } else {
+        nextParams.set(name, value);
+      }
+    }
+
+    setSearchParams(nextParams, { replace: true });
+  }
+
+  const visibleResultCount = searchPage.totalItems ?? searchPage.items.length;
+  const visibleRangeStart =
+    searchPage.items.length > 0 ? searchPage.page * searchPage.size + 1 : 0;
+  const visibleRangeEnd =
+    searchPage.page * searchPage.size + searchPage.items.length;
+  const hasMultiplePages =
+    searchPage.page > 0 ||
+    searchPage.hasNext ||
+    (searchPage.totalPages != null && searchPage.totalPages > 1);
+  const totalPages =
+    searchPage.totalPages ?? searchPage.page + (searchPage.hasNext ? 2 : 1);
+
+  function goToPage(nextPage: number) {
+    const safePage = Math.max(nextPage, 0);
+    updateParams({ page: safePage <= 0 ? null : String(safePage) });
+  }
 
   return (
     <div className="space-y-8">
@@ -126,13 +319,15 @@ export default function AppSearchRoute({ loaderData }: Route.ComponentProps) {
               aria-label={t("app.search.queryLabel")}
               className="field flex-1"
               onChange={(event) => {
-                const nextParams = new URLSearchParams(searchParams);
-                if (event.target.value.trim().length === 0) {
-                  nextParams.delete("q");
-                } else {
-                  nextParams.set("q", event.target.value);
-                }
-                setSearchParams(nextParams, { replace: true });
+                updateParams(
+                  {
+                    q:
+                      event.target.value.trim().length === 0
+                        ? null
+                        : event.target.value,
+                  },
+                  { resetPage: true },
+                );
               }}
               placeholder={t("app.search.queryPlaceholder")}
               type="search"
@@ -142,9 +337,7 @@ export default function AppSearchRoute({ loaderData }: Route.ComponentProps) {
               className="button-secondary"
               disabled={normalizedQuery.length === 0}
               onClick={() => {
-                const nextParams = new URLSearchParams(searchParams);
-                nextParams.delete("q");
-                setSearchParams(nextParams, { replace: true });
+                updateParams({ q: null }, { resetPage: true });
               }}
               type="button"
             >
@@ -159,9 +352,7 @@ export default function AppSearchRoute({ loaderData }: Route.ComponentProps) {
               className="button-secondary"
               key={example.value}
               onClick={() => {
-                const nextParams = new URLSearchParams(searchParams);
-                nextParams.set("q", example.value);
-                setSearchParams(nextParams, { replace: true });
+                updateParams({ q: example.value }, { resetPage: true });
               }}
               type="button"
             >
@@ -194,13 +385,11 @@ export default function AppSearchRoute({ loaderData }: Route.ComponentProps) {
                 if (filter.id === "faces" || filter.id === "tags") {
                   return;
                 }
-                const nextParams = new URLSearchParams(searchParams);
-                if (filter.id === "all") {
-                  nextParams.delete("scope");
-                } else {
-                  nextParams.set("scope", filter.id);
-                }
-                setSearchParams(nextParams, { replace: true });
+
+                updateParams(
+                  { scope: filter.id === "all" ? null : filter.id },
+                  { resetPage: true },
+                );
               }}
               type="button"
             >
@@ -209,31 +398,79 @@ export default function AppSearchRoute({ loaderData }: Route.ComponentProps) {
           ))}
         </div>
 
+        <div className="mt-5 flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+          <div className="flex flex-wrap gap-2">
+            {SEARCH_KIND_OPTIONS.map((option) => (
+              <button
+                aria-pressed={kind === option}
+                className={
+                  kind === option ? "button-primary" : "button-secondary"
+                }
+                key={option}
+                onClick={() => {
+                  updateParams(
+                    { kind: option === "all" ? null : option },
+                    { resetPage: true },
+                  );
+                }}
+                type="button"
+              >
+                {t(`app.search.kind.${option}` as const)}
+              </button>
+            ))}
+          </div>
+
+          <label className="flex items-center gap-3">
+            <span className="text-sm font-medium">
+              {t("app.search.sortLabel")}
+            </span>
+            <select
+              aria-label={t("app.search.sortLabel")}
+              className="field min-w-44"
+              onChange={(event) => {
+                updateParams(
+                  {
+                    sort:
+                      event.target.value === "relevance"
+                        ? null
+                        : event.target.value,
+                  },
+                  { resetPage: true },
+                );
+              }}
+              value={sort}
+            >
+              {SEARCH_SORT_OPTIONS.map((option) => (
+                <option key={option} value={option}>
+                  {t(`app.search.sort.${option}` as const)}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+
         <div className="mt-5 grid gap-4 lg:grid-cols-3">
           <Panel className="p-4">
             <p className="eyebrow">{t("app.search.currentLibrary")}</p>
             <p className="mt-2 text-2xl font-semibold tracking-tight">
-              {formatRelativeCount(loaderData.photos.length, photoForms)}
+              {formatRelativeCount(loaderData.libraryCount, photoForms)}
             </p>
           </Panel>
           <Panel className="p-4">
             <p className="eyebrow">{t("app.search.accessibleSpaces")}</p>
             <p className="mt-2 text-2xl font-semibold tracking-tight">
-              {formatRelativeCount(loaderData.spaces.length, spaceForms)}
+              {formatRelativeCount(loaderData.spacesCount, spaceForms)}
             </p>
           </Panel>
           <Panel className="p-4">
             <p className="eyebrow">{t("app.search.favorites")}</p>
             <p className="mt-2 text-2xl font-semibold tracking-tight">
-              {formatRelativeCount(
-                loaderData.favoritePhotoCount + loaderData.favoriteAlbumCount,
-                {
-                  one: t("unit.savedItem.one"),
-                  few: t("unit.savedItem.few"),
-                  many: t("unit.savedItem.many"),
-                  other: t("unit.savedItem.other"),
-                },
-              )}
+              {formatRelativeCount(loaderData.favoriteCount, {
+                one: t("unit.savedItem.one"),
+                few: t("unit.savedItem.few"),
+                many: t("unit.savedItem.many"),
+                other: t("unit.savedItem.other"),
+              })}
             </p>
           </Panel>
         </div>
@@ -259,107 +496,203 @@ export default function AppSearchRoute({ loaderData }: Route.ComponentProps) {
         </Panel>
 
         <Panel className="p-6">
-          <p className="eyebrow">{t("app.search.localPreview")}</p>
+          <p className="eyebrow">{t("app.search.resultsTitle")}</p>
           <div className="mt-4 flex items-center justify-between gap-3">
             <p className="text-sm text-[var(--color-text-muted)]">
-              {t("app.search.previewScope")}:{" "}
-              <span className="font-semibold text-[var(--color-text)]">
-                {previewScopeLabel}
-              </span>
+              {t("app.search.resultsDescription")}
             </p>
-            {normalizedQuery.length > 0 ? (
-              <p className="text-sm text-[var(--color-text-muted)]">
-                {t("app.search.lightweightMatches", {
-                  count: countFormatter.format(activePreviewItems),
-                })}
-              </p>
+            {normalizedQuery.length > 0 && status === "success" ? (
+              <Badge tone="accent">
+                {formatRelativeCount(visibleResultCount, resultForms)}
+              </Badge>
             ) : null}
           </div>
-          {normalizedQuery.length === 0 ? (
-            <EmptyState
-              action={
-                <Link
-                  className="button-secondary"
-                  to="/app/library?view=timeline"
-                >
-                  {t("app.search.openTimelineInstead")}
-                </Link>
-              }
-              description={t("app.search.emptyDescription")}
-              title={t("app.search.emptyTitle")}
-            />
-          ) : activePreviewItems === 0 ? (
-            <EmptyHint className="mt-4 px-5 py-6 leading-7">
-              {t("app.search.noMatches", { query })}
-            </EmptyHint>
-          ) : (
-            <div className="mt-4 space-y-3">
-              {scope !== "spaces" ? (
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="eyebrow">{t("app.search.photoPreview")}</p>
-                    <p className="text-sm text-[var(--color-text-muted)]">
-                      {formatRelativeCount(matchingPhotos.length, matchForms)}
-                    </p>
-                  </div>
-                  {matchingPhotos.length === 0 ? (
-                    <EmptyHint>{t("app.search.noPhotoMatches")}</EmptyHint>
-                  ) : (
-                    matchingPhotos.map((photo) => (
-                      <SurfaceCard
-                        className="rounded-2xl p-0 hover:bg-white"
-                        key={photo.id}
-                      >
-                        <Link
-                          className="block p-4"
-                          to={`/app/library/photos/${photo.id}`}
-                        >
+          {normalizedQuery.length > 0 &&
+          status === "success" &&
+          visibleResultCount > searchPage.items.length ? (
+            <p className="mt-4 text-sm text-[var(--color-text-muted)]">
+              {t("app.search.partialResults", {
+                start: countFormatter.format(visibleRangeStart),
+                end: countFormatter.format(visibleRangeEnd),
+                total: countFormatter.format(visibleResultCount),
+              })}
+            </p>
+          ) : null}
+        </Panel>
+      </section>
+
+      {normalizedQuery.length === 0 ? (
+        <EmptyState
+          action={
+            <Link className="button-secondary" to="/app/library?view=timeline">
+              {t("app.search.openTimelineInstead")}
+            </Link>
+          }
+          description={t("app.search.emptyDescription")}
+          title={t("app.search.emptyTitle")}
+        />
+      ) : null}
+
+      {normalizedQuery.length > 0 && status === "loading" ? (
+        <Panel className="p-6">
+          <InlineMessage tone="success">
+            {t("app.search.loadingDescription")}
+          </InlineMessage>
+        </Panel>
+      ) : null}
+
+      {normalizedQuery.length > 0 && status === "error" ? (
+        <Panel className="p-6">
+          <InlineMessage tone="danger">
+            {errorMessage ?? t("app.search.errorGeneric")}
+          </InlineMessage>
+        </Panel>
+      ) : null}
+
+      {normalizedQuery.length > 0 &&
+      status === "success" &&
+      searchPage.items.length === 0 ? (
+        <EmptyHint className="px-5 py-6 leading-7">
+          {t("app.search.noResultsDescription", { query: normalizedQuery })}
+        </EmptyHint>
+      ) : null}
+
+      {normalizedQuery.length > 0 &&
+      status === "success" &&
+      searchPage.items.length > 0 ? (
+        <section className="space-y-6">
+          <div className="grid gap-4 xl:grid-cols-2">
+            {searchPage.items.map((result) => {
+              if (result.kind === "PHOTO" && result.photo) {
+                const photo = result.photo.photo;
+                const contextDescription =
+                  result.entryScope === "SPACES" &&
+                  result.photo.spaceName &&
+                  result.photo.albumName
+                    ? t("app.search.spacePhotoContext", {
+                        spaceName: result.photo.spaceName,
+                        albumName: result.photo.albumName,
+                      })
+                    : t("app.search.personalPhotoContext");
+
+                return (
+                  <SurfaceCard
+                    className="rounded-2xl p-0"
+                    key={`photo-${photo.id}`}
+                  >
+                    <Link
+                      className="block p-5"
+                      to={buildPhotoResultHref(result)}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
                           <p className="text-sm font-semibold">
                             {photo.originalFilename}
                           </p>
                           <p className="mt-1 text-xs text-[var(--color-text-muted)]">
-                            {t("app.search.photoMetadataPreview")}
+                            {contextDescription}
                           </p>
-                        </Link>
-                      </SurfaceCard>
-                    ))
-                  )}
-                </div>
-              ) : null}
-              {scope !== "library" && scope !== "favorites" ? (
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="eyebrow">{t("app.search.spacePreview")}</p>
-                    <p className="text-sm text-[var(--color-text-muted)]">
-                      {formatRelativeCount(matchingSpaces.length, matchForms)}
-                    </p>
-                  </div>
-                  {matchingSpaces.length === 0 ? (
-                    <EmptyHint>{t("app.search.noSpaceMatches")}</EmptyHint>
-                  ) : (
-                    matchingSpaces.map((space) => (
-                      <SurfaceCard
-                        className="rounded-2xl p-0 hover:bg-white"
-                        key={space.id}
-                      >
-                        <Link
-                          className="block p-4"
-                          to={`/app/spaces/${space.id}`}
-                        >
-                          <p className="text-sm font-semibold">{space.name}</p>
+                        </div>
+                        <div className="flex flex-wrap justify-end gap-2">
+                          <Badge>{t("app.favorites.photoBadge")}</Badge>
+                          {result.favorited ? (
+                            <Badge tone="accent">
+                              {t("app.photoDetail.badgeSaved")}
+                            </Badge>
+                          ) : null}
+                        </div>
+                      </div>
+                      <p className="mt-4 text-sm text-[var(--color-text-muted)]">
+                        {photo.mimeType} · {photo.width ?? "?"}x
+                        {photo.height ?? "?"}
+                      </p>
+                    </Link>
+                  </SurfaceCard>
+                );
+              }
+
+              if (result.kind === "ALBUM" && result.album) {
+                const album = result.album.album;
+                const contextDescription =
+                  album.spaceId && result.album.spaceName
+                    ? t("app.favorites.collaborativeAlbum", {
+                        spaceName: result.album.spaceName,
+                      })
+                    : t("app.favorites.personalAlbum");
+
+                return (
+                  <SurfaceCard
+                    className="rounded-2xl p-0"
+                    key={`album-${album.id}`}
+                  >
+                    <Link
+                      className="block p-5"
+                      to={buildAlbumResultHref(result)}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-semibold">{album.name}</p>
                           <p className="mt-1 text-xs text-[var(--color-text-muted)]">
-                            {t("app.search.spaceNamePreview")}
+                            {contextDescription}
                           </p>
-                        </Link>
-                      </SurfaceCard>
-                    ))
-                  )}
-                </div>
-              ) : null}
-            </div>
-          )}
-        </Panel>
-      </section>
+                        </div>
+                        <div className="flex flex-wrap justify-end gap-2">
+                          <Badge>{t("app.favorites.albumBadge")}</Badge>
+                          {result.favorited ? (
+                            <Badge tone="accent">
+                              {t("app.photoDetail.badgeSaved")}
+                            </Badge>
+                          ) : null}
+                        </div>
+                      </div>
+                      <p className="mt-4 text-sm text-[var(--color-text-muted)]">
+                        {album.description?.trim() ||
+                          t("app.favorites.noDescription")}
+                      </p>
+                    </Link>
+                  </SurfaceCard>
+                );
+              }
+
+              return null;
+            })}
+          </div>
+
+          {hasMultiplePages ? (
+            <Panel className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+              <button
+                className="button-secondary"
+                disabled={searchPage.page <= 0}
+                onClick={() => {
+                  goToPage(searchPage.page - 1);
+                }}
+                type="button"
+              >
+                {t("app.search.previousPage")}
+              </button>
+              <p
+                aria-live="polite"
+                className="text-sm text-[var(--color-text-muted)]"
+              >
+                {t("app.search.pageIndicator", {
+                  page: countFormatter.format(searchPage.page + 1),
+                  totalPages: countFormatter.format(totalPages),
+                })}
+              </p>
+              <button
+                className="button-secondary"
+                disabled={!searchPage.hasNext}
+                onClick={() => {
+                  goToPage(searchPage.page + 1);
+                }}
+                type="button"
+              >
+                {t("app.search.nextPage")}
+              </button>
+            </Panel>
+          ) : null}
+        </section>
+      ) : null}
     </div>
   );
 }

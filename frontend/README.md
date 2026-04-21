@@ -91,7 +91,7 @@ app/
 - Route modules may export `meta`, `clientLoader`, `clientAction`, and a default component as needed
 - The current route tree includes:
   - public landing, login, register, invite join
-  - protected app shell, overview dashboard, library, photo viewer, search shell, favorites
+  - protected app shell, overview dashboard, library, photo viewer, backend-connected search, favorites
   - Spaces list, Space detail, Space photo preview, settings
 
 ### Styling
@@ -161,6 +161,26 @@ The browser suite currently checks:
 Playwright starts a fresh `vite preview` server for each run and uses
 viewport-specific snapshot names that are stable across operating systems.
 
+## Manual Search QA
+
+For release-oriented browser verification of `/app/search`, run the backend and frontend locally and
+cover these scenarios in addition to the automated route tests:
+
+- Multi-page query:
+  use a query that returns more than one backend page, verify `Previous page` / `Next page` are
+  reachable, and confirm that `q`, `scope`, `kind`, and `sort` stay intact while the `page` query
+  parameter changes.
+- Stale page recovery:
+  open `/app/search?q=<query>&page=99` for a query that still has earlier matches, and verify the
+  route repairs the URL to the last reachable page instead of showing the no-results empty state.
+- Scope-aware photo navigation:
+  for a photo uploaded by the current user and also present in a Space album, verify that
+  `scope=all` opens the personal-library photo route while `scope=spaces` and `scope=favorites`
+  open the Space-album photo route.
+- Space-backed context copy:
+  confirm that shared-photo cards render the Space/album context text when `entryScope` is
+  `SPACES`, and the personal-library text when the same photo is shown through the library path.
+
 ## Current Functional Scope
 
 - Landing:
@@ -191,8 +211,10 @@ viewport-specific snapshot names that are stable across operating systems.
   - personal photo preview with metadata and favorite toggle
   - shared Space album photo preview
 - Search:
-  - route shell, query state in URL, scope toggles, lightweight client-side preview
-  - backend-powered semantic/tag/face search not connected yet
+  - backend-connected text search route with URL-driven query state
+  - scope toggles for all/library/spaces/favorites plus kind and sort controls
+  - mixed photo + album results with personal-library or Space navigation context
+  - face search still pending the dedicated backend API
 - Favorites:
   - combined photo and album favorites view
 - Spaces:

@@ -159,6 +159,44 @@ export interface PageResponse<T> {
   totalPages: number | null;
 }
 
+export type SearchScope = "all" | "library" | "spaces" | "favorites";
+export type SearchKind = "all" | "photo" | "album";
+export type SearchSort = "relevance" | "newest" | "oldest";
+export type SearchResultKind = "PHOTO" | "ALBUM";
+export type SearchEntryScope = "LIBRARY" | "SPACES";
+
+export interface SearchPhotoHitDto {
+  photo: PhotoDto;
+  albumId: string | null;
+  albumName: string | null;
+  spaceId: string | null;
+  spaceName: string | null;
+}
+
+export interface SearchAlbumHitDto {
+  album: AlbumDto;
+  spaceId: string | null;
+  spaceName: string | null;
+}
+
+export interface SearchHitDto {
+  kind: SearchResultKind;
+  entryScope: SearchEntryScope;
+  favorited: boolean;
+  photo: SearchPhotoHitDto | null;
+  album: SearchAlbumHitDto | null;
+}
+
+export interface SearchMediaParams {
+  q: string;
+  scope?: SearchScope;
+  kind?: SearchKind;
+  sort?: SearchSort;
+  page?: number;
+  size?: number;
+  needsTotal?: boolean;
+}
+
 export interface AdminUserDto {
   id: string;
   name: string;

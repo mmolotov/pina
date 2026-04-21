@@ -423,6 +423,40 @@ Notes:
 | `GET`    | `/api/v1/favorites?type=&page=&size=&needsTotal=` | List user's favorites (paginated, optional type filter) |
 | `GET`    | `/api/v1/favorites/check?targetType=&targetId=` | Check if a target is favorited                         |
 
+### Search
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/search?q=&scope=&kind=&sort=&page=&size=&needsTotal=` | Search accessible photos and albums with a stable paginated mixed-result contract |
+
+Phase 3 search behavior today:
+
+- `q` is plain text matching for the current backend phase. There is no semantic embedding search yet.
+- Searchable fields today are intentionally limited to currently available text:
+  - photos: `originalFilename`
+  - albums: `name`, `description`
+- "Tag-like" queries are accepted through the same `q` parameter, but they only match when the tag text is already present in those current textual fields. Dedicated ML tag indexing is not implemented yet.
+- Supported `scope` values:
+  - `all` (default): user's own library items plus items visible through accessible Space albums
+  - `library`: personal-library photos and albums owned by the current user
+  - `spaces`: photos and albums visible through accessible Spaces
+  - `favorites`: only favorited items that are still visible through the current access-control rules
+- Supported `kind` values:
+  - `all` (default)
+  - `photo`
+  - `album`
+- Supported `sort` values:
+  - `relevance` (default): exact match > prefix match > substring match, with newer items winning ties
+  - `newest`: newest searchable timestamp first (`takenAt ?? createdAt` for photos, `updatedAt` for albums)
+  - `oldest`: inverse of `newest`
+- Empty queries return an empty page with the standard pagination envelope instead of an error.
+- Invalid `scope`, `kind`, or `sort` values return `400 Bad Request`.
+- Search visibility follows the existing product rules:
+  - users always see their own personal-library photos and albums
+  - users can see shared results only when the media is exposed through an accessible Space album
+  - revoked Space access removes those items from both `spaces` and `favorites` search results
+- Result items are explicit mixed hits with `kind`, `entryScope`, `favorited`, and either `photo` or `album` payloads so the frontend can route to personal or Space-backed views without guessing.
+
 ### Health
 
 | Method | Path             | Description                  |

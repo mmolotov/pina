@@ -5,13 +5,15 @@ BASE_URL="${BASE_URL:-http://127.0.0.1:8080/api/v1}"
 RUN_ID="${RUN_ID:-manual_phase2_$(date +%s)}"
 JSON_HEADER="Content-Type: application/json"
 PHOTO_FILE="${PHOTO_FILE:-/tmp/pina-manual-${RUN_ID}.png}"
+OWNER_SHARED_SEARCH_FILE="/tmp/pina-owner-search-${RUN_ID}.png"
 GEO_PHOTO_INSIDE_FILE="/tmp/pina-manual-geo-inside-${RUN_ID}.jpg"
 GEO_PHOTO_OUTSIDE_FILE="/tmp/pina-manual-geo-outside-${RUN_ID}.jpg"
 
 GEO_PHOTO_INSIDE_BASE64='/9j/4QCIRXhpZgAASUkqAAgAAAABACWIBAABAAAAGgAAAAAAAAAEAAEAAgACAAAATgAAAAIABQADAAAAUAAAAAMAAgACAAAARQAAAAQABQADAAAAaAAAAAAAAAAsAAAAAQAAADEAAAABAAAAQIMAABAnAAAUAAAAAQAAABsAAAABAAAAUE4HABAnAAD/4AAQSkZJRgABAQAAAQABAAD/2wBDAAMCAgICAgMCAgIDAwMDBAYEBAQEBAgGBgUGCQgKCgkICQkKDA8MCgsOCwkJDRENDg8QEBEQCgwSExIQEw8QEBD/2wBDAQMDAwQDBAgEBAgQCwkLEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBD/wAARCAAKAAoDAREAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAf/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAf/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCRK2l4AAD/2Q=='
 GEO_PHOTO_OUTSIDE_BASE64='/9j/4QCIRXhpZgAASUkqAAgAAAABACWIBAABAAAAGgAAAAAAAAAEAAEAAgACAAAATgAAAAIABQADAAAAUAAAAAMAAgACAAAARQAAAAQABQADAAAAaAAAAAAAAAAwAAAAAQAAADMAAAABAAAAIKADABAnAAACAAAAAQAAABUAAAABAAAAYDUBABAnAAD/4AAQSkZJRgABAQAAAQABAAD/2wBDAAMCAgICAgMCAgIDAwMDBAYEBAQEBAgGBgUGCQgKCgkICQkKDA8MCgsOCwkJDRENDg8QEBEQCgwSExIQEw8QEBD/2wBDAQMDAwQDBAgEBAgQCwkLEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBD/wAARCAAKAAoDAREAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAf/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAf/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCFJosYAAD/2Q=='
 
-# This smoke script intentionally covers the current non-admin backend API surface.
+# This smoke script intentionally covers the current non-admin backend API surface,
+# including the current search contract.
 # Instance-level admin endpoints are exercised separately by ./scripts/manual-admin-smoke.sh.
 
 require_bin() {
@@ -142,6 +144,7 @@ expect_jq_true() {
 
 cleanup() {
   rm -f "$PHOTO_FILE"
+  rm -f "$OWNER_SHARED_SEARCH_FILE"
   rm -f "$GEO_PHOTO_INSIDE_FILE"
   rm -f "$GEO_PHOTO_OUTSIDE_FILE"
 }
@@ -152,6 +155,7 @@ require_bin base64
 trap cleanup EXIT
 
 printf 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a7x8AAAAASUVORK5CYII=' | base64 -d > "$PHOTO_FILE"
+cp "$PHOTO_FILE" "$OWNER_SHARED_SEARCH_FILE"
 printf '%s' "$GEO_PHOTO_INSIDE_BASE64" | base64 -d > "$GEO_PHOTO_INSIDE_FILE"
 printf '%s' "$GEO_PHOTO_OUTSIDE_BASE64" | base64 -d > "$GEO_PHOTO_OUTSIDE_FILE"
 
@@ -347,7 +351,40 @@ USER_A_PHOTO_ID=$(printf '%s' "$BODY" | jq -r '.id')
 ADD_A_PHOTO_TO_B_ALBUM_STATUS=$(curl_text_status POST "$BASE_URL/spaces/$SPACE_ID/albums/$SPACE_ALBUM_ID/photos/$USER_A_PHOTO_ID" "$USER_B_ACCESS_TOKEN")
 expect_status "$ADD_A_PHOTO_TO_B_ALBUM_STATUS" 404 "User B cannot add user A photo to Space album"
 
-echo "Scenario 11. Invite Preview And Join"
+echo "Scenario 11. Search Result Context And Paging"
+UPLOAD_OWNER_SHARED_SEARCH=$(curl_multipart "$BASE_URL/photos" "$USER_A_ACCESS_TOKEN" "$OWNER_SHARED_SEARCH_FILE")
+STATUS=$(status_of "$UPLOAD_OWNER_SHARED_SEARCH")
+BODY=$(body_of "$UPLOAD_OWNER_SHARED_SEARCH")
+expect_status "$STATUS" 201 "Upload owner-shared search photo"
+OWNER_SHARED_SEARCH_PHOTO_ID=$(printf '%s' "$BODY" | jq -r '.id')
+expect_jq_true "$BODY" "Owner-shared search photo keeps distinct filename" --arg filename "pina-owner-search-${RUN_ID}.png" '.originalFilename == $filename'
+ADD_OWNER_SHARED_TO_SPACE_ALBUM_STATUS=$(curl_text_status POST "$BASE_URL/spaces/$SPACE_ID/albums/$SPACE_ALBUM_ID/photos/$OWNER_SHARED_SEARCH_PHOTO_ID" "$USER_A_ACCESS_TOKEN")
+expect_status "$ADD_OWNER_SHARED_TO_SPACE_ALBUM_STATUS" 201 "Add owner-shared search photo to Space album"
+ADD_OWNER_SHARED_PHOTO_FAVORITE=$(curl_json POST "$BASE_URL/favorites" "$USER_A_ACCESS_TOKEN" "{\"targetType\":\"PHOTO\",\"targetId\":\"${OWNER_SHARED_SEARCH_PHOTO_ID}\"}")
+STATUS=$(status_of "$ADD_OWNER_SHARED_PHOTO_FAVORITE")
+expect_status "$STATUS" 201 "Favorite owner-shared search photo"
+SEARCH_SPACES_OWNER_SHARED=$(curl_json GET "$BASE_URL/search?q=owner-search-${RUN_ID}&scope=spaces&kind=photo&needsTotal=true" "$USER_A_ACCESS_TOKEN")
+STATUS=$(status_of "$SEARCH_SPACES_OWNER_SHARED")
+BODY=$(body_of "$SEARCH_SPACES_OWNER_SHARED")
+expect_status "$STATUS" 200 "Search owner-shared photo in spaces scope"
+expect_jq_true "$BODY" "Spaces search keeps Space routing context" --arg pid "$OWNER_SHARED_SEARCH_PHOTO_ID" --arg sid "$SPACE_ID" --arg aid "$SPACE_ALBUM_ID" '.items | length == 1 and .[0].entryScope == "SPACES" and .[0].photo.photo.id == $pid and .[0].photo.spaceId == $sid and .[0].photo.albumId == $aid'
+SEARCH_ALL_OWNER_SHARED=$(curl_json GET "$BASE_URL/search?q=owner-search-${RUN_ID}&scope=all&kind=photo&needsTotal=true" "$USER_A_ACCESS_TOKEN")
+STATUS=$(status_of "$SEARCH_ALL_OWNER_SHARED")
+BODY=$(body_of "$SEARCH_ALL_OWNER_SHARED")
+expect_status "$STATUS" 200 "Search owner-shared photo in all scope"
+expect_jq_true "$BODY" "All-scope search keeps library entry scope while preserving Space metadata" --arg sid "$SPACE_ID" --arg aid "$SPACE_ALBUM_ID" '.items | length == 1 and .[0].entryScope == "LIBRARY" and .[0].photo.spaceId == $sid and .[0].photo.albumId == $aid'
+SEARCH_FAVORITES_OWNER_SHARED=$(curl_json GET "$BASE_URL/search?q=owner-search-${RUN_ID}&scope=favorites&kind=photo&needsTotal=true" "$USER_A_ACCESS_TOKEN")
+STATUS=$(status_of "$SEARCH_FAVORITES_OWNER_SHARED")
+BODY=$(body_of "$SEARCH_FAVORITES_OWNER_SHARED")
+expect_status "$STATUS" 200 "Search owner-shared photo in favorites scope"
+expect_jq_true "$BODY" "Favorites search keeps Space routing context for owner-shared photo" --arg pid "$OWNER_SHARED_SEARCH_PHOTO_ID" --arg sid "$SPACE_ID" --arg aid "$SPACE_ALBUM_ID" '.items | length == 1 and .[0].entryScope == "SPACES" and .[0].favorited == true and .[0].photo.photo.id == $pid and .[0].photo.spaceId == $sid and .[0].photo.albumId == $aid'
+SEARCH_STALE_PAGE_OWNER_SHARED=$(curl_json GET "$BASE_URL/search?q=owner-search-${RUN_ID}&scope=all&kind=photo&page=3&size=1&needsTotal=true" "$USER_A_ACCESS_TOKEN")
+STATUS=$(status_of "$SEARCH_STALE_PAGE_OWNER_SHARED")
+BODY=$(body_of "$SEARCH_STALE_PAGE_OWNER_SHARED")
+expect_status "$STATUS" 200 "Search owner-shared photo with stale page index"
+expect_jq_true "$BODY" "Out-of-range search page still returns stable pagination metadata" '.items == [] and .page == 3 and .hasNext == false and .totalItems == 1 and .totalPages == 1'
+
+echo "Scenario 12. Invite Preview And Join"
 CREATE_INVITE=$(curl_json POST "$BASE_URL/spaces/$SPACE_ID/invites" "$USER_A_ACCESS_TOKEN" '{"defaultRole":"VIEWER","usageLimit":5}')
 STATUS=$(status_of "$CREATE_INVITE")
 BODY=$(body_of "$CREATE_INVITE")
@@ -378,7 +415,7 @@ EXPIRED_INVITE_CODE=$(printf '%s' "$BODY" | jq -r '.code')
 EXPIRED_PREVIEW_STATUS=$(curl_text_status GET "$BASE_URL/invites/$EXPIRED_INVITE_CODE")
 expect_status "$EXPIRED_PREVIEW_STATUS" 404 "Preview expired invite"
 
-echo "Scenario 12. Favorites"
+echo "Scenario 13. Favorites"
 ADD_SPACE_ALBUM_FAVORITE=$(curl_json POST "$BASE_URL/favorites" "$USER_B_ACCESS_TOKEN" "{\"targetType\":\"ALBUM\",\"targetId\":\"${SPACE_ALBUM_ID}\"}")
 STATUS=$(status_of "$ADD_SPACE_ALBUM_FAVORITE")
 expect_status "$STATUS" 201 "Add Space album to favorites"
@@ -419,7 +456,7 @@ BODY=$(body_of "$CHECK_FAVORITE_AFTER_ACCESS_LOSS")
 expect_status "$STATUS" 200 "Check favorite after access loss"
 expect_jq_true "$BODY" "Favorite check is false after Space access loss" '.favorited == false'
 
-echo "Scenario 13. Refresh And Logout"
+echo "Scenario 14. Refresh And Logout"
 REFRESH_A=$(curl_json POST "$BASE_URL/auth/refresh" "" "{\"refreshToken\":\"${USER_A_REFRESH_TOKEN}\"}")
 STATUS=$(status_of "$REFRESH_A")
 BODY=$(body_of "$REFRESH_A")
@@ -431,7 +468,7 @@ expect_status "$LOGOUT_A_STATUS" 204 "Logout with current refresh token"
 REFRESH_AFTER_LOGOUT_STATUS=$(curl_text_status POST "$BASE_URL/auth/refresh" "" "{\"refreshToken\":\"${USER_A_REFRESH_TOKEN}\"}")
 expect_status "$REFRESH_AFTER_LOGOUT_STATUS" 401 "Refresh with revoked token"
 
-echo "Scenario 14. Negative Authorization Checks"
+echo "Scenario 15. Negative Authorization Checks"
 PHOTOS_WITHOUT_TOKEN_STATUS=$(curl_text_status GET "$BASE_URL/photos")
 expect_status "$PHOTOS_WITHOUT_TOKEN_STATUS" 401 "Photos endpoint without token"
 ADD_NON_OWNED_PHOTO_TO_B_ALBUM_STATUS=$(curl_text_status POST "$BASE_URL/albums/$USER_B_ALBUM_ID/photos/$USER_A_PHOTO_ID" "$USER_B_ACCESS_TOKEN")

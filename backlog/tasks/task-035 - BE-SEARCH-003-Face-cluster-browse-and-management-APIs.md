@@ -5,6 +5,7 @@ status: To Do
 assignee:
   - codex
 created_date: '2026-04-03 17:09'
+updated_date: '2026-04-20 13:57'
 labels:
   - backend
   - search
@@ -12,6 +13,7 @@ labels:
 milestone: m-2
 dependencies:
   - TASK-033
+  - TASK-050.06
 references:
   - MILESTONES.md
   - docs/product-requirements.adoc
@@ -31,3 +33,9 @@ Implement the backend APIs needed for face-based browsing in Phase 3: list clust
 - [ ] #3 Face-search endpoints respect access control and only expose clusters and media visible to the authenticated user
 - [ ] #4 Backend tests cover list, detail, mutation, and authorization behavior for face-cluster flows
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Phase 4 now includes `TASK-050.06` as the face-clustering data foundation. The API layer in this task should consume that cluster model rather than inventing a separate clustering representation inside the search resource layer.
+<!-- SECTION:NOTES:END -->

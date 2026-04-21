@@ -13,7 +13,7 @@ All examples assume the backend is running locally on `http://localhost:8080`.
 For a reproducible end-to-end smoke run of this document, use
 `../scripts/manual-smoke.sh`. The script exercises the same non-admin backend API flow with
 generated test users and automatic assertions. It intentionally covers the current authenticated,
-library, Spaces, invites, and favorites surface. Instance-level admin endpoints are implemented,
+library, Spaces, search, invites, and favorites surface. Instance-level admin endpoints are implemented,
 but they remain out of scope for this smoke script and are covered by dedicated integration tests.
 It is intended for local release/smoke
 verification, not as a replacement for automated integration tests in `../src/test`.
@@ -82,6 +82,7 @@ export USER_A_GEO_INSIDE_PHOTO_ID=""
 export USER_A_GEO_OUTSIDE_PHOTO_ID=""
 export USER_B_PHOTO_ID=""
 export USER_B_ALBUM_ID=""
+export OWNER_SHARED_SEARCH_PHOTO_ID=""
 export SPACE_ID=""
 export SUBSPACE_ID=""
 export SPACE_ALBUM_ID=""
@@ -730,7 +731,121 @@ Expected result:
 - HTTP status is `404 Not Found`
 - API does not allow adding a photo that is not owned by the caller
 
-## Scenario 11. Invite Preview And Join
+## Scenario 11. Search Result Context And Paging
+
+Description: verify that search preserves scope-aware navigation context for owner-uploaded photos
+that are also visible through a Space album, and that stale/out-of-range page requests return a
+stable pagination envelope for frontend recovery.
+
+Step 1. Upload a distinct owner photo for search-specific checks.
+
+```bash
+curl -sS -i \
+  -H "Authorization: Bearer $USER_A_ACCESS_TOKEN" \
+  -F "file=@$PHOTO_FILE;filename=owner-search-$RUN_ID.png" \
+  "$BASE_URL/photos"
+```
+
+Expected result:
+
+- HTTP status is `201 Created`
+- response body contains `id` and `originalFilename`
+- `originalFilename` equals `owner-search-$RUN_ID.png`
+- copy returned `id` into `OWNER_SHARED_SEARCH_PHOTO_ID`
+
+Step 2. Add the owner photo to the existing Space album as user A.
+
+```bash
+curl -sS -i \
+  -H "Authorization: Bearer $USER_A_ACCESS_TOKEN" \
+  -X POST "$BASE_URL/spaces/$SPACE_ID/albums/$SPACE_ALBUM_ID/photos/$OWNER_SHARED_SEARCH_PHOTO_ID"
+```
+
+Expected result:
+
+- HTTP status is `201 Created`
+
+Step 3. Favorite the same photo as user A.
+
+```bash
+curl -sS -i \
+  -H "$JSON_HEADER" \
+  -H "Authorization: Bearer $USER_A_ACCESS_TOKEN" \
+  -X POST "$BASE_URL/favorites" \
+  -d "{\"targetType\":\"PHOTO\",\"targetId\":\"$OWNER_SHARED_SEARCH_PHOTO_ID\"}"
+```
+
+Expected result:
+
+- HTTP status is `201 Created`
+
+Step 4. Search the shared photo in `scope=spaces`.
+
+```bash
+curl -sS -i \
+  -H "Authorization: Bearer $USER_A_ACCESS_TOKEN" \
+  "$BASE_URL/search?q=owner-search-$RUN_ID&scope=spaces&kind=photo&needsTotal=true"
+```
+
+Expected result:
+
+- HTTP status is `200 OK`
+- response body contains one photo hit
+- `items[0].entryScope` is `SPACES`
+- `items[0].photo.photo.id` matches `OWNER_SHARED_SEARCH_PHOTO_ID`
+- `items[0].photo.spaceId` matches `SPACE_ID`
+- `items[0].photo.albumId` matches `SPACE_ALBUM_ID`
+
+Step 5. Search the same photo in `scope=all`.
+
+```bash
+curl -sS -i \
+  -H "Authorization: Bearer $USER_A_ACCESS_TOKEN" \
+  "$BASE_URL/search?q=owner-search-$RUN_ID&scope=all&kind=photo&needsTotal=true"
+```
+
+Expected result:
+
+- HTTP status is `200 OK`
+- response body contains one photo hit
+- `items[0].entryScope` is `LIBRARY`
+- `items[0].photo.spaceId` still matches `SPACE_ID`
+- `items[0].photo.albumId` still matches `SPACE_ALBUM_ID`
+
+Step 6. Search the same photo in `scope=favorites`.
+
+```bash
+curl -sS -i \
+  -H "Authorization: Bearer $USER_A_ACCESS_TOKEN" \
+  "$BASE_URL/search?q=owner-search-$RUN_ID&scope=favorites&kind=photo&needsTotal=true"
+```
+
+Expected result:
+
+- HTTP status is `200 OK`
+- response body contains one photo hit
+- `items[0].entryScope` is `SPACES`
+- `items[0].favorited` is `true`
+- the photo still carries the same `spaceId` and `albumId`
+
+Step 7. Request an out-of-range page for the same query.
+
+```bash
+curl -sS -i \
+  -H "Authorization: Bearer $USER_A_ACCESS_TOKEN" \
+  "$BASE_URL/search?q=owner-search-$RUN_ID&scope=all&kind=photo&page=3&size=1&needsTotal=true"
+```
+
+Expected result:
+
+- HTTP status is `200 OK`
+- response body contains `items: []`
+- response still reports `page: 3`
+- response reports `hasNext: false`
+- response reports `totalItems: 1`
+- response reports `totalPages: 1`
+
+## Scenario 12. Invite Preview And Join
 
 Description: verify invite management, public preview, and authenticated join.
 
@@ -846,7 +961,7 @@ Expected result:
 - HTTP status is `404 Not Found`
 - expired invites must not expose preview metadata
 
-## Scenario 12. Favorites
+## Scenario 13. Favorites
 
 Description: verify add, list, check, duplicate add, and delete behavior for favorites.
 
@@ -988,7 +1103,7 @@ Expected result:
 - HTTP status is `200 OK`
 - response body contains `"favorited":false`
 
-## Scenario 13. Refresh And Logout
+## Scenario 14. Refresh And Logout
 
 Description: verify refresh token rotation and logout invalidation.
 
@@ -1034,7 +1149,7 @@ Expected result:
 - HTTP status is `401 Unauthorized`
 - response indicates that the refresh token is invalid or expired
 
-## Scenario 14. Negative Authorization Checks
+## Scenario 15. Negative Authorization Checks
 
 Description: verify key unauthorized and forbidden-by-visibility cases.
 

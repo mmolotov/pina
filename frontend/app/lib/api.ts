@@ -27,6 +27,8 @@ import type {
   PhotoNearbySearchParams,
   PhotoDto,
   RegistrationMode,
+  SearchHitDto,
+  SearchMediaParams,
   SpaceDto,
   SpaceMemberDto,
   SpaceRole,
@@ -951,6 +953,21 @@ export function checkFavorite(
 ) {
   return request<FavoriteStatusDto>(
     `/favorites/check?targetType=${targetType}&targetId=${targetId}`,
+    { auth: true },
+  );
+}
+
+export function searchMedia(params: SearchMediaParams) {
+  return request<PageResponse<SearchHitDto>>(
+    `/search?${buildQuery({
+      q: params.q,
+      scope: params.scope,
+      kind: params.kind,
+      sort: params.sort,
+      page: params.page ?? 0,
+      size: params.size ?? 24,
+      needsTotal: params.needsTotal ?? true,
+    })}`,
     { auth: true },
   );
 }
