@@ -3,7 +3,7 @@ plugins {
     jacoco
     id("io.quarkus")
     id("com.diffplug.spotless") version "8.4.0"
-    id("com.github.spotbugs") version "6.4.8"
+    id("com.github.spotbugs") version "6.5.1"
 }
 
 val quarkusPlatformVersion: String by project
