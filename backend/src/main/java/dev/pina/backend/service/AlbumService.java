@@ -15,10 +15,15 @@ import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
 import jakarta.persistence.PersistenceException;
 import jakarta.transaction.Transactional;
+import java.time.OffsetDateTime;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 @ApplicationScoped
@@ -115,6 +120,102 @@ public class AlbumService {
 				.setMaxResults(effectiveSize + 1).getResultList();
 		return toPage(results, pageRequest, effectiveSize, "SELECT COUNT(a) FROM Album a WHERE a.space.id = :spaceId",
 				"spaceId", spaceId);
+	}
+
+	/**
+	 * Enrich a single album with photo-count, media-date range, and resolved cover
+	 * photo (explicit or auto). Issues the same bounded set of queries as
+	 * {@link #buildSummaries(List)}.
+	 */
+	public AlbumSummary getSummary(Album album) {
+		return buildSummaries(List.of(album)).get(0);
+	}
+
+	/**
+	 * Enrich a batch of albums with aggregate statistics and resolved cover photos
+	 * while preserving the input order. Regardless of the batch size this performs
+	 * a bounded number of queries: one JPQL aggregate, one native
+	 * {@code DISTINCT ON} to resolve auto-covers, and one JPQL load to fetch the
+	 * cover photos with their variants.
+	 */
+	public List<AlbumSummary> buildSummaries(List<Album> albums) {
+		if (albums.isEmpty()) {
+			return List.of();
+		}
+
+		List<UUID> albumIds = albums.stream().map(a -> a.id).toList();
+
+		record Aggregate(long photoCount, OffsetDateTime mediaRangeStart, OffsetDateTime mediaRangeEnd,
+				OffsetDateTime latestPhotoAddedAt) {
+		}
+		Map<UUID, Aggregate> aggregatesByAlbum = new HashMap<>();
+		List<Object[]> aggregateRows = em.createQuery(
+				"SELECT ap.album.id, COUNT(ap), MIN(COALESCE(p.takenAt, p.createdAt)), MAX(COALESCE(p.takenAt, p.createdAt)), MAX(ap.addedAt) "
+						+ "FROM AlbumPhoto ap JOIN ap.photo p WHERE ap.album.id IN :ids GROUP BY ap.album.id",
+				Object[].class).setParameter("ids", albumIds).getResultList();
+		for (Object[] row : aggregateRows) {
+			UUID albumId = (UUID) row[0];
+			long count = ((Number) row[1]).longValue();
+			OffsetDateTime rangeStart = (OffsetDateTime) row[2];
+			OffsetDateTime rangeEnd = (OffsetDateTime) row[3];
+			OffsetDateTime latestAddedAt = (OffsetDateTime) row[4];
+			aggregatesByAlbum.put(albumId, new Aggregate(count, rangeStart, rangeEnd, latestAddedAt));
+		}
+
+		Map<UUID, UUID> coverPhotoByAlbum = new HashMap<>();
+		Set<UUID> coverPhotoIds = new HashSet<>();
+		List<UUID> autoResolveAlbumIds = new ArrayList<>();
+		for (Album album : albums) {
+			Aggregate agg = aggregatesByAlbum.get(album.id);
+			if (agg == null || agg.photoCount() == 0) {
+				continue;
+			}
+			if (album.coverPhoto != null) {
+				coverPhotoByAlbum.put(album.id, album.coverPhoto.id);
+				coverPhotoIds.add(album.coverPhoto.id);
+			} else {
+				autoResolveAlbumIds.add(album.id);
+			}
+		}
+
+		if (!autoResolveAlbumIds.isEmpty()) {
+			@SuppressWarnings("unchecked")
+			List<Object[]> autoRows = em
+					.createNativeQuery("SELECT DISTINCT ON (ap.album_id) ap.album_id, ap.photo_id FROM album_photos ap "
+							+ "JOIN photos p ON p.id = ap.photo_id WHERE ap.album_id IN (:ids) "
+							+ "ORDER BY ap.album_id, COALESCE(p.taken_at, p.created_at) DESC, ap.added_at DESC")
+					.setParameter("ids", autoResolveAlbumIds).getResultList();
+			for (Object[] row : autoRows) {
+				UUID albumId = (UUID) row[0];
+				UUID photoId = (UUID) row[1];
+				coverPhotoByAlbum.put(albumId, photoId);
+				coverPhotoIds.add(photoId);
+			}
+		}
+
+		Map<UUID, Photo> coverPhotosById = new HashMap<>();
+		if (!coverPhotoIds.isEmpty()) {
+			List<Photo> photos = em.createQuery(
+					"SELECT DISTINCT p FROM Photo p LEFT JOIN FETCH p.variants LEFT JOIN FETCH p.uploader LEFT JOIN FETCH p.personalLibrary WHERE p.id IN :ids",
+					Photo.class).setParameter("ids", coverPhotoIds).getResultList();
+			for (Photo photo : photos) {
+				coverPhotosById.put(photo.id, photo);
+			}
+		}
+
+		List<AlbumSummary> summaries = new ArrayList<>(albums.size());
+		for (Album album : albums) {
+			Aggregate agg = aggregatesByAlbum.get(album.id);
+			if (agg == null) {
+				summaries.add(AlbumSummary.empty(album));
+				continue;
+			}
+			UUID coverId = coverPhotoByAlbum.get(album.id);
+			Photo cover = coverId == null ? null : coverPhotosById.get(coverId);
+			summaries.add(new AlbumSummary(album, agg.photoCount(), agg.mediaRangeStart(), agg.mediaRangeEnd(),
+					agg.latestPhotoAddedAt(), cover));
+		}
+		return summaries;
 	}
 
 	private <T> PageResult<T> toPage(List<T> results, PageRequest pageRequest, int effectiveSize, String countQuery,

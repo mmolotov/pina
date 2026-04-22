@@ -6,6 +6,7 @@ import dev.pina.backend.api.dto.PageResponse;
 import dev.pina.backend.api.dto.PhotoDto;
 import dev.pina.backend.api.error.ApiErrors;
 import dev.pina.backend.pagination.PageRequest;
+import dev.pina.backend.pagination.PageResult;
 import dev.pina.backend.service.AlbumService;
 import dev.pina.backend.service.UserResolver;
 import jakarta.inject.Inject;
@@ -41,7 +42,8 @@ public class AlbumResource {
 	public Response create(@Valid CreateAlbumRequest request) {
 		var user = userResolver.currentUser();
 		var album = albumService.create(request.name(), request.description(), user);
-		return Response.status(Response.Status.CREATED).entity(AlbumDto.from(album)).build();
+		return Response.status(Response.Status.CREATED).entity(AlbumDto.fromSummary(albumService.getSummary(album)))
+				.build();
 	}
 
 	@GET
@@ -50,7 +52,10 @@ public class AlbumResource {
 			@QueryParam("needsTotal") @DefaultValue("false") boolean needsTotal) {
 		var user = userResolver.currentUser();
 		var albums = albumService.listByOwner(user.id, new PageRequest(page, size, needsTotal));
-		return Response.ok(PageResponse.from(albums, AlbumDto::from)).build();
+		var summaries = albumService.buildSummaries(albums.items());
+		var summaryPage = new PageResult<>(summaries, albums.page(), albums.size(), albums.hasNext(),
+				albums.totalItems(), albums.totalPages());
+		return Response.ok(PageResponse.from(summaryPage, AlbumDto::fromSummary)).build();
 	}
 
 	@GET
@@ -71,7 +76,7 @@ public class AlbumResource {
 		var user = userResolver.currentUser();
 		return albumService.findById(id).filter(album -> album.owner.id.equals(user.id))
 				.flatMap(album -> albumService.update(id, request.name(), request.description()))
-				.map(updated -> Response.ok(AlbumDto.from(updated)).build())
+				.map(updated -> Response.ok(AlbumDto.fromSummary(albumService.getSummary(updated))).build())
 				.orElse(ApiErrors.notFound("Album not found"));
 	}
 

@@ -2,6 +2,7 @@ package dev.pina.backend.api;
 
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.equalTo;
+import static org.hamcrest.Matchers.greaterThan;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.Matchers.nullValue;
@@ -48,7 +49,87 @@ class AlbumResourceTest {
 		TestAuthHelper.authenticated().contentType(ContentType.JSON)
 				.body("{\"name\": \"Vacation 2026\", \"description\": \"Summer photos\"}").when().post("/api/v1/albums")
 				.then().statusCode(201).body("id", notNullValue()).body("name", equalTo("Vacation 2026"))
-				.body("personalLibraryId", notNullValue());
+				.body("personalLibraryId", notNullValue()).body("coverPhotoId", nullValue())
+				.body("coverVariants", hasSize(0)).body("photoCount", equalTo(0)).body("mediaRangeStart", nullValue())
+				.body("mediaRangeEnd", nullValue()).body("latestPhotoAddedAt", nullValue());
+	}
+
+	@Test
+	void listAlbumWithPhotosReturnsSummaryFields() throws IOException {
+		String token = registerUserToken("summary-fields");
+		Path testImage = createJpegImage("album-summary-cover", 100, 100, 0x2277aa);
+
+		String photoId = authAs(token).multiPart("file", testImage.toFile(), "image/jpeg").when().post("/api/v1/photos")
+				.then().statusCode(201).extract().path("id");
+
+		String albumId = authAs(token).contentType(ContentType.JSON).body("{\"name\": \"Summary album\"}").when()
+				.post("/api/v1/albums").then().statusCode(201).extract().path("id");
+
+		authAs(token).when().post("/api/v1/albums/{albumId}/photos/{photoId}", albumId, photoId).then().statusCode(201);
+
+		authAs(token).when().get("/api/v1/albums").then().statusCode(200).body("items", hasSize(1))
+				.body("items[0].id", equalTo(albumId)).body("items[0].coverPhotoId", equalTo(photoId))
+				.body("items[0].coverVariants", hasSize(greaterThan(0))).body("items[0].photoCount", equalTo(1))
+				.body("items[0].mediaRangeStart", notNullValue()).body("items[0].mediaRangeEnd", notNullValue())
+				.body("items[0].latestPhotoAddedAt", notNullValue());
+	}
+
+	@Test
+	void listAlbumWithMultiplePhotosReturnsCorrectRangeAndCount() throws IOException {
+		String token = registerUserToken("multi-photo");
+		Path firstImage = createJpegImage("album-multi-1", 100, 100, 0x112233);
+		Path secondImage = createJpegImage("album-multi-2", 100, 100, 0x445566);
+		Path thirdImage = createJpegImage("album-multi-3", 100, 100, 0x778899);
+
+		String firstPhotoId = authAs(token).multiPart("file", firstImage.toFile(), "image/jpeg").when()
+				.post("/api/v1/photos").then().statusCode(201).extract().path("id");
+		String secondPhotoId = authAs(token).multiPart("file", secondImage.toFile(), "image/jpeg").when()
+				.post("/api/v1/photos").then().statusCode(201).extract().path("id");
+		String thirdPhotoId = authAs(token).multiPart("file", thirdImage.toFile(), "image/jpeg").when()
+				.post("/api/v1/photos").then().statusCode(201).extract().path("id");
+
+		String albumId = authAs(token).contentType(ContentType.JSON).body("{\"name\": \"Range album\"}").when()
+				.post("/api/v1/albums").then().statusCode(201).extract().path("id");
+
+		authAs(token).when().post("/api/v1/albums/{albumId}/photos/{photoId}", albumId, firstPhotoId).then()
+				.statusCode(201);
+		authAs(token).when().post("/api/v1/albums/{albumId}/photos/{photoId}", albumId, secondPhotoId).then()
+				.statusCode(201);
+		authAs(token).when().post("/api/v1/albums/{albumId}/photos/{photoId}", albumId, thirdPhotoId).then()
+				.statusCode(201);
+
+		authAs(token).when().get("/api/v1/albums").then().statusCode(200).body("items", hasSize(1))
+				.body("items[0].photoCount", equalTo(3)).body("items[0].coverPhotoId", equalTo(thirdPhotoId))
+				.body("items[0].mediaRangeStart", notNullValue()).body("items[0].mediaRangeEnd", notNullValue());
+	}
+
+	@Test
+	void removingCoverPhotoFromAlbumFallsBackToAutoCover() throws IOException {
+		String token = registerUserToken("cover-fallback");
+		Path firstImage = createJpegImage("album-fallback-1", 100, 100, 0xaabbcc);
+		Path secondImage = createJpegImage("album-fallback-2", 100, 100, 0xddeeff);
+
+		String firstPhotoId = authAs(token).multiPart("file", firstImage.toFile(), "image/jpeg").when()
+				.post("/api/v1/photos").then().statusCode(201).extract().path("id");
+		String secondPhotoId = authAs(token).multiPart("file", secondImage.toFile(), "image/jpeg").when()
+				.post("/api/v1/photos").then().statusCode(201).extract().path("id");
+
+		String albumId = authAs(token).contentType(ContentType.JSON).body("{\"name\": \"Fallback album\"}").when()
+				.post("/api/v1/albums").then().statusCode(201).extract().path("id");
+
+		authAs(token).when().post("/api/v1/albums/{albumId}/photos/{photoId}", albumId, firstPhotoId).then()
+				.statusCode(201);
+		authAs(token).when().post("/api/v1/albums/{albumId}/photos/{photoId}", albumId, secondPhotoId).then()
+				.statusCode(201);
+
+		authAs(token).when().get("/api/v1/albums").then().statusCode(200)
+				.body("items[0].coverPhotoId", equalTo(secondPhotoId)).body("items[0].photoCount", equalTo(2));
+
+		authAs(token).when().delete("/api/v1/albums/{albumId}/photos/{photoId}", albumId, secondPhotoId).then()
+				.statusCode(204);
+
+		authAs(token).when().get("/api/v1/albums").then().statusCode(200)
+				.body("items[0].coverPhotoId", equalTo(firstPhotoId)).body("items[0].photoCount", equalTo(1));
 	}
 
 	@Test

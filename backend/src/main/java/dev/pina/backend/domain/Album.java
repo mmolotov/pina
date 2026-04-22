@@ -40,6 +40,10 @@ public class Album extends PanacheEntityBase {
 	@JoinColumn(name = "space_id")
 	public Space space;
 
+	@ManyToOne(fetch = FetchType.LAZY)
+	@JoinColumn(name = "cover_photo_id")
+	public Photo coverPhoto;
+
 	@Column(nullable = false, updatable = false, insertable = false)
 	@ColumnDefault("now()")
 	public OffsetDateTime createdAt;
