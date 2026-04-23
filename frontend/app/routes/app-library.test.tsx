@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { createRoutesStub } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "~/lib/i18n";
@@ -10,7 +10,6 @@ import AppLibraryRoute, {
 const apiMocks = vi.hoisted(() => ({
   listAllPhotos: vi.fn(),
   listAlbums: vi.fn(),
-  listAllAlbumPhotos: vi.fn(),
   listGeoPhotos: vi.fn(),
   getPhotoBlob: vi.fn(),
   uploadPhoto: vi.fn(),
@@ -18,12 +17,12 @@ const apiMocks = vi.hoisted(() => ({
   createAlbum: vi.fn(),
   updateAlbum: vi.fn(),
   deleteAlbum: vi.fn(),
-  addPhotoToAlbum: vi.fn(),
-  removePhotoFromAlbum: vi.fn(),
   listFavorites: vi.fn(),
   addFavorite: vi.fn(),
   removeFavorite: vi.fn(),
 }));
+
+const clipboardWriteText = vi.fn();
 
 vi.mock("~/lib/api", () => ({
   ...apiMocks,
@@ -41,6 +40,14 @@ vi.mock("~/lib/api", () => ({
 
 describe("AppLibraryRoute", () => {
   beforeEach(() => {
+    clipboardWriteText.mockReset();
+    clipboardWriteText.mockResolvedValue(undefined);
+    Object.defineProperty(window.navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: clipboardWriteText,
+      },
+    });
     apiMocks.listAllPhotos.mockResolvedValue([
       {
         id: "photo-1",
@@ -58,7 +65,6 @@ describe("AppLibraryRoute", () => {
       },
     ]);
     apiMocks.listAlbums.mockResolvedValue([]);
-    apiMocks.listAllAlbumPhotos.mockResolvedValue([]);
     apiMocks.listGeoPhotos.mockResolvedValue({
       items: [],
       page: 0,
@@ -86,8 +92,6 @@ describe("AppLibraryRoute", () => {
     apiMocks.createAlbum.mockResolvedValue(undefined);
     apiMocks.updateAlbum.mockResolvedValue(undefined);
     apiMocks.deleteAlbum.mockResolvedValue(undefined);
-    apiMocks.addPhotoToAlbum.mockResolvedValue(undefined);
-    apiMocks.removePhotoFromAlbum.mockResolvedValue(undefined);
   });
 
   function renderRoute(initialEntry = "/app/library") {
@@ -99,6 +103,10 @@ describe("AppLibraryRoute", () => {
           appLibraryClientAction({ request } as never),
         loader: async () => appLibraryClientLoader(),
       },
+      {
+        path: "/app/library/albums/:albumId",
+        Component: () => <div>Album detail target</div>,
+      },
     ]);
 
     return render(
@@ -106,6 +114,26 @@ describe("AppLibraryRoute", () => {
         <Stub initialEntries={[initialEntry]} />
       </I18nProvider>,
     );
+  }
+
+  function makeAlbum(overrides: Record<string, unknown> = {}) {
+    return {
+      id: "album-1",
+      name: "Summer Trip",
+      description: "Sea, wind, and long evenings.",
+      ownerId: "user-1",
+      personalLibraryId: "library-1",
+      spaceId: null,
+      createdAt: "2026-04-03T10:00:00Z",
+      updatedAt: "2026-04-05T14:30:00Z",
+      coverPhotoId: "photo-1",
+      coverVariants: [],
+      photoCount: 3,
+      mediaRangeStart: "2026-04-01T09:00:00Z",
+      mediaRangeEnd: "2026-04-04T21:00:00Z",
+      latestPhotoAddedAt: "2026-04-05T14:30:00Z",
+      ...overrides,
+    };
   }
 
   it("adds a photo to favorites from the library grid", async () => {
@@ -137,6 +165,161 @@ describe("AppLibraryRoute", () => {
       ).toBeInTheDocument();
     });
     expect(screen.getByRole("link", { name: /spaces/i })).toBeInTheDocument();
+    expect(screen.getByText(/no personal albums yet|пока нет личных альбомов/i)).toBeInTheDocument();
+  });
+
+  it("renders album tiles and navigates into album detail from the tile body", async () => {
+    apiMocks.listAlbums.mockResolvedValue([makeAlbum()]);
+    renderRoute();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: /albums|альбомы/i }),
+    );
+
+    expect(await screen.findByText("Summer Trip")).toBeInTheDocument();
+    expect(screen.getByText(/sea, wind, and long evenings/i)).toBeInTheDocument();
+    expect(screen.getByText(/3 photos|3 фото/i)).toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole("link", { name: /open album summer trip|открыть альбом summer trip/i }),
+    );
+
+    expect(await screen.findByText("Album detail target")).toBeInTheDocument();
+  });
+
+  it("shows album menu actions in order and keeps menu interactions on the library route", async () => {
+    apiMocks.listAlbums.mockResolvedValue([makeAlbum()]);
+    renderRoute();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: /albums|альбомы/i }),
+    );
+
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: /open menu for summer trip|открыть меню для summer trip/i,
+      }),
+    );
+
+    const menu = await screen.findByRole("menu", {
+      name: /summer trip album actions|действия для альбома summer trip/i,
+    });
+
+    expect(
+      within(menu)
+        .getAllByRole("button")
+        .map((button) => button.textContent?.trim()),
+    ).toEqual(["Favorite", "Edit", "Share", "Download", "Delete"]);
+
+    fireEvent.click(within(menu).getByRole("button", { name: "Share" }));
+
+    await waitFor(() => {
+      expect(clipboardWriteText).toHaveBeenCalledWith(
+        `${window.location.origin}/app/library/albums/album-1`,
+      );
+    });
+    expect(screen.getByText(/link copied to clipboard/i)).toBeInTheDocument();
+    expect(screen.queryByText("Album detail target")).not.toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: /open menu for summer trip|открыть меню для summer trip/i,
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Favorite" }));
+
+    await waitFor(() => {
+      expect(apiMocks.addFavorite).toHaveBeenCalledWith("ALBUM", "album-1");
+    });
+    expect(screen.queryByText("Album detail target")).not.toBeInTheDocument();
+  });
+
+  it("edits and deletes albums through dialogs launched from the tile menu", async () => {
+    apiMocks.listAlbums.mockResolvedValue([makeAlbum()]);
+    renderRoute();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: /albums|альбомы/i }),
+    );
+
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: /open menu for summer trip|открыть меню для summer trip/i,
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+
+    const editDialog = await screen.findByRole("heading", {
+      name: /update album details/i,
+    });
+    const editOverlay = screen.getByRole("dialog");
+    expect(editDialog).toBeInTheDocument();
+
+    fireEvent.change(within(editOverlay!).getByRole("textbox", { name: /name|название/i }), {
+      target: { value: "Summer 2026" },
+    });
+    fireEvent.change(
+      within(editOverlay!).getByRole("textbox", { name: /description|описание/i }),
+      {
+        target: { value: "Updated album copy." },
+      },
+    );
+    fireEvent.click(
+      within(editOverlay!).getByRole("button", {
+        name: /save album|сохранить альбом/i,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(apiMocks.updateAlbum).toHaveBeenCalledWith("album-1", {
+        name: "Summer 2026",
+        description: "Updated album copy.",
+      });
+    });
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: /open menu for summer trip|открыть меню для summer trip/i,
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+
+    const deleteDialog = await screen.findByRole("heading", {
+      name: /delete "summer trip"\?/i,
+    });
+    const deleteOverlay = screen.getByRole("dialog");
+    expect(deleteDialog).toBeInTheDocument();
+    fireEvent.click(
+      within(deleteOverlay!).getByRole("button", {
+        name: /delete album|удалить альбом/i,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(apiMocks.deleteAlbum).toHaveBeenCalledWith("album-1");
+    });
+  });
+
+  it("shows empty-state messaging when albums do not match the current filter", async () => {
+    apiMocks.listAlbums.mockResolvedValue([
+      makeAlbum({ id: "album-1", name: "Summer Trip" }),
+    ]);
+    renderRoute();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: /albums|альбомы/i }),
+    );
+
+    fireEvent.change(
+      screen.getByLabelText(/filter library|фильтр библиотеки/i),
+      {
+        target: { value: "winter" },
+      },
+    );
+
+    expect(
+      await screen.findByText(/no albums match the current filter|нет альбомов, подходящих под текущий фильтр/i),
+    ).toBeInTheDocument();
   });
 
   it("switches to timeline view and groups photos by day", async () => {
@@ -637,74 +820,33 @@ describe("AppLibraryRoute", () => {
     expect(screen.queryByText("forest.png")).not.toBeInTheDocument();
   });
 
-  it("keeps album photo actions scoped to the full library even when a filter is active", async () => {
-    apiMocks.listAllPhotos.mockResolvedValue([
-      {
-        id: "photo-1",
-        uploaderId: "user-1",
-        originalFilename: "beach.jpg",
-        mimeType: "image/jpeg",
-        width: 1920,
-        height: 1080,
-        sizeBytes: 512000,
-        personalLibraryId: "library-1",
-        exifData: null,
-        takenAt: null,
-        createdAt: "2026-04-02T10:05:00Z",
-        variants: [],
-      },
-      {
-        id: "photo-2",
-        uploaderId: "user-1",
-        originalFilename: "forest.png",
-        mimeType: "image/png",
-        width: 1600,
-        height: 900,
-        sizeBytes: 256000,
-        personalLibraryId: "library-1",
-        exifData: null,
-        takenAt: null,
-        createdAt: "2026-04-02T10:15:00Z",
-        variants: [],
-      },
-    ]);
+  it("renders empty album tiles with placeholder copy instead of inline photo controls", async () => {
     apiMocks.listAlbums.mockResolvedValue([
-      {
+      makeAlbum({
         id: "album-1",
         name: "Weekend picks",
         description: "Trip highlights",
-        ownerId: "user-1",
-        personalLibraryId: "library-1",
-        spaceId: null,
-        createdAt: "2026-04-02T10:20:00Z",
-        updatedAt: "2026-04-02T10:20:00Z",
-        photos: [],
-      },
+        coverPhotoId: null,
+        photoCount: 0,
+        mediaRangeStart: null,
+        mediaRangeEnd: null,
+        latestPhotoAddedAt: null,
+      }),
     ]);
 
     renderRoute();
 
-    expect(
-      await screen.findByRole("link", { name: "forest.png" }),
-    ).toBeInTheDocument();
-
-    fireEvent.change(
-      screen.getByLabelText(/filter library|фильтр библиотеки/i),
-      {
-        target: { value: "weekend" },
-      },
-    );
     fireEvent.click(
-      screen.getAllByRole("button", { name: /albums|альбомы/i })[0]!,
+      await screen.findByRole("button", { name: /albums|альбомы/i }),
     );
 
-    const select = screen.getByLabelText("Photo for album Weekend picks");
+    expect(await screen.findByText("Weekend picks")).toBeInTheDocument();
     expect(
-      screen.getByRole("option", { name: "beach.jpg" }),
+      screen.getByText(/no photos yet\. add the first image from the album detail route/i),
     ).toBeInTheDocument();
+    expect(screen.getByText(/0 photos/i)).toBeInTheDocument();
     expect(
-      screen.getByRole("option", { name: "forest.png" }),
-    ).toBeInTheDocument();
-    expect(select).not.toBeDisabled();
+      screen.queryByLabelText(/photo for album weekend picks/i),
+    ).not.toBeInTheDocument();
   });
 });

@@ -19,28 +19,24 @@ import {
   EmptyState,
   InlineMessage,
   Panel,
-  SurfaceCard,
 } from "~/components/ui";
 import { ProportionalTimelineRail } from "~/components/proportional-timeline-rail";
 import {
   ApiError,
   addFavorite,
-  addPhotoToAlbum,
   createAlbum,
   deleteAlbum,
   deletePhoto,
   getPhotoBlob,
   listGeoPhotos,
-  listAllAlbumPhotos,
   listAllPhotos,
   listAlbums,
   listFavorites,
   removeFavorite,
-  removePhotoFromAlbum,
   updateAlbum,
   uploadPhoto,
 } from "~/lib/api";
-import { formatBytes, formatRelativeCount } from "~/lib/format";
+import { formatDateRange, formatRelativeCount } from "~/lib/format";
 import {
   applyGeoViewportToSearchParams,
   buildGeoClusters,
@@ -71,10 +67,6 @@ import type {
   PhotoGeoBounds,
 } from "~/types/api";
 
-interface AlbumWithPhotos extends AlbumDto {
-  photos: PhotoDto[];
-}
-
 type LibraryView = "everything" | "photos" | "timeline" | "albums" | "map";
 
 interface GeoMapState {
@@ -90,7 +82,7 @@ type GeoSelectionTarget = {
 
 interface LibraryLoaderData {
   photos: PhotoDto[];
-  albums: AlbumWithPhotos[];
+  albums: AlbumDto[];
   photoFavorites: Record<string, FavoriteDto>;
   albumFavorites: Record<string, FavoriteDto>;
 }
@@ -104,42 +96,14 @@ interface UploadProgressState {
 type LibraryActionResult =
   | {
       ok: true;
-      intent:
-        | "delete-photo"
-        | "create-album"
-        | "update-album"
-        | "delete-album"
-        | "add-photo-to-album"
-        | "remove-photo-from-album";
+      intent: "delete-photo" | "create-album" | "update-album" | "delete-album";
       albumId?: string;
     }
   | {
       ok: false;
-      intent:
-        | "delete-photo"
-        | "create-album"
-        | "update-album"
-        | "delete-album"
-        | "add-photo-to-album"
-        | "remove-photo-from-album";
+      intent: "delete-photo" | "create-album" | "update-album" | "delete-album";
       errorMessage: string;
     };
-
-function buildAlbumEditorDrafts(albums: AlbumWithPhotos[]) {
-  return Object.fromEntries(
-    albums.map((album) => [
-      album.id,
-      {
-        name: album.name,
-        description: album.description ?? "",
-      },
-    ]),
-  );
-}
-
-function buildAlbumPhotoSelection(albums: AlbumWithPhotos[]) {
-  return Object.fromEntries(albums.map((album) => [album.id, ""]));
-}
 
 function getSupportedUploadFiles(files: Iterable<File>) {
   return Array.from(files).filter(
@@ -174,6 +138,368 @@ function resolveLibraryView(value: string | null): LibraryView {
 
 function formatCoordinate(value: number | null) {
   return value == null ? "—" : value.toFixed(4);
+}
+
+function buildAlbumDetailPath(albumId: string) {
+  return `/app/library/albums/${albumId}`;
+}
+
+function buildAlbumShareUrl(albumId: string) {
+  if (typeof window === "undefined") {
+    return buildAlbumDetailPath(albumId);
+  }
+
+  return new URL(buildAlbumDetailPath(albumId), window.location.origin).toString();
+}
+
+function AlbumTile(props: {
+  album: AlbumDto;
+  locale: Locale;
+  photoForms: {
+    one: string;
+    few: string;
+    many: string;
+    other: string;
+  };
+  isFavorite: boolean;
+  isFavoriteBusy: boolean;
+  isShareBusy: boolean;
+  isDeleteBusy: boolean;
+  onFavoriteToggle: () => void;
+  onEdit: () => void;
+  onShare: () => void;
+  onDelete: () => void;
+}) {
+  const { t } = useI18n();
+  const [coverUrl, setCoverUrl] = useState<string | null>(null);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+
+  useEffect(() => {
+    if (!props.album.coverPhotoId) {
+      setCoverUrl(null);
+      return;
+    }
+
+    let cancelled = false;
+    let objectUrl: string | null = null;
+
+    getPhotoBlob(props.album.coverPhotoId, "THUMB_SM")
+      .then((blob) => {
+        if (cancelled) {
+          return;
+        }
+
+        objectUrl = URL.createObjectURL(blob);
+        setCoverUrl(objectUrl);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setCoverUrl(null);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+      if (objectUrl) {
+        URL.revokeObjectURL(objectUrl);
+      }
+    };
+  }, [props.album.coverPhotoId]);
+
+  const hasPhotos = props.album.photoCount > 0;
+  const dateRangeLabel = hasPhotos
+    ? formatDateRange(
+        props.album.mediaRangeStart,
+        props.album.mediaRangeEnd,
+        props.locale,
+      )
+    : t("app.library.albumDateRangeEmpty");
+
+  return (
+    <article className="surface-card group relative overflow-visible rounded-[1.5rem]">
+      <div className="absolute top-3 right-3 z-10">
+        <button
+          aria-expanded={isMenuOpen}
+          aria-haspopup="menu"
+          aria-label={t("app.library.albumMenuButtonAria", {
+            albumName: props.album.name,
+          })}
+          className="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 bg-black/55 text-lg font-medium text-white shadow-lg backdrop-blur transition hover:bg-black/70"
+          onClick={() => {
+            setIsMenuOpen((current) => !current);
+          }}
+          type="button"
+        >
+          <span aria-hidden>⋯</span>
+        </button>
+
+        {isMenuOpen ? (
+          <div
+            aria-label={t("app.library.albumMenuAria", {
+              albumName: props.album.name,
+            })}
+            className="absolute top-12 right-0 flex w-56 flex-col rounded-[1.25rem] border border-[var(--color-border)] bg-[var(--color-panel-strong)] p-2 shadow-[0_18px_40px_rgba(0,0,0,0.18)]"
+            role="menu"
+          >
+            <button
+              className="rounded-xl px-3 py-2 text-left text-sm font-medium transition hover:bg-[var(--color-surface-strong)] disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={props.isFavoriteBusy}
+              onClick={() => {
+                setIsMenuOpen(false);
+                props.onFavoriteToggle();
+              }}
+              type="button"
+            >
+              {props.isFavoriteBusy
+                ? t("common.updating")
+                : props.isFavorite
+                  ? t("common.unfavorite")
+                  : t("common.favorite")}
+            </button>
+            <button
+              className="rounded-xl px-3 py-2 text-left text-sm font-medium transition hover:bg-[var(--color-surface-strong)]"
+              onClick={() => {
+                setIsMenuOpen(false);
+                props.onEdit();
+              }}
+              type="button"
+            >
+              {t("app.library.editAlbumMenu")}
+            </button>
+            <button
+              className="rounded-xl px-3 py-2 text-left text-sm font-medium transition hover:bg-[var(--color-surface-strong)] disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={props.isShareBusy}
+              onClick={() => {
+                setIsMenuOpen(false);
+                props.onShare();
+              }}
+              type="button"
+            >
+              {props.isShareBusy
+                ? t("common.updating")
+                : t("app.library.shareAlbumMenu")}
+            </button>
+            <button
+              className="rounded-xl px-3 py-2 text-left text-sm font-medium text-[var(--color-text-muted)] disabled:cursor-not-allowed disabled:opacity-70"
+              disabled
+              title={t("app.library.downloadAlbumPending")}
+              type="button"
+            >
+              {t("app.library.downloadAlbumMenu")}
+            </button>
+            <button
+              className="rounded-xl px-3 py-2 text-left text-sm font-medium text-[var(--color-danger)] transition hover:bg-[var(--color-surface-strong)] disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={props.isDeleteBusy}
+              onClick={() => {
+                setIsMenuOpen(false);
+                props.onDelete();
+              }}
+              type="button"
+            >
+              {props.isDeleteBusy ? t("common.deleting") : t("common.delete")}
+            </button>
+          </div>
+        ) : null}
+      </div>
+
+      <Link
+        aria-label={t("app.library.openAlbumAria", { albumName: props.album.name })}
+        className="block"
+        to={buildAlbumDetailPath(props.album.id)}
+      >
+        <div className="relative aspect-[4/3] overflow-hidden rounded-t-[1.5rem] bg-[radial-gradient(circle_at_top_left,_rgba(43,143,61,0.22),_transparent_55%),linear-gradient(180deg,rgba(216,226,197,0.92),rgba(244,240,231,0.98))]">
+          {coverUrl ? (
+            <img
+              alt={t("app.library.albumCoverAlt", { albumName: props.album.name })}
+              className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-[1.03]"
+              src={coverUrl}
+            />
+          ) : (
+            <div className="flex h-full flex-col justify-between p-5 text-[var(--color-text)]">
+              <span className="eyebrow">
+                {t("app.library.albumPlaceholderEyebrow")}
+              </span>
+              <div className="space-y-2">
+                <div className="h-2.5 w-18 rounded-full bg-black/10" />
+                <div className="h-2.5 w-26 rounded-full bg-black/10" />
+                <p className="max-w-[12rem] text-sm text-[var(--color-text-muted)]">
+                  {t("app.library.albumPlaceholderDescription")}
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="space-y-3 px-4 py-4">
+          <div className="min-w-0">
+            <h3
+              className="truncate text-base font-semibold tracking-tight"
+              title={props.album.name}
+            >
+              {props.album.name}
+            </h3>
+            <p className="mt-1 line-clamp-2 min-h-[2.5rem] text-sm leading-5 text-[var(--color-text-muted)]">
+              {props.album.description || t("app.library.albumDescriptionFallback")}
+            </p>
+          </div>
+
+          <dl className="grid gap-3 text-sm sm:grid-cols-2">
+            <div>
+              <dt className="eyebrow">{t("app.library.albumDateRangeLabel")}</dt>
+              <dd className="mt-1 font-medium">{dateRangeLabel}</dd>
+            </div>
+            <div>
+              <dt className="eyebrow">{t("app.library.albumItemsLabel")}</dt>
+              <dd className="mt-1 font-medium">
+                {formatRelativeCount(props.album.photoCount, props.photoForms)}
+              </dd>
+            </div>
+          </dl>
+        </div>
+      </Link>
+    </article>
+  );
+}
+
+function AlbumEditDialog(props: {
+  albumId: string;
+  draft: { name: string; description: string };
+  onDraftChange: (field: "name" | "description", value: string) => void;
+  onClose: () => void;
+  pending: boolean;
+}) {
+  const { t } = useI18n();
+
+  return (
+    <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/45 px-4 py-8">
+      <div
+        aria-modal="true"
+        className="w-full max-w-xl rounded-[1.75rem] border border-[var(--color-border)] bg-[var(--color-panel-strong)] p-6 shadow-[0_30px_80px_rgba(0,0,0,0.28)]"
+        role="dialog"
+      >
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="eyebrow">{t("app.library.editAlbumEyebrow")}</p>
+            <h2 className="mt-1 text-xl font-semibold tracking-tight">
+              {t("app.library.editAlbumTitle")}
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-[var(--color-text-muted)]">
+              {t("app.library.editAlbumDescription")}
+            </p>
+          </div>
+          <button
+            className="button-secondary"
+            onClick={props.onClose}
+            type="button"
+          >
+            {t("app.library.cancel")}
+          </button>
+        </div>
+
+        <Form className="mt-6 space-y-4" method="post">
+          <input name="intent" type="hidden" value="update-album" />
+          <input name="albumId" type="hidden" value={props.albumId} />
+
+          <label className="block">
+            <span className="mb-2 block text-sm font-medium">{t("common.name")}</span>
+            <input
+              className="field"
+              name="name"
+              onChange={(event) => {
+                props.onDraftChange("name", event.target.value);
+              }}
+              required
+              value={props.draft.name}
+            />
+          </label>
+
+          <label className="block">
+            <span className="mb-2 block text-sm font-medium">
+              {t("common.description")}
+            </span>
+            <textarea
+              className="field min-h-28 resize-y"
+              name="description"
+              onChange={(event) => {
+                props.onDraftChange("description", event.target.value);
+              }}
+              value={props.draft.description}
+            />
+          </label>
+
+          <div className="rounded-[1.25rem] border border-dashed border-[var(--color-border)] px-4 py-4">
+            <p className="text-sm font-medium">
+              {t("app.library.editAlbumCoverPickerTitle")}
+            </p>
+            <p className="mt-1 text-sm leading-6 text-[var(--color-text-muted)]">
+              {t("app.library.editAlbumCoverPickerDescription")}
+            </p>
+            <Link
+              className="mt-3 inline-flex text-sm font-medium text-[var(--color-link)] hover:text-[var(--color-link-hover)]"
+              onClick={props.onClose}
+              to={buildAlbumDetailPath(props.albumId)}
+            >
+              {t("app.library.openAlbumCoverPicker")}
+            </Link>
+          </div>
+
+          <div className="flex flex-wrap justify-end gap-2">
+            <button
+              className="button-secondary"
+              onClick={props.onClose}
+              type="button"
+            >
+              {t("app.library.cancel")}
+            </button>
+            <button className="button-primary" disabled={props.pending} type="submit">
+              {props.pending ? t("common.saving") : t("app.library.saveAlbum")}
+            </button>
+          </div>
+        </Form>
+      </div>
+    </div>
+  );
+}
+
+function AlbumDeleteDialog(props: {
+  album: AlbumDto;
+  pending: boolean;
+  onClose: () => void;
+}) {
+  const { t } = useI18n();
+
+  return (
+    <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/45 px-4 py-8">
+      <div
+        aria-modal="true"
+        className="w-full max-w-lg rounded-[1.75rem] border border-[var(--color-border)] bg-[var(--color-panel-strong)] p-6 shadow-[0_30px_80px_rgba(0,0,0,0.28)]"
+        role="dialog"
+      >
+        <p className="eyebrow">{t("app.library.deleteAlbumEyebrow")}</p>
+        <h2 className="mt-1 text-xl font-semibold tracking-tight">
+          {t("app.library.deleteAlbumTitle", { albumName: props.album.name })}
+        </h2>
+        <p className="mt-3 text-sm leading-6 text-[var(--color-text-muted)]">
+          {t("app.library.deleteAlbumDescription")}
+        </p>
+
+        <div className="mt-6 flex flex-wrap justify-end gap-2">
+          <button className="button-secondary" onClick={props.onClose} type="button">
+            {t("app.library.cancel")}
+          </button>
+          <Form method="post">
+            <input name="intent" type="hidden" value="delete-album" />
+            <input name="albumId" type="hidden" value={props.album.id} />
+            <button className="button-primary" disabled={props.pending} type="submit">
+              {props.pending
+                ? t("common.deleting")
+                : t("app.library.confirmDeleteAlbum")}
+            </button>
+          </Form>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function LibraryPhotoTile(props: {
@@ -297,27 +623,13 @@ function LibraryPhotoTile(props: {
 }
 
 async function loadLibraryData(): Promise<LibraryLoaderData> {
-  const [photos, albumList, photoFavoriteList, albumFavoriteList] =
-    await Promise.all([
-      listAllPhotos(),
-      listAlbums(),
-      listFavorites("PHOTO"),
-      listFavorites("ALBUM"),
-    ]);
-
-  const albumPages = await Promise.all(
-    albumList.map(async (album) => {
-      const items = await listAllAlbumPhotos(album.id);
-      return {
-        ...album,
-        photos: items,
-      } satisfies AlbumWithPhotos;
-    }),
+  const [photos, albums, photoFavoriteList, albumFavoriteList] = await Promise.all(
+    [listAllPhotos(), listAlbums(), listFavorites("PHOTO"), listFavorites("ALBUM")],
   );
 
   return {
     photos,
-    albums: albumPages,
+    albums,
     photoFavorites: Object.fromEntries(
       photoFavoriteList.map((favorite) => [favorite.targetId, favorite]),
     ),
@@ -337,14 +649,7 @@ export async function clientAction({
   const formData = await request.formData();
   const intent = resolveActionIntent(
     String(formData.get("intent") ?? ""),
-    [
-      "delete-photo",
-      "create-album",
-      "update-album",
-      "delete-album",
-      "add-photo-to-album",
-      "remove-photo-from-album",
-    ] as const,
+    ["delete-photo", "create-album", "update-album", "delete-album"] as const,
     "create-album",
   );
 
@@ -370,19 +675,6 @@ export async function clientAction({
       case "delete-album": {
         const albumId = String(formData.get("albumId") ?? "");
         await deleteAlbum(albumId);
-        return { ok: true, intent, albumId };
-      }
-      case "add-photo-to-album": {
-        const albumId = String(formData.get("albumId") ?? "");
-        await addPhotoToAlbum(albumId, String(formData.get("photoId") ?? ""));
-        return { ok: true, intent, albumId };
-      }
-      case "remove-photo-from-album": {
-        const albumId = String(formData.get("albumId") ?? "");
-        await removePhotoFromAlbum(
-          albumId,
-          String(formData.get("photoId") ?? ""),
-        );
         return { ok: true, intent, albumId };
       }
       default:
@@ -414,7 +706,7 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
   const revalidator = useRevalidator();
   const [searchParams, setSearchParams] = useSearchParams();
   const [photos, setPhotos] = useState<PhotoDto[]>(loaderData.photos);
-  const [albums, setAlbums] = useState<AlbumWithPhotos[]>(loaderData.albums);
+  const [albums, setAlbums] = useState<AlbumDto[]>(loaderData.albums);
   const [photoFavorites, setPhotoFavorites] = useState<
     Record<string, FavoriteDto>
   >(loaderData.photoFavorites);
@@ -442,12 +734,16 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
     name: "",
     description: "",
   });
-  const [albumEditorDrafts, setAlbumEditorDrafts] = useState<
-    Record<string, { name: string; description: string }>
-  >(buildAlbumEditorDrafts(loaderData.albums));
-  const [albumPhotoSelection, setAlbumPhotoSelection] = useState<
-    Record<string, string>
-  >(buildAlbumPhotoSelection(loaderData.albums));
+  const [albumActionSuccess, setAlbumActionSuccess] = useState<string | null>(null);
+  const [editingAlbumId, setEditingAlbumId] = useState<string | null>(null);
+  const [editAlbumDraft, setEditAlbumDraft] = useState({
+    name: "",
+    description: "",
+  });
+  const [shareBusyAlbumId, setShareBusyAlbumId] = useState<string | null>(null);
+  const [deleteDialogAlbumId, setDeleteDialogAlbumId] = useState<string | null>(
+    null,
+  );
   const [geoMapState, setGeoMapState] = useState<GeoMapState>({
     items: [],
     loading: false,
@@ -511,18 +807,6 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
     [geoMapState.items, normalizedLibraryFilter],
   );
 
-  const unassignedPhotosByAlbum = useMemo(() => {
-    return Object.fromEntries(
-      filteredAlbums.map((album) => [
-        album.id,
-        photos.filter(
-          (photo) =>
-            !album.photos.some((albumPhoto) => albumPhoto.id === photo.id),
-        ),
-      ]),
-    ) as Record<string, PhotoDto[]>;
-  }, [filteredAlbums, photos]);
-
   const timelineGroups = useMemo<TimelineGroup[]>(
     () => buildTimelineGroups(filteredPhotos),
     [filteredPhotos],
@@ -566,6 +850,14 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
     return null;
   }, [filteredGeoItems, selectedGeoCluster, selectedGeoTarget]);
   const selectedGeoClusterPhotos = selectedGeoCluster?.photos ?? [];
+  const editingAlbum =
+    editingAlbumId == null
+      ? null
+      : albums.find((album) => album.id === editingAlbumId) ?? null;
+  const deleteDialogAlbum =
+    deleteDialogAlbumId == null
+      ? null
+      : albums.find((album) => album.id === deleteDialogAlbumId) ?? null;
   const countFormatter = useMemo(() => new Intl.NumberFormat(locale), [locale]);
   const photoForms = {
     one: t("unit.photo.one"),
@@ -597,10 +889,22 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
       setAlbums(loaderData.albums);
       setPhotoFavorites(loaderData.photoFavorites);
       setAlbumFavorites(loaderData.albumFavorites);
-      setAlbumEditorDrafts(buildAlbumEditorDrafts(loaderData.albums));
-      setAlbumPhotoSelection(buildAlbumPhotoSelection(loaderData.albums));
     });
   }, [loaderData]);
+
+  useEffect(() => {
+    if (!albumActionSuccess) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setAlbumActionSuccess(null);
+    }, 2600);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [albumActionSuccess]);
 
   useEffect(() => {
     if (libraryView !== "map") {
@@ -698,16 +1002,17 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
 
     if (actionData.ok) {
       setAlbumActionError(null);
+      setAlbumActionSuccess(null);
       setUploadError(null);
       setUploadSuccessMessage(null);
       if (actionData.intent === "create-album") {
         setAlbumDraft({ name: "", description: "" });
       }
-      if (actionData.albumId) {
-        setAlbumPhotoSelection((current) => ({
-          ...current,
-          [actionData.albumId!]: "",
-        }));
+      if (actionData.intent === "update-album") {
+        setEditingAlbumId(null);
+      }
+      if (actionData.intent === "delete-album") {
+        setDeleteDialogAlbumId(null);
       }
       revalidator.revalidate();
       return;
@@ -731,20 +1036,6 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
         setAlbums(nextData.albums);
         setPhotoFavorites(nextData.photoFavorites);
         setAlbumFavorites(nextData.albumFavorites);
-        setAlbumEditorDrafts(
-          Object.fromEntries(
-            nextData.albums.map((album) => [
-              album.id,
-              {
-                name: album.name,
-                description: album.description ?? "",
-              },
-            ]),
-          ),
-        );
-        setAlbumPhotoSelection(
-          Object.fromEntries(nextData.albums.map((album) => [album.id, ""])),
-        );
       });
     } catch (error: unknown) {
       setErrorMessage(
@@ -880,18 +1171,50 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
     }
   }
 
-  function updateAlbumDraft(
-    albumId: string,
+  async function handleAlbumShare(album: AlbumDto) {
+    setShareBusyAlbumId(album.id);
+
+    try {
+      if (!navigator.clipboard?.writeText) {
+        throw new Error(t("app.library.albumShareFailed"));
+      }
+
+      await navigator.clipboard.writeText(buildAlbumShareUrl(album.id));
+      setAlbumActionError(null);
+      setAlbumActionSuccess(
+        t("app.library.albumShareCopied", {
+          albumName: album.name,
+        }),
+      );
+    } catch (error) {
+      if (error instanceof Error && error.message) {
+        setAlbumActionError(error.message);
+      } else {
+        setAlbumActionError(t("app.library.albumShareFailed"));
+      }
+      setAlbumActionSuccess(null);
+    } finally {
+      setShareBusyAlbumId(null);
+    }
+  }
+
+  function openAlbumEditor(album: AlbumDto) {
+    setEditingAlbumId(album.id);
+    setEditAlbumDraft({
+      name: album.name,
+      description: album.description ?? "",
+    });
+    setAlbumActionError(null);
+    setAlbumActionSuccess(null);
+  }
+
+  function updateEditAlbumDraft(
     field: "name" | "description",
     value: string,
   ) {
-    setAlbumEditorDrafts((current) => ({
+    setEditAlbumDraft((current) => ({
       ...current,
-      [albumId]: {
-        name: current[albumId]?.name ?? "",
-        description: current[albumId]?.description ?? "",
-        [field]: value,
-      },
+      [field]: value,
     }));
   }
 
@@ -1478,9 +1801,13 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
         {libraryView === "albums" && (
           <div className="space-y-4">
             <Panel className="p-4">
-              <h2 className="text-sm font-semibold">
+              <p className="eyebrow">{t("app.library.createAlbumEyebrow")}</p>
+              <h2 className="mt-1 text-sm font-semibold">
                 {t("app.library.createAlbumTitle")}
               </h2>
+              <p className="mt-2 text-sm leading-6 text-[var(--color-text-muted)]">
+                {t("app.library.createAlbumDescription")}
+              </p>
               <Form className="mt-3 space-y-3" method="post">
                 <input name="intent" type="hidden" value="create-album" />
                 <label className="block">
@@ -1536,19 +1863,31 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
               </Form>
             </Panel>
 
-            <div className="flex items-center justify-between">
-              <Link
-                className="text-sm text-[var(--color-link)] hover:text-[var(--color-link-hover)]"
-                to="/app/spaces"
-              >
-                {t("app.library.openSpaces")}
-              </Link>
-            </div>
+            {albumActionSuccess ? (
+              <InlineMessage tone="success">{albumActionSuccess}</InlineMessage>
+            ) : null}
 
             <Panel className="p-4">
-              <h2 className="text-sm font-semibold">
-                {t("app.library.albumsTitle")}
-              </h2>
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+                <div>
+                  <p className="eyebrow">{t("app.library.albumsEyebrow")}</p>
+                  <h2 className="mt-1 text-sm font-semibold">
+                    {t("app.library.albumsTitle")}
+                  </h2>
+                </div>
+                <div className="rounded-[1.25rem] border border-dashed border-[var(--color-border)] px-4 py-3 text-sm leading-6 text-[var(--color-text-muted)] lg:max-w-md">
+                  <p className="font-medium text-[var(--color-text)]">
+                    {t("app.library.albumsSpacesTitle")}
+                  </p>
+                  <p className="mt-1">{t("app.library.albumsSpacesDescription")}</p>
+                  <Link
+                    className="mt-3 inline-flex text-sm font-medium text-[var(--color-link)] hover:text-[var(--color-link-hover)]"
+                    to="/app/spaces"
+                  >
+                    {t("app.library.openSpaces")}
+                  </Link>
+                </div>
+              </div>
 
               {albums.length === 0 ? (
                 <EmptyHint className="mt-6 px-5 py-6 leading-7">
@@ -1559,244 +1898,69 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
                   {t("app.library.noAlbumsMatch")}
                 </EmptyHint>
               ) : (
-                <div className="mt-3 space-y-3">
-                  {filteredAlbums.map((album) => {
-                    const draft = albumEditorDrafts[album.id] ?? {
-                      name: album.name,
-                      description: album.description ?? "",
-                    };
-                    const availablePhotos =
-                      unassignedPhotosByAlbum[album.id] ?? [];
-
-                    return (
-                      <SurfaceCard className="rounded-lg p-3" key={album.id}>
-                        <div className="flex items-start justify-between gap-3">
-                          <h3 className="text-sm font-semibold">
-                            {album.name}
-                          </h3>
-                          <div className="flex items-center gap-3">
-                            <button
-                              aria-label={
-                                albumFavorites[album.id]
-                                  ? t("app.library.removeAlbumFavoriteAria", {
-                                      albumName: album.name,
-                                    })
-                                  : t("app.library.addAlbumFavoriteAria", {
-                                      albumName: album.name,
-                                    })
-                              }
-                              className="link-accent text-sm font-semibold"
-                              disabled={favoriteBusyKey === `album:${album.id}`}
-                              onClick={() => {
-                                void handleAlbumFavoriteToggle(album.id);
-                              }}
-                              type="button"
-                            >
-                              {favoriteBusyKey === `album:${album.id}`
-                                ? t("common.updating")
-                                : albumFavorites[album.id]
-                                  ? t("common.unfavorite")
-                                  : t("common.favorite")}
-                            </button>
-                            <button
-                              className="text-link-danger text-sm font-semibold"
-                              disabled={
-                                pendingIntent === "delete-album" &&
-                                pendingAlbumId === album.id
-                              }
-                              form={`delete-album-${album.id}`}
-                              type="submit"
-                            >
-                              {pendingIntent === "delete-album" &&
-                              pendingAlbumId === album.id
-                                ? t("common.deleting")
-                                : t("common.delete")}
-                            </button>
-                            <Form id={`delete-album-${album.id}`} method="post">
-                              <input
-                                name="intent"
-                                type="hidden"
-                                value="delete-album"
-                              />
-                              <input
-                                name="albumId"
-                                type="hidden"
-                                value={album.id}
-                              />
-                            </Form>
-                          </div>
-                        </div>
-
-                        <Form className="mt-4 space-y-3" method="post">
-                          <input
-                            name="intent"
-                            type="hidden"
-                            value="update-album"
-                          />
-                          <input
-                            name="albumId"
-                            type="hidden"
-                            value={album.id}
-                          />
-                          <input
-                            className="field"
-                            name="name"
-                            onChange={(event) => {
-                              updateAlbumDraft(
-                                album.id,
-                                "name",
-                                event.target.value,
-                              );
-                            }}
-                            value={draft.name}
-                          />
-                          <textarea
-                            className="field min-h-24 resize-y"
-                            name="description"
-                            onChange={(event) => {
-                              updateAlbumDraft(
-                                album.id,
-                                "description",
-                                event.target.value,
-                              );
-                            }}
-                            value={draft.description}
-                          />
-                          <button
-                            className="button-secondary w-full"
-                            disabled={
-                              pendingIntent === "update-album" &&
-                              pendingAlbumId === album.id
-                            }
-                            type="submit"
-                          >
-                            {pendingIntent === "update-album" &&
-                            pendingAlbumId === album.id
-                              ? t("common.saving")
-                              : t("app.library.saveAlbum")}
-                          </button>
-                        </Form>
-
-                        <div className="mt-5 space-y-3">
-                          <Form className="flex gap-3" method="post">
-                            <input
-                              name="intent"
-                              type="hidden"
-                              value="add-photo-to-album"
-                            />
-                            <input
-                              name="albumId"
-                              type="hidden"
-                              value={album.id}
-                            />
-                            <select
-                              aria-label={t("app.library.photoForAlbumAria", {
-                                albumName: album.name,
-                              })}
-                              className="field"
-                              disabled={availablePhotos.length === 0}
-                              name="photoId"
-                              onChange={(event) =>
-                                setAlbumPhotoSelection((current) => ({
-                                  ...current,
-                                  [album.id]: event.target.value,
-                                }))
-                              }
-                              value={albumPhotoSelection[album.id] ?? ""}
-                            >
-                              <option value="">
-                                {t("app.library.selectPhotoToAdd")}
-                              </option>
-                              {availablePhotos.map((photo) => (
-                                <option key={photo.id} value={photo.id}>
-                                  {photo.originalFilename}
-                                </option>
-                              ))}
-                            </select>
-                            {availablePhotos.length === 0 ? (
-                              <p className="text-sm text-[var(--color-text-muted)]">
-                                {t("app.library.allPhotosAssigned")}
-                              </p>
-                            ) : null}
-                            <button
-                              className="button-secondary shrink-0"
-                              disabled={
-                                !albumPhotoSelection[album.id] ||
-                                (pendingIntent === "add-photo-to-album" &&
-                                  pendingAlbumId === album.id)
-                              }
-                              type="submit"
-                            >
-                              {t("common.add")}
-                            </button>
-                          </Form>
-
-                          {album.photos.length === 0 ? (
-                            <p className="text-sm text-[var(--color-text-muted)]">
-                              {t("app.library.noPhotosInAlbum")}
-                            </p>
-                          ) : (
-                            <div className="space-y-2">
-                              {album.photos.map((photo) => (
-                                <div
-                                  key={photo.id}
-                                  className="flex items-center justify-between gap-3 rounded-2xl border border-[var(--color-border)] px-3 py-3"
-                                >
-                                  <div>
-                                    <p className="text-sm font-semibold">
-                                      {photo.originalFilename}
-                                    </p>
-                                    <p className="text-xs text-[var(--color-text-muted)]">
-                                      {formatBytes(photo.sizeBytes)}
-                                    </p>
-                                  </div>
-                                  <button
-                                    className="text-link-danger text-sm font-semibold"
-                                    disabled={
-                                      pendingIntent ===
-                                        "remove-photo-from-album" &&
-                                      pendingAlbumId === album.id &&
-                                      pendingPhotoId === photo.id
-                                    }
-                                    form={`remove-photo-${album.id}-${photo.id}`}
-                                    type="submit"
-                                  >
-                                    {t("common.remove")}
-                                  </button>
-                                  <Form
-                                    id={`remove-photo-${album.id}-${photo.id}`}
-                                    method="post"
-                                  >
-                                    <input
-                                      name="intent"
-                                      type="hidden"
-                                      value="remove-photo-from-album"
-                                    />
-                                    <input
-                                      name="albumId"
-                                      type="hidden"
-                                      value={album.id}
-                                    />
-                                    <input
-                                      name="photoId"
-                                      type="hidden"
-                                      value={photo.id}
-                                    />
-                                  </Form>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      </SurfaceCard>
-                    );
-                  })}
+                <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+                  {filteredAlbums.map((album) => (
+                    <AlbumTile
+                      album={album}
+                      isDeleteBusy={
+                        pendingIntent === "delete-album" &&
+                        pendingAlbumId === album.id
+                      }
+                      isFavorite={Boolean(albumFavorites[album.id])}
+                      isFavoriteBusy={favoriteBusyKey === `album:${album.id}`}
+                      isShareBusy={shareBusyAlbumId === album.id}
+                      key={album.id}
+                      locale={locale}
+                      onDelete={() => {
+                        setDeleteDialogAlbumId(album.id);
+                        setAlbumActionError(null);
+                        setAlbumActionSuccess(null);
+                      }}
+                      onEdit={() => {
+                        openAlbumEditor(album);
+                      }}
+                      onFavoriteToggle={() => {
+                        void handleAlbumFavoriteToggle(album.id);
+                      }}
+                      onShare={() => {
+                        void handleAlbumShare(album);
+                      }}
+                      photoForms={photoForms}
+                    />
+                  ))}
                 </div>
               )}
             </Panel>
           </div>
         )}
       </section>
+
+      {editingAlbum ? (
+        <AlbumEditDialog
+          albumId={editingAlbum.id}
+          draft={editAlbumDraft}
+          onClose={() => {
+            setEditingAlbumId(null);
+          }}
+          onDraftChange={updateEditAlbumDraft}
+          pending={
+            pendingIntent === "update-album" && pendingAlbumId === editingAlbum.id
+          }
+        />
+      ) : null}
+
+      {deleteDialogAlbum ? (
+        <AlbumDeleteDialog
+          album={deleteDialogAlbum}
+          onClose={() => {
+            setDeleteDialogAlbumId(null);
+          }}
+          pending={
+            pendingIntent === "delete-album" &&
+            pendingAlbumId === deleteDialogAlbum.id
+          }
+        />
+      ) : null}
     </div>
   );
 }
