@@ -41,6 +41,17 @@ public class AlbumService {
 		REMOVED, NOT_FOUND, FORBIDDEN
 	}
 
+	public sealed interface SetCoverResult {
+		record Set(Album album) implements SetCoverResult {
+		}
+
+		record AlbumNotFound() implements SetCoverResult {
+		}
+
+		record PhotoNotInAlbum() implements SetCoverResult {
+		}
+	}
+
 	@Inject
 	EntityManager em;
 
@@ -301,9 +312,39 @@ public class AlbumService {
 			return RemovePhotoResult.FORBIDDEN;
 		}
 
+		em.createQuery("UPDATE Album a SET a.coverPhoto = null WHERE a.id = :albumId AND a.coverPhoto.id = :photoId")
+				.setParameter("albumId", albumId).setParameter("photoId", photoId).executeUpdate();
 		return AlbumPhoto.delete("album.id = ?1 and photo.id = ?2", albumId, photoId) > 0
 				? RemovePhotoResult.REMOVED
 				: RemovePhotoResult.NOT_FOUND;
+	}
+
+	@Transactional
+	public SetCoverResult setCoverPhoto(UUID albumId, UUID photoId) {
+		Optional<Album> albumOpt = Album.findByIdOptional(albumId);
+		if (albumOpt.isEmpty()) {
+			return new SetCoverResult.AlbumNotFound();
+		}
+		long membership = AlbumPhoto.find("album.id = ?1 and photo.id = ?2", albumId, photoId).count();
+		if (membership == 0) {
+			return new SetCoverResult.PhotoNotInAlbum();
+		}
+		Album album = albumOpt.get();
+		album.coverPhoto = em.getReference(Photo.class, photoId);
+		em.flush();
+		return new SetCoverResult.Set(album);
+	}
+
+	@Transactional
+	public Optional<Album> clearCoverPhoto(UUID albumId) {
+		Optional<Album> albumOpt = Album.findByIdOptional(albumId);
+		if (albumOpt.isEmpty()) {
+			return Optional.empty();
+		}
+		Album album = albumOpt.get();
+		album.coverPhoto = null;
+		em.flush();
+		return Optional.of(album);
 	}
 
 	@Transactional

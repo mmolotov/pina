@@ -4,6 +4,7 @@ import dev.pina.backend.api.dto.AlbumDto;
 import dev.pina.backend.api.dto.CreateAlbumRequest;
 import dev.pina.backend.api.dto.PageResponse;
 import dev.pina.backend.api.dto.PhotoDto;
+import dev.pina.backend.api.dto.SetAlbumCoverRequest;
 import dev.pina.backend.api.error.ApiErrors;
 import dev.pina.backend.pagination.PageRequest;
 import dev.pina.backend.pagination.PageResult;
@@ -122,5 +123,35 @@ public class AlbumResource {
 		}
 		albumService.delete(id);
 		return Response.noContent().build();
+	}
+
+	@PUT
+	@Path("/{id}/cover")
+	public Response setCover(@PathParam("id") UUID id, @Valid SetAlbumCoverRequest request) {
+		var user = userResolver.currentUser();
+		var album = albumService.findById(id);
+		if (album.isEmpty() || !album.get().owner.id.equals(user.id)) {
+			return ApiErrors.notFound("Album not found");
+		}
+		return switch (albumService.setCoverPhoto(id, request.photoId())) {
+			case AlbumService.SetCoverResult.Set set ->
+				Response.ok(AlbumDto.fromSummary(albumService.getSummary(set.album()))).build();
+			case AlbumService.SetCoverResult.AlbumNotFound _ -> ApiErrors.notFound("Album not found");
+			case AlbumService.SetCoverResult.PhotoNotInAlbum _ -> ApiErrors.notFound("Photo not found in album");
+		};
+	}
+
+	@DELETE
+	@Path("/{id}/cover")
+	@Consumes(MediaType.WILDCARD)
+	public Response clearCover(@PathParam("id") UUID id) {
+		var user = userResolver.currentUser();
+		var album = albumService.findById(id);
+		if (album.isEmpty() || !album.get().owner.id.equals(user.id)) {
+			return ApiErrors.notFound("Album not found");
+		}
+		return albumService.clearCoverPhoto(id)
+				.map(updated -> Response.ok(AlbumDto.fromSummary(albumService.getSummary(updated))).build())
+				.orElse(ApiErrors.notFound("Album not found"));
 	}
 }

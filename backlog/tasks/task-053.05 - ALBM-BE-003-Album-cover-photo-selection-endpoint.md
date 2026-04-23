@@ -1,9 +1,10 @@
 ---
 id: TASK-053.05
 title: ALBM-BE-003 Album cover photo selection endpoint
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-04-22 12:15'
+updated_date: '2026-04-23 06:31'
 labels:
   - backend
   - api
@@ -35,9 +36,21 @@ ALBM-BE-001 introduces the `albums.cover_photo_id` column and an auto-fallback f
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 `PUT /albums/{id}/cover` stores the chosen photo id when the caller owns the album and the photo belongs to that album
-- [ ] #2 `PUT /albums/{id}/cover` returns 404 for non-owner callers and 400/404 when the photo is not part of the album (per project error conventions)
-- [ ] #3 `DELETE /albums/{id}/cover` clears `cover_photo_id` and the list endpoint falls back to auto-resolved cover
-- [ ] #4 `AlbumService.removePhoto` clears `cover_photo_id` when the removed photo is the current cover
-- [ ] #5 Integration tests cover: set cover, clear cover, remove cover-photo from album (cover cleared), delete underlying photo (cover cleared via FK), unauthorized caller
+- [x] #1 `PUT /albums/{id}/cover` stores the chosen photo id when the caller owns the album and the photo belongs to that album
+- [x] #2 `PUT /albums/{id}/cover` returns 404 for non-owner callers and 400/404 when the photo is not part of the album (per project error conventions)
+- [x] #3 `DELETE /albums/{id}/cover` clears `cover_photo_id` and the list endpoint falls back to auto-resolved cover
+- [x] #4 `AlbumService.removePhoto` clears `cover_photo_id` when the removed photo is the current cover
+- [x] #5 Integration tests cover: set cover, clear cover, remove cover-photo from album (cover cleared), delete underlying photo (cover cleared via FK), unauthorized caller
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+- Added `SetAlbumCoverRequest` DTO with `@NotNull UUID photoId` validation.
+- `AlbumService.setCoverPhoto` returns a sealed `SetCoverResult` (`Set(Album)` / `AlbumNotFound` / `PhotoNotInAlbum`), so the resource reuses the mutated in-tx instance for the response — avoids a staleness issue where the resource's pre-loaded album survived the `@Transactional` boundary and overrode the updated field in the subsequent `findById`.
+- `AlbumService.clearCoverPhoto` returns `Optional<Album>` following the same pattern.
+- `AlbumService.removeFetchedPhotoReference` now issues a JPQL `UPDATE Album SET coverPhoto = null WHERE id = :albumId AND coverPhoto.id = :photoId` before deleting the `AlbumPhoto`, so removal from membership clears the cover (auto-fallback kicks in on the next read).
+- `albums.cover_photo_id` uses `ON DELETE SET NULL` (already in V02 migration) so deleting the underlying photo also clears the cover.
+- `AlbumResource` exposes `PUT /albums/{id}/cover` and `DELETE /albums/{id}/cover`. Both do an ownership pre-check and then delegate; the PUT pattern-matches on the sealed result; the DELETE uses the returned `Optional<Album>`.
+- 6 new integration tests in `AlbumResourceTest`: explicit set, clear with auto-fallback, non-member photo, remove-cover-from-album, delete-cover-photo-via-FK, non-owner 404.
+<!-- SECTION:NOTES:END -->

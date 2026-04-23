@@ -397,4 +397,153 @@ class AlbumResourceTest {
 
 		TestAuthHelper.authenticated().when().delete("/api/v1/photos/{id}", photoId).then().statusCode(204);
 	}
+
+	@Test
+	void setCoverAssignsExplicitCover() throws IOException {
+		String token = registerUserToken("set-cover");
+		Path first = createJpegImage("album-set-cover-1", 100, 100, 0x112244);
+		Path second = createJpegImage("album-set-cover-2", 100, 100, 0x884422);
+
+		String firstPhotoId = authAs(token).multiPart("file", first.toFile(), "image/jpeg").when()
+				.post("/api/v1/photos").then().statusCode(201).extract().path("id");
+		String secondPhotoId = authAs(token).multiPart("file", second.toFile(), "image/jpeg").when()
+				.post("/api/v1/photos").then().statusCode(201).extract().path("id");
+		String albumId = authAs(token).contentType(ContentType.JSON).body("{\"name\": \"Set cover album\"}").when()
+				.post("/api/v1/albums").then().statusCode(201).extract().path("id");
+
+		authAs(token).when().post("/api/v1/albums/{albumId}/photos/{photoId}", albumId, firstPhotoId).then()
+				.statusCode(201);
+		authAs(token).when().post("/api/v1/albums/{albumId}/photos/{photoId}", albumId, secondPhotoId).then()
+				.statusCode(201);
+
+		authAs(token).contentType(ContentType.JSON).body("{\"photoId\": \"" + firstPhotoId + "\"}").when()
+				.put("/api/v1/albums/{id}/cover", albumId).then().statusCode(200)
+				.body("coverPhotoId", equalTo(firstPhotoId));
+
+		authAs(token).when().get("/api/v1/albums").then().statusCode(200).body("items[0].coverPhotoId",
+				equalTo(firstPhotoId));
+	}
+
+	@Test
+	void clearCoverFallsBackToAutoResolution() throws IOException {
+		String token = registerUserToken("clear-cover");
+		Path first = createJpegImage("album-clear-cover-1", 100, 100, 0x224466);
+		Path second = createJpegImage("album-clear-cover-2", 100, 100, 0x668844);
+
+		String firstPhotoId = authAs(token).multiPart("file", first.toFile(), "image/jpeg").when()
+				.post("/api/v1/photos").then().statusCode(201).extract().path("id");
+		String secondPhotoId = authAs(token).multiPart("file", second.toFile(), "image/jpeg").when()
+				.post("/api/v1/photos").then().statusCode(201).extract().path("id");
+		String albumId = authAs(token).contentType(ContentType.JSON).body("{\"name\": \"Clear cover album\"}").when()
+				.post("/api/v1/albums").then().statusCode(201).extract().path("id");
+
+		authAs(token).when().post("/api/v1/albums/{albumId}/photos/{photoId}", albumId, firstPhotoId).then()
+				.statusCode(201);
+		authAs(token).when().post("/api/v1/albums/{albumId}/photos/{photoId}", albumId, secondPhotoId).then()
+				.statusCode(201);
+
+		authAs(token).contentType(ContentType.JSON).body("{\"photoId\": \"" + firstPhotoId + "\"}").when()
+				.put("/api/v1/albums/{id}/cover", albumId).then().statusCode(200);
+
+		authAs(token).when().delete("/api/v1/albums/{id}/cover", albumId).then().statusCode(200).body("coverPhotoId",
+				equalTo(secondPhotoId));
+	}
+
+	@Test
+	void setCoverWithPhotoNotInAlbumReturns404() throws IOException {
+		String token = registerUserToken("cover-not-member");
+		Path inAlbum = createJpegImage("album-cover-member", 100, 100, 0x556677);
+		Path orphan = createJpegImage("album-cover-orphan", 100, 100, 0x889900);
+
+		String memberPhotoId = authAs(token).multiPart("file", inAlbum.toFile(), "image/jpeg").when()
+				.post("/api/v1/photos").then().statusCode(201).extract().path("id");
+		String orphanPhotoId = authAs(token).multiPart("file", orphan.toFile(), "image/jpeg").when()
+				.post("/api/v1/photos").then().statusCode(201).extract().path("id");
+		String albumId = authAs(token).contentType(ContentType.JSON).body("{\"name\": \"Member album\"}").when()
+				.post("/api/v1/albums").then().statusCode(201).extract().path("id");
+
+		authAs(token).when().post("/api/v1/albums/{albumId}/photos/{photoId}", albumId, memberPhotoId).then()
+				.statusCode(201);
+
+		authAs(token).contentType(ContentType.JSON).body("{\"photoId\": \"" + orphanPhotoId + "\"}").when()
+				.put("/api/v1/albums/{id}/cover", albumId).then().statusCode(404).body("error", equalTo("not_found"));
+	}
+
+	@Test
+	void removingExplicitCoverPhotoFromAlbumClearsCover() throws IOException {
+		String token = registerUserToken("cover-cleanup-membership");
+		Path first = createJpegImage("album-cleanup-1", 100, 100, 0x778899);
+		Path second = createJpegImage("album-cleanup-2", 100, 100, 0x112233);
+
+		String firstPhotoId = authAs(token).multiPart("file", first.toFile(), "image/jpeg").when()
+				.post("/api/v1/photos").then().statusCode(201).extract().path("id");
+		String secondPhotoId = authAs(token).multiPart("file", second.toFile(), "image/jpeg").when()
+				.post("/api/v1/photos").then().statusCode(201).extract().path("id");
+		String albumId = authAs(token).contentType(ContentType.JSON).body("{\"name\": \"Cleanup album\"}").when()
+				.post("/api/v1/albums").then().statusCode(201).extract().path("id");
+
+		authAs(token).when().post("/api/v1/albums/{albumId}/photos/{photoId}", albumId, firstPhotoId).then()
+				.statusCode(201);
+		authAs(token).when().post("/api/v1/albums/{albumId}/photos/{photoId}", albumId, secondPhotoId).then()
+				.statusCode(201);
+
+		authAs(token).contentType(ContentType.JSON).body("{\"photoId\": \"" + firstPhotoId + "\"}").when()
+				.put("/api/v1/albums/{id}/cover", albumId).then().statusCode(200);
+
+		authAs(token).when().delete("/api/v1/albums/{albumId}/photos/{photoId}", albumId, firstPhotoId).then()
+				.statusCode(204);
+
+		authAs(token).when().get("/api/v1/albums").then().statusCode(200).body("items[0].coverPhotoId",
+				equalTo(secondPhotoId));
+	}
+
+	@Test
+	void deletingExplicitCoverPhotoClearsCoverViaForeignKey() throws IOException {
+		String token = registerUserToken("cover-cleanup-fk");
+		Path first = createJpegImage("album-fk-cleanup-1", 100, 100, 0xaabbcc);
+		Path second = createJpegImage("album-fk-cleanup-2", 100, 100, 0xccddee);
+
+		String firstPhotoId = authAs(token).multiPart("file", first.toFile(), "image/jpeg").when()
+				.post("/api/v1/photos").then().statusCode(201).extract().path("id");
+		String secondPhotoId = authAs(token).multiPart("file", second.toFile(), "image/jpeg").when()
+				.post("/api/v1/photos").then().statusCode(201).extract().path("id");
+		String albumId = authAs(token).contentType(ContentType.JSON).body("{\"name\": \"FK cleanup album\"}").when()
+				.post("/api/v1/albums").then().statusCode(201).extract().path("id");
+
+		authAs(token).when().post("/api/v1/albums/{albumId}/photos/{photoId}", albumId, firstPhotoId).then()
+				.statusCode(201);
+		authAs(token).when().post("/api/v1/albums/{albumId}/photos/{photoId}", albumId, secondPhotoId).then()
+				.statusCode(201);
+
+		authAs(token).contentType(ContentType.JSON).body("{\"photoId\": \"" + firstPhotoId + "\"}").when()
+				.put("/api/v1/albums/{id}/cover", albumId).then().statusCode(200);
+
+		authAs(token).when().delete("/api/v1/albums/{albumId}/photos/{photoId}", albumId, firstPhotoId).then()
+				.statusCode(204);
+		authAs(token).when().delete("/api/v1/photos/{id}", firstPhotoId).then().statusCode(204);
+
+		authAs(token).when().get("/api/v1/albums").then().statusCode(200)
+				.body("items[0].coverPhotoId", equalTo(secondPhotoId)).body("items[0].photoCount", equalTo(1));
+	}
+
+	@Test
+	void setCoverByNonOwnerReturns404() throws IOException {
+		String ownerToken = registerUserToken("cover-owner");
+		String intruderToken = registerUserToken("cover-intruder");
+		Path image = createJpegImage("album-non-owner", 100, 100, 0xdeadbe);
+
+		String photoId = authAs(ownerToken).multiPart("file", image.toFile(), "image/jpeg").when()
+				.post("/api/v1/photos").then().statusCode(201).extract().path("id");
+		String albumId = authAs(ownerToken).contentType(ContentType.JSON).body("{\"name\": \"Private\"}").when()
+				.post("/api/v1/albums").then().statusCode(201).extract().path("id");
+
+		authAs(ownerToken).when().post("/api/v1/albums/{albumId}/photos/{photoId}", albumId, photoId).then()
+				.statusCode(201);
+
+		authAs(intruderToken).contentType(ContentType.JSON).body("{\"photoId\": \"" + photoId + "\"}").when()
+				.put("/api/v1/albums/{id}/cover", albumId).then().statusCode(404).body("error", equalTo("not_found"));
+
+		authAs(intruderToken).when().delete("/api/v1/albums/{id}/cover", albumId).then().statusCode(404).body("error",
+				equalTo("not_found"));
+	}
 }
