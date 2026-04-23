@@ -18,6 +18,11 @@ export default [
       route("settings", "routes/app-admin-settings.tsx"),
     ]),
     route("library", "routes/app-library.tsx"),
+    route("library/albums/:albumId", "routes/app-album-detail.tsx"),
+    route(
+      "library/albums/:albumId/photos/:photoId",
+      "routes/app-album-photo-detail.tsx",
+    ),
     route("library/photos/:photoId", "routes/app-photo-detail.tsx"),
     route("search", "routes/app-search.tsx"),
     route("favorites", "routes/app-favorites.tsx"),

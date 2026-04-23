@@ -20,6 +20,28 @@ export function formatDateTime(value: string | null) {
   }).format(new Date(value));
 }
 
+export function formatDateRange(
+  start: string | null,
+  end: string | null,
+  locale = getActiveLocale(),
+) {
+  if (!start && !end) {
+    return translateMessage(locale, "common.notAvailable");
+  }
+
+  const formatter = new Intl.DateTimeFormat(locale, {
+    dateStyle: "medium",
+  });
+  const startLabel = start ? formatter.format(new Date(start)) : null;
+  const endLabel = end ? formatter.format(new Date(end)) : null;
+
+  if (startLabel && endLabel) {
+    return startLabel === endLabel ? startLabel : `${startLabel} – ${endLabel}`;
+  }
+
+  return startLabel ?? endLabel ?? translateMessage(locale, "common.notAvailable");
+}
+
 export function formatRelativeCount(
   count: number,
   singularOrForms: string | RelativeCountForms,

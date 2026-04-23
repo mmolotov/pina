@@ -91,6 +91,12 @@ export interface AlbumDto {
   spaceId: string | null;
   createdAt: string;
   updatedAt: string;
+  coverPhotoId: string | null;
+  coverVariants: PhotoVariantDto[];
+  photoCount: number;
+  mediaRangeStart: string | null;
+  mediaRangeEnd: string | null;
+  latestPhotoAddedAt: string | null;
 }
 
 export interface SpaceDto {
