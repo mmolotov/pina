@@ -718,6 +718,23 @@ class AlbumResourceTest {
 	}
 
 	@Test
+	void downloadAlbumSanitizesPathLikeFilenamesBeforeDeduplication() throws IOException {
+		String token = registerUserToken("download-sanitize");
+		String albumId = createAlbum(token, "Sanitize");
+		String firstPhotoId = uploadNamedPhoto(token, "../../secrets.txt", 61, 0x113355);
+		String secondPhotoId = uploadNamedPhoto(token, "nested\\secrets.txt", 62, 0x224466);
+		authAs(token).when().post("/api/v1/albums/{albumId}/photos/{photoId}", albumId, firstPhotoId).then()
+				.statusCode(201);
+		authAs(token).when().post("/api/v1/albums/{albumId}/photos/{photoId}", albumId, secondPhotoId).then()
+				.statusCode(201);
+
+		byte[] zipBytes = authAs(token).when().get("/api/v1/albums/{id}/download", albumId).then().statusCode(200)
+				.extract().asByteArray();
+
+		assertEquals(Set.of("secrets.txt", "secrets (1).txt"), readZipEntryNames(zipBytes));
+	}
+
+	@Test
 	void downloadAlbumWithCompressedVariantReturnsZipOfCompressed() throws IOException {
 		String token = registerUserToken("download-compressed");
 		String albumId = createAlbum(token, "Compressed");

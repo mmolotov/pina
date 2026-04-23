@@ -4,6 +4,8 @@ import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.notNullValue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.quarkus.test.junit.QuarkusTest;
@@ -14,6 +16,8 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.OffsetDateTime;
+import java.util.Locale;
+import java.util.Map;
 import java.util.UUID;
 import javax.imageio.ImageIO;
 import org.junit.jupiter.api.Test;
@@ -104,9 +108,19 @@ class AlbumShareLinkResourceTest {
 		String shareToken = authAs(ownerToken).contentType(ContentType.JSON).body("{}").when()
 				.post("/api/v1/albums/{id}/share-links", albumId).then().statusCode(201).extract().path("token");
 
-		given().when().get("/api/v1/public/albums/by-token/{token}", shareToken).then().statusCode(200)
-				.body("album.id", equalTo(albumId)).body("album.name", equalTo("Public album"))
-				.body("photos.items", hasSize(2));
+		Map<String, Object> firstPhotoPayload = given().when().get("/api/v1/public/albums/by-token/{token}", shareToken)
+				.then().statusCode(200).header("Cache-Control", equalTo("no-store")).body("album.id", equalTo(albumId))
+				.body("album.name", equalTo("Public album")).body("photos.items", hasSize(2)).extract()
+				.path("photos.items[0]");
+
+		assertNotNull(firstPhotoPayload.get("id"));
+		assertNotNull(firstPhotoPayload.get("originalFilename"));
+		assertNotNull(firstPhotoPayload.get("variants"));
+		assertFalse(firstPhotoPayload.containsKey("uploaderId"));
+		assertFalse(firstPhotoPayload.containsKey("personalLibraryId"));
+		assertFalse(firstPhotoPayload.containsKey("exifData"));
+		assertFalse(firstPhotoPayload.containsKey("latitude"));
+		assertFalse(firstPhotoPayload.containsKey("longitude"));
 	}
 
 	@Test
@@ -162,8 +176,28 @@ class AlbumShareLinkResourceTest {
 		byte[] bytes = given().when()
 				.get("/api/v1/public/albums/by-token/{token}/photos/{photoId}/file?variant=COMPRESSED", shareToken,
 						photoId)
-				.then().statusCode(200).extract().asByteArray();
+				.then().statusCode(200).header("Cache-Control", equalTo("no-store")).extract().asByteArray();
 		assertTrue(bytes.length > 0, "proxy should stream non-empty bytes");
+	}
+
+	@Test
+	void publicPhotoFileAcceptsVariantUnderTurkishLocale() throws IOException {
+		String ownerToken = registerUserToken("turkish-variant");
+		String albumId = createAlbum(ownerToken, "Locale album");
+		String photoId = uploadPhoto(ownerToken, "turkish-photo", 0x557799);
+		addPhoto(ownerToken, albumId, photoId);
+
+		String shareToken = authAs(ownerToken).contentType(ContentType.JSON).body("{}").when()
+				.post("/api/v1/albums/{id}/share-links", albumId).then().statusCode(201).extract().path("token");
+
+		Locale previous = Locale.getDefault();
+		Locale.setDefault(Locale.forLanguageTag("tr-TR"));
+		try {
+			given().when().get("/api/v1/public/albums/by-token/{token}/photos/{photoId}/file?variant=original",
+					shareToken, photoId).then().statusCode(200);
+		} finally {
+			Locale.setDefault(previous);
+		}
 	}
 
 	@Test

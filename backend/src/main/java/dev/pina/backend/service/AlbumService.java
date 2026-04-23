@@ -358,9 +358,7 @@ public class AlbumService {
 	}
 
 	private static String resolveZipEntryName(ArchiveEntry entry, Set<String> used) {
-		String base = entry.originalFilename() != null && !entry.originalFilename().isBlank()
-				? entry.originalFilename()
-				: "photo-" + entry.photoId();
+		String base = sanitizeArchiveFilename(entry.originalFilename(), entry.photoId());
 		if (!used.contains(base)) {
 			return base;
 		}
@@ -373,6 +371,23 @@ public class AlbumService {
 				return candidate;
 			}
 		}
+	}
+
+	private static String sanitizeArchiveFilename(String originalFilename, UUID photoId) {
+		String fallback = "photo-" + photoId;
+		if (originalFilename == null || originalFilename.isBlank()) {
+			return fallback;
+		}
+		String sanitized = originalFilename.strip().replace('\\', '/');
+		int slash = sanitized.lastIndexOf('/');
+		if (slash >= 0) {
+			sanitized = sanitized.substring(slash + 1);
+		}
+		sanitized = sanitized.replaceAll("\\p{Cntrl}", "_").replaceAll("\\.{2,}", "_").strip();
+		if (sanitized.isBlank() || ".".equals(sanitized) || "..".equals(sanitized)) {
+			return fallback;
+		}
+		return sanitized;
 	}
 
 	public boolean hasPhoto(Album album, Photo photo) {

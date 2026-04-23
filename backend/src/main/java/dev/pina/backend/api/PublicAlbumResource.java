@@ -2,7 +2,7 @@ package dev.pina.backend.api;
 
 import dev.pina.backend.api.dto.AlbumDto;
 import dev.pina.backend.api.dto.PageResponse;
-import dev.pina.backend.api.dto.PhotoDto;
+import dev.pina.backend.api.dto.PublicPhotoDto;
 import dev.pina.backend.api.error.ApiErrors;
 import dev.pina.backend.domain.VariantType;
 import dev.pina.backend.pagination.PageRequest;
@@ -23,6 +23,7 @@ import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.core.StreamingOutput;
 import java.io.InputStream;
+import java.util.Locale;
 import java.util.UUID;
 
 @Path("/api/v1/public/albums")
@@ -51,9 +52,8 @@ public class PublicAlbumResource {
 		var album = linkOpt.get().album;
 		var summary = albumService.getSummary(album);
 		var photos = albumService.listPhotos(album.id, new PageRequest(page, size, needsTotal));
-		return Response
-				.ok(new PublicAlbumResponse(AlbumDto.fromSummary(summary), PageResponse.from(photos, PhotoDto::from)))
-				.build();
+		return noStore(Response.ok(new PublicAlbumResponse(AlbumDto.fromSummary(summary),
+				PageResponse.from(photos, PublicPhotoDto::from)))).build();
 	}
 
 	@GET
@@ -63,7 +63,7 @@ public class PublicAlbumResource {
 			@QueryParam("variant") @DefaultValue("COMPRESSED") String variant) {
 		VariantType type;
 		try {
-			type = VariantType.valueOf(variant.toUpperCase());
+			type = parseVariant(variant);
 		} catch (IllegalArgumentException _) {
 			return ApiErrors.badRequest("Invalid variant: " + variant);
 		}
@@ -86,9 +86,17 @@ public class PublicAlbumResource {
 				stream.transferTo(os);
 			}
 		};
-		return Response.ok(output).type(contentType).header("X-Album-Id", albumId.toString()).build();
+		return noStore(Response.ok(output).type(contentType).header("X-Album-Id", albumId.toString())).build();
 	}
 
-	public record PublicAlbumResponse(AlbumDto album, PageResponse<PhotoDto> photos) {
+	private static VariantType parseVariant(String raw) {
+		return VariantType.valueOf(raw.strip().toUpperCase(Locale.ROOT));
+	}
+
+	private static Response.ResponseBuilder noStore(Response.ResponseBuilder builder) {
+		return builder.header("Cache-Control", "no-store");
+	}
+
+	public record PublicAlbumResponse(AlbumDto album, PageResponse<PublicPhotoDto> photos) {
 	}
 }
