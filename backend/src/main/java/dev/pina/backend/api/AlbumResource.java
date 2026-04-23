@@ -6,6 +6,7 @@ import dev.pina.backend.api.dto.PageResponse;
 import dev.pina.backend.api.dto.PhotoDto;
 import dev.pina.backend.api.dto.SetAlbumCoverRequest;
 import dev.pina.backend.api.error.ApiErrors;
+import dev.pina.backend.domain.VariantType;
 import dev.pina.backend.pagination.PageRequest;
 import dev.pina.backend.pagination.PageResult;
 import dev.pina.backend.service.AlbumService;
@@ -26,6 +27,8 @@ import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+import java.text.Normalizer;
+import java.util.Locale;
 import java.util.UUID;
 
 @Path("/api/v1/albums")
@@ -149,6 +152,48 @@ public class AlbumResource {
 			case AlbumService.SetCoverResult.AlbumNotFound _ -> ApiErrors.notFound("Album not found");
 			case AlbumService.SetCoverResult.PhotoNotInAlbum _ -> ApiErrors.notFound("Photo not found in album");
 		};
+	}
+
+	@GET
+	@Path("/{id}/download")
+	@Produces("application/zip")
+	public Response download(@PathParam("id") UUID id, @QueryParam("variant") String variant) {
+		VariantType variantType;
+		try {
+			variantType = parseDownloadVariant(variant);
+		} catch (IllegalArgumentException e) {
+			return ApiErrors.badRequest(e.getMessage());
+		}
+		var user = userResolver.currentUser();
+		var album = albumService.findById(id);
+		if (album.isEmpty() || !album.get().owner.id.equals(user.id)) {
+			return ApiErrors.notFound("Album not found");
+		}
+		var entries = albumService.collectArchiveEntries(id, variantType);
+		var output = albumService.streamAlbumArchive(entries);
+		String filename = slugifyAlbumName(album.get().name) + ".zip";
+		return Response.ok(output).type("application/zip")
+				.header("Content-Disposition", "attachment; filename=\"" + filename + "\"").build();
+	}
+
+	private static VariantType parseDownloadVariant(String raw) {
+		if (raw == null || raw.isBlank()) {
+			return VariantType.ORIGINAL;
+		}
+		return switch (raw.strip().toUpperCase(Locale.ROOT)) {
+			case "ORIGINAL" -> VariantType.ORIGINAL;
+			case "COMPRESSED" -> VariantType.COMPRESSED;
+			default -> throw new IllegalArgumentException("Invalid variant: " + raw);
+		};
+	}
+
+	private static String slugifyAlbumName(String name) {
+		if (name == null) {
+			return "album";
+		}
+		String slug = Normalizer.normalize(name, Normalizer.Form.NFKD).replaceAll("\\p{M}+", "")
+				.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]+", "-").replaceAll("(^-|-$)", "");
+		return slug.isEmpty() ? "album" : slug;
 	}
 
 	@DELETE

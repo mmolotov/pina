@@ -1,21 +1,28 @@
 package dev.pina.backend.api;
 
 import static io.restassured.RestAssured.given;
+import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.greaterThan;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.Matchers.nullValue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import dev.pina.backend.TestAuthHelper;
 import io.quarkus.test.junit.QuarkusTest;
 import io.restassured.http.ContentType;
 import io.restassured.specification.RequestSpecification;
 import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.UUID;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 import javax.imageio.ImageIO;
 import org.junit.jupiter.api.Test;
 
@@ -673,6 +680,106 @@ class AlbumResourceTest {
 		collected.add(firstPageSecond);
 		collected.add(secondPageFirst);
 		org.junit.jupiter.api.Assertions.assertEquals(java.util.Set.of(firstId, secondId, thirdId), collected);
+	}
+
+	@Test
+	void downloadAlbumReturnsZipWithAllPhotos() throws IOException {
+		String token = registerUserToken("download-happy");
+		String albumId = createAlbum(token, "Download happy");
+		String firstPhotoId = uploadNamedPhoto(token, "vacation.jpg", 61, 0xaa1122);
+		String secondPhotoId = uploadNamedPhoto(token, "sunset.jpg", 62, 0x112233);
+		authAs(token).when().post("/api/v1/albums/{albumId}/photos/{photoId}", albumId, firstPhotoId).then()
+				.statusCode(201);
+		authAs(token).when().post("/api/v1/albums/{albumId}/photos/{photoId}", albumId, secondPhotoId).then()
+				.statusCode(201);
+
+		byte[] zipBytes = authAs(token).when().get("/api/v1/albums/{id}/download", albumId).then().statusCode(200)
+				.contentType("application/zip").header("Content-Disposition", containsString("attachment"))
+				.header("Content-Disposition", containsString("download-happy.zip")).extract().asByteArray();
+
+		assertEquals(Set.of("vacation.jpg", "sunset.jpg"), readZipEntryNames(zipBytes));
+	}
+
+	@Test
+	void downloadAlbumDisambiguatesCollidingFilenames() throws IOException {
+		String token = registerUserToken("download-collide");
+		String albumId = createAlbum(token, "Collide");
+		String firstPhotoId = uploadNamedPhoto(token, "photo.jpg", 61, 0x331122);
+		String secondPhotoId = uploadNamedPhoto(token, "photo.jpg", 62, 0x442233);
+		authAs(token).when().post("/api/v1/albums/{albumId}/photos/{photoId}", albumId, firstPhotoId).then()
+				.statusCode(201);
+		authAs(token).when().post("/api/v1/albums/{albumId}/photos/{photoId}", albumId, secondPhotoId).then()
+				.statusCode(201);
+
+		byte[] zipBytes = authAs(token).when().get("/api/v1/albums/{id}/download", albumId).then().statusCode(200)
+				.extract().asByteArray();
+
+		assertEquals(Set.of("photo.jpg", "photo (1).jpg"), readZipEntryNames(zipBytes));
+	}
+
+	@Test
+	void downloadAlbumWithCompressedVariantReturnsZipOfCompressed() throws IOException {
+		String token = registerUserToken("download-compressed");
+		String albumId = createAlbum(token, "Compressed");
+		String photoId = uploadNamedPhoto(token, "large.jpg", 120, 0x99ccee);
+		authAs(token).when().post("/api/v1/albums/{albumId}/photos/{photoId}", albumId, photoId).then().statusCode(201);
+
+		byte[] zipBytes = authAs(token).queryParam("variant", "COMPRESSED").when()
+				.get("/api/v1/albums/{id}/download", albumId).then().statusCode(200).contentType("application/zip")
+				.extract().asByteArray();
+
+		assertEquals(Set.of("large.jpg"), readZipEntryNames(zipBytes));
+	}
+
+	@Test
+	void downloadAlbumInvalidVariantReturns400() {
+		String token = registerUserToken("download-bad-variant");
+		String albumId = createAlbum(token, "Bad variant");
+		authAs(token).queryParam("variant", "BOGUS").when().get("/api/v1/albums/{id}/download", albumId).then()
+				.statusCode(400).body("error", equalTo("bad_request"));
+	}
+
+	@Test
+	void downloadAlbumByNonOwnerReturns404() throws IOException {
+		String ownerToken = registerUserToken("download-owner");
+		String intruderToken = registerUserToken("download-intruder");
+		String albumId = createAlbum(ownerToken, "Private download");
+		String photoId = uploadNamedPhoto(ownerToken, "priv.jpg", 60, 0x665544);
+		authAs(ownerToken).when().post("/api/v1/albums/{albumId}/photos/{photoId}", albumId, photoId).then()
+				.statusCode(201);
+
+		authAs(intruderToken).when().get("/api/v1/albums/{id}/download", albumId).then().statusCode(404).body("error",
+				equalTo("not_found"));
+	}
+
+	@Test
+	void downloadEmptyAlbumReturnsEmptyZip() throws IOException {
+		String token = registerUserToken("download-empty");
+		String albumId = createAlbum(token, "Empty download");
+
+		byte[] zipBytes = authAs(token).when().get("/api/v1/albums/{id}/download", albumId).then().statusCode(200)
+				.contentType("application/zip").extract().asByteArray();
+
+		assertEquals(Set.of(), readZipEntryNames(zipBytes));
+	}
+
+	private Set<String> readZipEntryNames(byte[] zipBytes) throws IOException {
+		Set<String> names = new HashSet<>();
+		try (ZipInputStream zip = new ZipInputStream(new ByteArrayInputStream(zipBytes))) {
+			ZipEntry entry;
+			while ((entry = zip.getNextEntry()) != null) {
+				names.add(entry.getName());
+				zip.closeEntry();
+			}
+		}
+		return names;
+	}
+
+	private String uploadNamedPhoto(String token, String filename, int size, int rgb) throws IOException {
+		String nonce = UUID.randomUUID().toString().substring(0, 6);
+		Path image = createJpegImage("download-" + nonce, size, size, rgb);
+		return authAs(token).multiPart("file", filename, Files.readAllBytes(image), "image/jpeg").when()
+				.post("/api/v1/photos").then().statusCode(201).extract().path("id");
 	}
 
 	private String createAlbum(String token, String name) {

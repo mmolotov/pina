@@ -7,14 +7,19 @@ import dev.pina.backend.domain.PersonalLibrary;
 import dev.pina.backend.domain.Photo;
 import dev.pina.backend.domain.Space;
 import dev.pina.backend.domain.User;
+import dev.pina.backend.domain.VariantType;
 import dev.pina.backend.pagination.PageRequest;
 import dev.pina.backend.pagination.PageResult;
+import dev.pina.backend.storage.StoragePath;
+import dev.pina.backend.storage.StorageProvider;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
 import jakarta.persistence.PersistenceException;
 import jakarta.transaction.Transactional;
+import jakarta.ws.rs.core.StreamingOutput;
+import java.io.InputStream;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -27,6 +32,8 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 
 @ApplicationScoped
 public class AlbumService {
@@ -93,6 +100,9 @@ public class AlbumService {
 
 	@Inject
 	EntityManager em;
+
+	@Inject
+	StorageProvider storage;
 
 	@Inject
 	PersonalLibraryService personalLibraryService;
@@ -313,6 +323,56 @@ public class AlbumService {
 					agg.latestPhotoAddedAt(), cover));
 		}
 		return summaries;
+	}
+
+	public record ArchiveEntry(String storagePath, String originalFilename, UUID photoId) {
+	}
+
+	public List<ArchiveEntry> collectArchiveEntries(UUID albumId, VariantType variantType) {
+		List<Object[]> rows = em.createQuery(
+				"SELECT v.storagePath, p.originalFilename, p.id FROM AlbumPhoto ap JOIN ap.photo p JOIN p.variants v "
+						+ "WHERE ap.album.id = :albumId AND v.variantType = :type ORDER BY ap.addedAt ASC, p.id ASC",
+				Object[].class).setParameter("albumId", albumId).setParameter("type", variantType).getResultList();
+		List<ArchiveEntry> entries = new ArrayList<>(rows.size());
+		for (Object[] row : rows) {
+			entries.add(new ArchiveEntry((String) row[0], (String) row[1], (UUID) row[2]));
+		}
+		return entries;
+	}
+
+	public StreamingOutput streamAlbumArchive(List<ArchiveEntry> entries) {
+		return output -> {
+			try (ZipOutputStream zip = new ZipOutputStream(output)) {
+				Set<String> used = new HashSet<>();
+				for (ArchiveEntry entry : entries) {
+					String name = resolveZipEntryName(entry, used);
+					used.add(name);
+					zip.putNextEntry(new ZipEntry(name));
+					try (InputStream src = storage.retrieve(new StoragePath(entry.storagePath()))) {
+						src.transferTo(zip);
+					}
+					zip.closeEntry();
+				}
+			}
+		};
+	}
+
+	private static String resolveZipEntryName(ArchiveEntry entry, Set<String> used) {
+		String base = entry.originalFilename() != null && !entry.originalFilename().isBlank()
+				? entry.originalFilename()
+				: "photo-" + entry.photoId();
+		if (!used.contains(base)) {
+			return base;
+		}
+		int dot = base.lastIndexOf('.');
+		String stem = dot > 0 ? base.substring(0, dot) : base;
+		String ext = dot > 0 ? base.substring(dot) : "";
+		for (int i = 1;; i++) {
+			String candidate = stem + " (" + i + ")" + ext;
+			if (!used.contains(candidate)) {
+				return candidate;
+			}
+		}
 	}
 
 	public boolean hasPhoto(Album album, Photo photo) {
