@@ -1,7 +1,10 @@
 package dev.pina.backend.api;
 
 import dev.pina.backend.api.dto.AlbumDto;
+import dev.pina.backend.api.dto.AlbumShareLinkCreatedDto;
+import dev.pina.backend.api.dto.AlbumShareLinkDto;
 import dev.pina.backend.api.dto.CreateAlbumRequest;
+import dev.pina.backend.api.dto.CreateAlbumShareLinkRequest;
 import dev.pina.backend.api.dto.PageResponse;
 import dev.pina.backend.api.dto.PhotoDto;
 import dev.pina.backend.api.dto.SetAlbumCoverRequest;
@@ -10,6 +13,7 @@ import dev.pina.backend.domain.VariantType;
 import dev.pina.backend.pagination.PageRequest;
 import dev.pina.backend.pagination.PageResult;
 import dev.pina.backend.service.AlbumService;
+import dev.pina.backend.service.AlbumShareLinkService;
 import dev.pina.backend.service.UserResolver;
 import jakarta.inject.Inject;
 import jakarta.validation.Valid;
@@ -38,6 +42,9 @@ public class AlbumResource {
 
 	@Inject
 	AlbumService albumService;
+
+	@Inject
+	AlbumShareLinkService shareLinkService;
 
 	@Inject
 	UserResolver userResolver;
@@ -208,5 +215,46 @@ public class AlbumResource {
 		return albumService.clearCoverPhoto(id)
 				.map(updated -> Response.ok(AlbumDto.fromSummary(albumService.getSummary(updated))).build())
 				.orElse(ApiErrors.notFound("Album not found"));
+	}
+
+	@POST
+	@Path("/{id}/share-links")
+	public Response createShareLink(@PathParam("id") UUID id, CreateAlbumShareLinkRequest request) {
+		var user = userResolver.currentUser();
+		var album = albumService.findById(id);
+		if (album.isEmpty() || !album.get().owner.id.equals(user.id)) {
+			return ApiErrors.notFound("Album not found");
+		}
+		var expiresAt = request == null ? null : request.expiresAt();
+		var created = shareLinkService.create(id, expiresAt, user);
+		return Response.status(Response.Status.CREATED)
+				.entity(AlbumShareLinkCreatedDto.of(created.link(), created.token())).build();
+	}
+
+	@GET
+	@Path("/{id}/share-links")
+	public Response listShareLinks(@PathParam("id") UUID id) {
+		var user = userResolver.currentUser();
+		var album = albumService.findById(id);
+		if (album.isEmpty() || !album.get().owner.id.equals(user.id)) {
+			return ApiErrors.notFound("Album not found");
+		}
+		var links = shareLinkService.listByAlbum(id).stream().map(AlbumShareLinkDto::from).toList();
+		return Response.ok(links).build();
+	}
+
+	@DELETE
+	@Path("/{id}/share-links/{linkId}")
+	@Consumes(MediaType.WILDCARD)
+	public Response revokeShareLink(@PathParam("id") UUID id, @PathParam("linkId") UUID linkId) {
+		var user = userResolver.currentUser();
+		var album = albumService.findById(id);
+		if (album.isEmpty() || !album.get().owner.id.equals(user.id)) {
+			return ApiErrors.notFound("Album not found");
+		}
+		if (!shareLinkService.revoke(id, linkId)) {
+			return ApiErrors.notFound("Share link not found");
+		}
+		return Response.noContent().build();
 	}
 }
