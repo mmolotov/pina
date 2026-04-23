@@ -15,6 +15,7 @@ const apiMocks = vi.hoisted(() => ({
   uploadPhoto: vi.fn(),
   deletePhoto: vi.fn(),
   createAlbum: vi.fn(),
+  addPhotoToAlbum: vi.fn(),
   updateAlbum: vi.fn(),
   deleteAlbum: vi.fn(),
   listFavorites: vi.fn(),
@@ -90,6 +91,7 @@ describe("AppLibraryRoute", () => {
     apiMocks.uploadPhoto.mockResolvedValue(undefined);
     apiMocks.deletePhoto.mockResolvedValue(undefined);
     apiMocks.createAlbum.mockResolvedValue(undefined);
+    apiMocks.addPhotoToAlbum.mockResolvedValue(undefined);
     apiMocks.updateAlbum.mockResolvedValue(undefined);
     apiMocks.deleteAlbum.mockResolvedValue(undefined);
   });
@@ -161,11 +163,144 @@ describe("AppLibraryRoute", () => {
 
     await waitFor(() => {
       expect(
-        screen.getByRole("textbox", { name: /name|название/i }),
+        screen.getByRole("button", {
+          name: /create album|создать альбом/i,
+        }),
       ).toBeInTheDocument();
     });
     expect(screen.getByRole("link", { name: /spaces/i })).toBeInTheDocument();
     expect(screen.getByText(/no personal albums yet|пока нет личных альбомов/i)).toBeInTheDocument();
+  });
+
+  it("opens the create album modal, closes on escape, and returns focus to the trigger", async () => {
+    renderRoute();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: /albums|альбомы/i }),
+    );
+
+    const trigger = screen.getByRole("button", {
+      name: /create album|создать альбом/i,
+    });
+    fireEvent.click(trigger);
+
+    expect(
+      await screen.findByRole("heading", {
+        name: /build a new personal album|соберите новый личный альбом/i,
+      }),
+    ).toBeInTheDocument();
+
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("heading", {
+          name: /build a new personal album|соберите новый личный альбом/i,
+        }),
+      ).not.toBeInTheDocument();
+    });
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it("validates create album modal input before submitting", async () => {
+    renderRoute();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: /albums|альбомы/i }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: /create album|создать альбом/i }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: /create and open album|создать и открыть альбом/i,
+      }),
+    );
+
+    expect(
+      await screen.findByText(/album name is required|название альбома обязательно/i),
+    ).toBeInTheDocument();
+    expect(apiMocks.createAlbum).not.toHaveBeenCalled();
+  });
+
+  it("creates an album from selected existing and uploaded photos, then navigates to detail", async () => {
+    const createdAlbum = makeAlbum({
+      id: "album-new",
+      name: "Road notes",
+      coverPhotoId: null,
+      photoCount: 0,
+      mediaRangeStart: null,
+      mediaRangeEnd: null,
+      latestPhotoAddedAt: null,
+    });
+    apiMocks.createAlbum.mockResolvedValue(createdAlbum);
+    apiMocks.uploadPhoto.mockResolvedValue({
+      id: "photo-2",
+      uploaderId: "user-1",
+      originalFilename: "forest.png",
+      mimeType: "image/png",
+      width: 1600,
+      height: 900,
+      sizeBytes: 256000,
+      personalLibraryId: "library-1",
+      exifData: null,
+      takenAt: null,
+      latitude: null,
+      longitude: null,
+      createdAt: "2026-04-02T11:00:00Z",
+      variants: [],
+    });
+
+    renderRoute();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: /albums|альбомы/i }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: /create album|создать альбом/i }),
+    );
+
+    const dialog = screen.getByRole("dialog");
+    fireEvent.change(within(dialog).getByRole("textbox", { name: /name|название/i }), {
+      target: { value: "Road notes" },
+    });
+
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: /beach\.jpg/i }),
+    );
+
+    const file = new File(["png"], "forest.png", { type: "image/png" });
+    fireEvent.change(
+      within(dialog).getByLabelText(/choose files|выбрать файлы/i),
+      {
+        target: { files: [file] },
+      },
+    );
+
+    await waitFor(() => {
+      expect(apiMocks.uploadPhoto).toHaveBeenCalledTimes(1);
+    });
+    expect(
+      await within(dialog).findByText(/2 selected|выбрано: 2/i),
+    ).toBeInTheDocument();
+
+    fireEvent.click(
+      within(dialog).getByRole("button", {
+        name: /create and open album|создать и открыть альбом/i,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(apiMocks.createAlbum).toHaveBeenCalledWith({
+        name: "Road notes",
+        description: "",
+      });
+    });
+    await waitFor(() => {
+      expect(apiMocks.addPhotoToAlbum).toHaveBeenCalledWith("album-new", "photo-1");
+      expect(apiMocks.addPhotoToAlbum).toHaveBeenCalledWith("album-new", "photo-2");
+    });
+    expect(await screen.findByText("Album detail target")).toBeInTheDocument();
   });
 
   it("renders album tiles and navigates into album detail from the tile body", async () => {
@@ -716,32 +851,6 @@ describe("AppLibraryRoute", () => {
       expect(
         screen.getByText(/nothing selected|ничего не выбрано/i),
       ).toBeInTheDocument();
-    });
-  });
-
-  it("creates a new album through the route action", async () => {
-    renderRoute();
-
-    expect(await screen.findByText("beach.jpg")).toBeInTheDocument();
-
-    fireEvent.click(
-      screen.getAllByRole("button", { name: /albums|альбомы/i })[0]!,
-    );
-    fireEvent.change(screen.getByLabelText(/name|название/i), {
-      target: { value: "Weekend picks" },
-    });
-    fireEvent.change(screen.getByLabelText(/description|описание/i), {
-      target: { value: "Best shots of the trip" },
-    });
-    fireEvent.click(
-      screen.getByRole("button", { name: /create album|создать альбом/i }),
-    );
-
-    await waitFor(() => {
-      expect(apiMocks.createAlbum).toHaveBeenCalledWith({
-        name: "Weekend picks",
-        description: "Best shots of the trip",
-      });
     });
   });
 

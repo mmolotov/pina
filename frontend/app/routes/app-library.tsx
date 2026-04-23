@@ -4,12 +4,14 @@ import {
   useDeferredValue,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import {
   Form,
   Link,
   useActionData,
+  useNavigate,
   useNavigation,
   useRevalidator,
   useSearchParams,
@@ -24,6 +26,7 @@ import { ProportionalTimelineRail } from "~/components/proportional-timeline-rai
 import {
   ApiError,
   addFavorite,
+  addPhotoToAlbum,
   createAlbum,
   deleteAlbum,
   deletePhoto,
@@ -502,6 +505,367 @@ function AlbumDeleteDialog(props: {
   );
 }
 
+function CreateAlbumDialog(props: {
+  draft: {
+    name: string;
+    description: string;
+    existingFilter: string;
+  };
+  existingPhotos: PhotoDto[];
+  selectedPhotoIds: string[];
+  uploadProgress: UploadProgressState | null;
+  batchProgress: UploadProgressState | null;
+  uploadError: string | null;
+  submitError: string | null;
+  failures: string[];
+  isBusy: boolean;
+  isUploadTargetActive: boolean;
+  onClose: () => void;
+  onDraftChange: (
+    field: "name" | "description" | "existingFilter",
+    value: string,
+  ) => void;
+  onTogglePhoto: (photoId: string) => void;
+  onSubmit: () => void;
+  onUploadFiles: (files: File[]) => void;
+  onUploadTargetActiveChange: (active: boolean) => void;
+  partialAlbumId: string | null;
+}) {
+  const { t } = useI18n();
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+  const initialFocusRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    initialFocusRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        props.onClose();
+      }
+    }
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [props.onClose]);
+
+  function trapFocus(event: React.KeyboardEvent<HTMLDivElement>) {
+    if (event.key !== "Tab" || !dialogRef.current) {
+      return;
+    }
+
+    const focusable = Array.from(
+      dialogRef.current.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      ),
+    );
+
+    if (focusable.length === 0) {
+      return;
+    }
+
+    const first = focusable[0]!;
+    const last = focusable[focusable.length - 1]!;
+
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 px-4 py-8">
+      <div
+        aria-modal="true"
+        className="w-full max-w-4xl rounded-[1.75rem] border border-[var(--color-border)] bg-[var(--color-panel-strong)] p-6 shadow-[0_30px_80px_rgba(0,0,0,0.28)]"
+        onKeyDown={trapFocus}
+        ref={dialogRef}
+        role="dialog"
+      >
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="eyebrow">{t("app.library.createModalEyebrow")}</p>
+            <h2 className="mt-1 text-xl font-semibold tracking-tight">
+              {t("app.library.createModalTitle")}
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-[var(--color-text-muted)]">
+              {t("app.library.createModalDescription")}
+            </p>
+          </div>
+          <button className="button-secondary" onClick={props.onClose} type="button">
+            {t("app.library.cancel")}
+          </button>
+        </div>
+
+        <div className="mt-6 grid gap-6 lg:grid-cols-[0.42fr_0.58fr]">
+          <div className="space-y-4">
+            <label className="block">
+              <span className="mb-2 block text-sm font-medium">
+                {t("common.name")}
+              </span>
+              <input
+                className="field"
+                maxLength={255}
+                onChange={(event) => {
+                  props.onDraftChange("name", event.target.value);
+                }}
+                ref={initialFocusRef}
+                value={props.draft.name}
+              />
+            </label>
+
+            <label className="block">
+              <span className="mb-2 block text-sm font-medium">
+                {t("common.description")}
+              </span>
+              <textarea
+                className="field min-h-28 resize-y"
+                maxLength={2000}
+                onChange={(event) => {
+                  props.onDraftChange("description", event.target.value);
+                }}
+                value={props.draft.description}
+              />
+            </label>
+
+            <div className="rounded-[1.25rem] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+              <p className="eyebrow">{t("app.library.createModalUploadEyebrow")}</p>
+              <p className="mt-1 text-sm font-medium">
+                {t("app.library.createModalUploadTitle")}
+              </p>
+              <div
+                className={`surface-dashed mt-3 rounded-lg px-4 py-4 text-center transition ${
+                  props.isUploadTargetActive ? "dropzone-active" : ""
+                }`}
+                onDragEnter={(event) => {
+                  event.preventDefault();
+                  props.onUploadTargetActiveChange(true);
+                }}
+                onDragLeave={(event) => {
+                  event.preventDefault();
+                  if (
+                    event.currentTarget.contains(event.relatedTarget as Node | null)
+                  ) {
+                    return;
+                  }
+                  props.onUploadTargetActiveChange(false);
+                }}
+                onDragOver={(event) => {
+                  event.preventDefault();
+                  props.onUploadTargetActiveChange(true);
+                }}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  props.onUploadTargetActiveChange(false);
+                  props.onUploadFiles(Array.from(event.dataTransfer.files));
+                }}
+              >
+                {props.uploadProgress ? (
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium text-[var(--color-text)]">
+                      {t("app.library.createModalUploadProgress", {
+                        current: String(props.uploadProgress.completed),
+                        total: String(props.uploadProgress.total),
+                        fileName: props.uploadProgress.currentFileName ?? "",
+                      })}
+                    </p>
+                    <div className="upload-progress-track">
+                      <div
+                        className="upload-progress-bar"
+                        style={{
+                          width: `${Math.round((props.uploadProgress.completed / props.uploadProgress.total) * 100)}%`,
+                        }}
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <p className="text-sm text-[var(--color-text-muted)]">
+                      {t("app.library.createModalUploadDescription")}
+                    </p>
+                    <label className="button-secondary inline-flex cursor-pointer">
+                      <input
+                        accept="image/jpeg,image/png"
+                        aria-label={t("app.library.createModalUploadButton")}
+                        className="hidden"
+                        multiple
+                        onChange={(event) => {
+                          const files = event.target.files
+                            ? Array.from(event.target.files)
+                            : [];
+                          if (files.length > 0) {
+                            props.onUploadFiles(files);
+                            event.target.value = "";
+                          }
+                        }}
+                        type="file"
+                      />
+                      {t("app.library.createModalUploadButton")}
+                    </label>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <div className="rounded-[1.25rem] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                  <p className="eyebrow">{t("app.library.createModalPickerEyebrow")}</p>
+                  <p className="mt-1 text-sm font-medium">
+                    {t("app.library.createModalPickerTitle")}
+                  </p>
+                </div>
+                <input
+                  aria-label={t("app.library.createModalPickerFilterLabel")}
+                  className="field w-full py-1.5 text-sm sm:w-64"
+                  onChange={(event) => {
+                    props.onDraftChange("existingFilter", event.target.value);
+                  }}
+                  placeholder={t("app.library.createModalPickerFilterPlaceholder")}
+                  type="search"
+                  value={props.draft.existingFilter}
+                />
+              </div>
+
+              <div className="mt-4 max-h-[26rem] overflow-y-auto">
+                {props.existingPhotos.length === 0 ? (
+                  <EmptyHint>{t("app.library.createModalNoPhotos")}</EmptyHint>
+                ) : (
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {props.existingPhotos.map((photo) => {
+                      const selected = props.selectedPhotoIds.includes(photo.id);
+                      return (
+                        <button
+                          aria-pressed={selected}
+                          className={`rounded-[1.25rem] border px-4 py-3 text-left transition ${
+                            selected
+                              ? "border-[var(--color-accent-strong)] bg-[var(--color-surface-strong)]"
+                              : "border-[var(--color-border)] bg-[var(--color-panel)] hover:border-[var(--color-accent)]"
+                          }`}
+                          key={photo.id}
+                          onClick={() => {
+                            props.onTogglePhoto(photo.id);
+                          }}
+                          type="button"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-medium">
+                                {photo.originalFilename}
+                              </p>
+                              <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+                                {photo.mimeType}
+                              </p>
+                            </div>
+                            <span className="shrink-0 text-xs font-medium text-[var(--color-text-muted)]">
+                              {selected
+                                ? t("app.library.createModalSelected")
+                                : t("app.library.createModalSelect")}
+                            </span>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="rounded-[1.25rem] border border-dashed border-[var(--color-border)] px-4 py-4">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-sm font-medium">
+                  {t("app.library.createModalSelectedCount", {
+                    count: String(props.selectedPhotoIds.length),
+                  })}
+                </span>
+                {props.partialAlbumId ? (
+                  <Link
+                    className="text-sm font-medium text-[var(--color-link)] hover:text-[var(--color-link-hover)]"
+                    onClick={props.onClose}
+                    to={buildAlbumDetailPath(props.partialAlbumId)}
+                  >
+                    {t("app.library.createModalOpenPartialAlbum")}
+                  </Link>
+                ) : null}
+              </div>
+
+              {props.batchProgress ? (
+                <div className="mt-3 space-y-2">
+                  <p className="text-sm text-[var(--color-text-muted)]">
+                    {t("app.library.createModalBatchProgress", {
+                      current: String(props.batchProgress.completed),
+                      total: String(props.batchProgress.total),
+                      fileName: props.batchProgress.currentFileName ?? "",
+                    })}
+                  </p>
+                  <div className="upload-progress-track">
+                    <div
+                      className="upload-progress-bar"
+                      style={{
+                        width: `${Math.round((props.batchProgress.completed / props.batchProgress.total) * 100)}%`,
+                      }}
+                    />
+                  </div>
+                </div>
+              ) : null}
+
+              {props.uploadError ? (
+                <InlineMessage className="mt-3" tone="danger">
+                  {props.uploadError}
+                </InlineMessage>
+              ) : null}
+
+              {props.submitError ? (
+                <InlineMessage className="mt-3" tone="danger">
+                  {props.submitError}
+                </InlineMessage>
+              ) : null}
+
+              {props.failures.length > 0 ? (
+                <div className="mt-3 rounded-[1rem] border border-[var(--color-border)] bg-[var(--color-panel)] px-4 py-3">
+                  <p className="text-sm font-medium">
+                    {t("app.library.createModalFailuresTitle")}
+                  </p>
+                  <ul className="mt-2 space-y-1 text-sm text-[var(--color-text-muted)]">
+                    {props.failures.map((failure) => (
+                      <li key={failure}>• {failure}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-6 flex flex-wrap justify-end gap-2">
+          <button className="button-secondary" onClick={props.onClose} type="button">
+            {t("app.library.cancel")}
+          </button>
+          <button
+            className="button-primary"
+            disabled={props.isBusy}
+            onClick={props.onSubmit}
+            type="button"
+          >
+            {props.isBusy
+              ? t("app.library.createModalCreating")
+              : t("app.library.createModalSubmit")}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function LibraryPhotoTile(props: {
   photo: PhotoDto;
   isFavorite: boolean;
@@ -702,9 +1066,11 @@ export async function clientAction({
 export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
   const { locale, t } = useI18n();
   const actionData = useActionData<typeof clientAction>();
+  const navigate = useNavigate();
   const navigation = useNavigation();
   const revalidator = useRevalidator();
   const [searchParams, setSearchParams] = useSearchParams();
+  const createAlbumTriggerRef = useRef<HTMLButtonElement | null>(null);
   const [photos, setPhotos] = useState<PhotoDto[]>(loaderData.photos);
   const [albums, setAlbums] = useState<AlbumDto[]>(loaderData.albums);
   const [photoFavorites, setPhotoFavorites] = useState<
@@ -730,10 +1096,30 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
   const [libraryView, setLibraryView] = useState<LibraryView>(
     resolveLibraryView(searchParams.get("view")),
   );
-  const [albumDraft, setAlbumDraft] = useState({
+  const [isCreateAlbumOpen, setIsCreateAlbumOpen] = useState(false);
+  const [createAlbumDraft, setCreateAlbumDraft] = useState({
     name: "",
     description: "",
+    existingFilter: "",
   });
+  const [createSelectedPhotoIds, setCreateSelectedPhotoIds] = useState<string[]>(
+    [],
+  );
+  const [createUploadProgress, setCreateUploadProgress] =
+    useState<UploadProgressState | null>(null);
+  const [createBatchProgress, setCreateBatchProgress] =
+    useState<UploadProgressState | null>(null);
+  const [isCreateUploadTargetActive, setIsCreateUploadTargetActive] =
+    useState(false);
+  const [createAlbumError, setCreateAlbumError] = useState<string | null>(null);
+  const [createAlbumUploadError, setCreateAlbumUploadError] = useState<
+    string | null
+  >(null);
+  const [createAlbumFailures, setCreateAlbumFailures] = useState<string[]>([]);
+  const [isCreatingAlbum, setIsCreatingAlbum] = useState(false);
+  const [partialCreatedAlbumId, setPartialCreatedAlbumId] = useState<
+    string | null
+  >(null);
   const [albumActionSuccess, setAlbumActionSuccess] = useState<string | null>(null);
   const [editingAlbumId, setEditingAlbumId] = useState<string | null>(null);
   const [editAlbumDraft, setEditAlbumDraft] = useState({
@@ -805,6 +1191,22 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
         );
       }),
     [geoMapState.items, normalizedLibraryFilter],
+  );
+  const normalizedCreatePhotoFilter = createAlbumDraft.existingFilter
+    .trim()
+    .toLowerCase();
+  const filteredCreateLibraryPhotos = useMemo(
+    () =>
+      photos.filter((photo) => {
+        if (normalizedCreatePhotoFilter.length === 0) {
+          return true;
+        }
+
+        return photo.originalFilename
+          .toLowerCase()
+          .includes(normalizedCreatePhotoFilter);
+      }),
+    [normalizedCreatePhotoFilter, photos],
   );
 
   const timelineGroups = useMemo<TimelineGroup[]>(
@@ -1005,9 +1407,6 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
       setAlbumActionSuccess(null);
       setUploadError(null);
       setUploadSuccessMessage(null);
-      if (actionData.intent === "create-album") {
-        setAlbumDraft({ name: "", description: "" });
-      }
       if (actionData.intent === "update-album") {
         setEditingAlbumId(null);
       }
@@ -1124,6 +1523,218 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
     } finally {
       setUploadingPhoto(false);
       setUploadProgress(null);
+    }
+  }
+
+  function resetCreateAlbumState() {
+    setCreateAlbumDraft({
+      name: "",
+      description: "",
+      existingFilter: "",
+    });
+    setCreateSelectedPhotoIds([]);
+    setCreateUploadProgress(null);
+    setCreateBatchProgress(null);
+    setIsCreateUploadTargetActive(false);
+    setCreateAlbumError(null);
+    setCreateAlbumUploadError(null);
+    setCreateAlbumFailures([]);
+    setPartialCreatedAlbumId(null);
+    setIsCreatingAlbum(false);
+  }
+
+  function openCreateAlbumDialog() {
+    resetCreateAlbumState();
+    setIsCreateAlbumOpen(true);
+  }
+
+  function closeCreateAlbumDialog() {
+    setIsCreateAlbumOpen(false);
+    resetCreateAlbumState();
+    window.setTimeout(() => {
+      createAlbumTriggerRef.current?.focus();
+    }, 0);
+  }
+
+  function updateCreateAlbumDraft(
+    field: "name" | "description" | "existingFilter",
+    value: string,
+  ) {
+    setCreateAlbumDraft((current) => ({
+      ...current,
+      [field]: value,
+    }));
+  }
+
+  function toggleCreateAlbumPhotoSelection(photoId: string) {
+    setCreateSelectedPhotoIds((current) =>
+      current.includes(photoId)
+        ? current.filter((id) => id !== photoId)
+        : [...current, photoId],
+    );
+  }
+
+  async function handleCreateAlbumUploads(files: File[]) {
+    const supportedFiles = getSupportedUploadFiles(files);
+    if (supportedFiles.length === 0) {
+      setCreateAlbumUploadError(t("app.library.uploadTypeError"));
+      return;
+    }
+
+    setCreateAlbumUploadError(null);
+    setCreateAlbumFailures([]);
+    setCreateUploadProgress({
+      total: supportedFiles.length,
+      completed: 0,
+      currentFileName: supportedFiles[0]?.name ?? null,
+    });
+
+    const uploadFailures: string[] = [];
+    const uploadedPhotos: PhotoDto[] = [];
+    let uploadedCount = 0;
+
+    try {
+      for (const [index, file] of supportedFiles.entries()) {
+        setCreateUploadProgress({
+          total: supportedFiles.length,
+          completed: uploadedCount,
+          currentFileName: file.name,
+        });
+
+        try {
+          const photo = await uploadPhoto(file);
+          uploadedPhotos.push(photo);
+          uploadedCount += 1;
+        } catch (error) {
+          uploadFailures.push(
+            error instanceof ApiError
+              ? `${file.name}: ${error.message}`
+              : t("app.library.uploadFileFailed", {
+                  fileName: file.name,
+                }),
+          );
+        }
+
+        setCreateUploadProgress({
+          total: supportedFiles.length,
+          completed: uploadedCount,
+          currentFileName:
+            index < supportedFiles.length - 1
+              ? supportedFiles[index + 1]!.name
+              : null,
+        });
+      }
+
+      if (uploadedPhotos.length > 0) {
+        startTransition(() => {
+          setPhotos((current) => [...uploadedPhotos, ...current]);
+          setCreateSelectedPhotoIds((current) => [
+            ...new Set([...current, ...uploadedPhotos.map((photo) => photo.id)]),
+          ]);
+        });
+      }
+
+      if (uploadFailures.length > 0) {
+        setCreateAlbumUploadError(uploadFailures.join(" "));
+      }
+    } finally {
+      setCreateUploadProgress(null);
+    }
+  }
+
+  async function handleCreateAlbumSubmit() {
+    const trimmedName = createAlbumDraft.name.trim();
+    const trimmedDescription = createAlbumDraft.description.trim();
+
+    if (trimmedName.length === 0) {
+      setCreateAlbumError(t("app.library.createModalNameRequired"));
+      return;
+    }
+    if (trimmedName.length > 255) {
+      setCreateAlbumError(t("app.library.createModalNameTooLong"));
+      return;
+    }
+    if (trimmedDescription.length > 2000) {
+      setCreateAlbumError(t("app.library.createModalDescriptionTooLong"));
+      return;
+    }
+
+    setIsCreatingAlbum(true);
+    setCreateAlbumError(null);
+    setCreateAlbumFailures([]);
+    setPartialCreatedAlbumId(null);
+
+    try {
+      const album = await createAlbum({
+        name: trimmedName,
+        description: trimmedDescription,
+      });
+      const selectedPhotos = photos.filter((photo) =>
+        createSelectedPhotoIds.includes(photo.id),
+      );
+
+      if (selectedPhotos.length > 0) {
+        const failures: string[] = [];
+        let completed = 0;
+
+        setCreateBatchProgress({
+          total: selectedPhotos.length,
+          completed: 0,
+          currentFileName: selectedPhotos[0]?.originalFilename ?? null,
+        });
+
+        for (const [index, photo] of selectedPhotos.entries()) {
+          setCreateBatchProgress({
+            total: selectedPhotos.length,
+            completed,
+            currentFileName: photo.originalFilename,
+          });
+
+          try {
+            await addPhotoToAlbum(album.id, photo.id);
+            completed += 1;
+          } catch (error) {
+            failures.push(
+              error instanceof Error
+                ? `${photo.originalFilename}: ${error.message}`
+                : t("app.library.createModalAddPhotoFailed", {
+                    fileName: photo.originalFilename,
+                  }),
+            );
+          }
+
+          setCreateBatchProgress({
+            total: selectedPhotos.length,
+            completed,
+            currentFileName:
+              index < selectedPhotos.length - 1
+                ? selectedPhotos[index + 1]!.originalFilename
+                : null,
+          });
+        }
+
+        if (failures.length > 0) {
+          await reloadLibrary();
+          setCreateAlbumFailures(failures);
+          setCreateAlbumError(t("app.library.createModalPartialFailure"));
+          setPartialCreatedAlbumId(album.id);
+          return;
+        }
+      }
+
+      await reloadLibrary();
+      setIsCreateAlbumOpen(false);
+      resetCreateAlbumState();
+      navigate(buildAlbumDetailPath(album.id));
+    } catch (error) {
+      if (error instanceof Error && error.message) {
+        setCreateAlbumError(error.message);
+      } else {
+        setCreateAlbumError(t("app.library.createModalCreateFailed"));
+      }
+    } finally {
+      setIsCreatingAlbum(false);
+      setCreateBatchProgress(null);
     }
   }
 
@@ -1290,7 +1901,16 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
               type="search"
               value={libraryFilter}
             />
-            {libraryView !== "map" ? (
+            {libraryView === "albums" ? (
+              <button
+                className="button-primary py-1.5 text-sm"
+                onClick={openCreateAlbumDialog}
+                ref={createAlbumTriggerRef}
+                type="button"
+              >
+                {t("app.library.createModalOpenButton")}
+              </button>
+            ) : libraryView !== "map" ? (
               <label className="button-primary cursor-pointer py-1.5 text-sm">
                 <input
                   accept="image/jpeg,image/png"
@@ -1318,9 +1938,7 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
 
       <section
         className={`grid gap-6 ${
-          libraryView === "albums"
-            ? "xl:grid-cols-[1.05fr_0.95fr]"
-            : libraryView === "map"
+          libraryView === "map"
               ? ""
               : "xl:grid-cols-[minmax(0,1fr)_15rem]"
         }`}
@@ -1800,69 +2418,6 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
 
         {libraryView === "albums" && (
           <div className="space-y-4">
-            <Panel className="p-4">
-              <p className="eyebrow">{t("app.library.createAlbumEyebrow")}</p>
-              <h2 className="mt-1 text-sm font-semibold">
-                {t("app.library.createAlbumTitle")}
-              </h2>
-              <p className="mt-2 text-sm leading-6 text-[var(--color-text-muted)]">
-                {t("app.library.createAlbumDescription")}
-              </p>
-              <Form className="mt-3 space-y-3" method="post">
-                <input name="intent" type="hidden" value="create-album" />
-                <label className="block">
-                  <span className="mb-2 block text-sm font-medium">
-                    {t("common.name")}
-                  </span>
-                  <input
-                    className="field"
-                    name="name"
-                    onChange={(event) =>
-                      setAlbumDraft((current) => ({
-                        ...current,
-                        name: event.target.value,
-                      }))
-                    }
-                    required
-                    value={albumDraft.name}
-                  />
-                </label>
-
-                <label className="block">
-                  <span className="mb-2 block text-sm font-medium">
-                    {t("common.description")}
-                  </span>
-                  <textarea
-                    className="field min-h-28 resize-y"
-                    name="description"
-                    onChange={(event) =>
-                      setAlbumDraft((current) => ({
-                        ...current,
-                        description: event.target.value,
-                      }))
-                    }
-                    value={albumDraft.description}
-                  />
-                </label>
-
-                {albumActionError ? (
-                  <InlineMessage tone="danger">
-                    {albumActionError}
-                  </InlineMessage>
-                ) : null}
-
-                <button
-                  className="button-primary w-full"
-                  disabled={pendingIntent === "create-album"}
-                  type="submit"
-                >
-                  {pendingIntent === "create-album"
-                    ? t("common.creating")
-                    : t("app.library.createAlbumSubmit")}
-                </button>
-              </Form>
-            </Panel>
-
             {albumActionSuccess ? (
               <InlineMessage tone="success">{albumActionSuccess}</InlineMessage>
             ) : null}
@@ -1934,6 +2489,32 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
           </div>
         )}
       </section>
+
+      {isCreateAlbumOpen ? (
+        <CreateAlbumDialog
+          batchProgress={createBatchProgress}
+          draft={createAlbumDraft}
+          existingPhotos={filteredCreateLibraryPhotos}
+          failures={createAlbumFailures}
+          isBusy={isCreatingAlbum}
+          isUploadTargetActive={isCreateUploadTargetActive}
+          onClose={closeCreateAlbumDialog}
+          onDraftChange={updateCreateAlbumDraft}
+          onSubmit={() => {
+            void handleCreateAlbumSubmit();
+          }}
+          onTogglePhoto={toggleCreateAlbumPhotoSelection}
+          onUploadFiles={(files) => {
+            void handleCreateAlbumUploads(files);
+          }}
+          onUploadTargetActiveChange={setIsCreateUploadTargetActive}
+          partialAlbumId={partialCreatedAlbumId}
+          selectedPhotoIds={createSelectedPhotoIds}
+          submitError={createAlbumError}
+          uploadError={createAlbumUploadError}
+          uploadProgress={createUploadProgress}
+        />
+      ) : null}
 
       {editingAlbum ? (
         <AlbumEditDialog

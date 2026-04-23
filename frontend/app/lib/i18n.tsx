@@ -332,6 +332,41 @@ const enMessages = {
   "app.library.createAlbumDescription":
     "Albums are curated selections inside your library. If you need members, roles, or invite links, create a Space instead.",
   "app.library.createAlbumSubmit": "Create album",
+  "app.library.createModalOpenButton": "Create album",
+  "app.library.createModalEyebrow": "Create album",
+  "app.library.createModalTitle": "Build a new personal album",
+  "app.library.createModalDescription":
+    "Start with a name, then add photos by uploading new files or selecting existing items from your library.",
+  "app.library.createModalUploadEyebrow": "Upload new",
+  "app.library.createModalUploadTitle": "Add fresh photos",
+  "app.library.createModalUploadDescription":
+    "Drop JPEG or PNG files here, or choose them from disk. Uploaded photos are auto-selected for the new album.",
+  "app.library.createModalUploadButton": "Choose files",
+  "app.library.createModalUploadProgress": "Uploading {current} of {total}",
+  "app.library.createModalPickerEyebrow": "Pick existing",
+  "app.library.createModalPickerTitle": "Select from your library",
+  "app.library.createModalPickerFilterLabel": "Filter existing photos",
+  "app.library.createModalPickerFilterPlaceholder": "Filter by filename",
+  "app.library.createModalNoPhotos":
+    "No personal library photos match the current filter.",
+  "app.library.createModalSelected": "Selected",
+  "app.library.createModalSelect": "Select",
+  "app.library.createModalSelectedCount": "{count} selected",
+  "app.library.createModalBatchProgress": "Adding {current} of {total}",
+  "app.library.createModalFailuresTitle": "Some photos could not be added",
+  "app.library.createModalSubmit": "Create and open album",
+  "app.library.createModalCreating": "Creating album...",
+  "app.library.createModalNameRequired": "Album name is required.",
+  "app.library.createModalNameTooLong":
+    "Album name must be 255 characters or fewer.",
+  "app.library.createModalDescriptionTooLong":
+    "Album description must be 2000 characters or fewer.",
+  "app.library.createModalCreateFailed": "Failed to create album.",
+  "app.library.createModalAddPhotoFailed":
+    "{fileName}: Failed to add photo to the album.",
+  "app.library.createModalPartialFailure":
+    "Album created, but some photos could not be added.",
+  "app.library.createModalOpenPartialAlbum": "Open created album",
   "app.library.albumsSpacesEyebrow": "Albums and Spaces",
   "app.library.albumsSpacesTitle": "Curate here, collaborate in Spaces",
   "app.library.albumsSpacesDescription":
@@ -1031,6 +1066,42 @@ const ruMessages: Partial<MessageCatalog> = {
   "app.library.createAlbumDescription":
     "Альбомы это курируемые подборки внутри вашей библиотеки. Если нужны участники, роли или инвайт-ссылки, создайте Space.",
   "app.library.createAlbumSubmit": "Создать альбом",
+  "app.library.createModalOpenButton": "Создать альбом",
+  "app.library.createModalEyebrow": "Создание альбома",
+  "app.library.createModalTitle": "Соберите новый личный альбом",
+  "app.library.createModalDescription":
+    "Начните с названия, затем добавьте фото через загрузку новых файлов или выбор существующих элементов из библиотеки.",
+  "app.library.createModalUploadEyebrow": "Загрузить новые",
+  "app.library.createModalUploadTitle": "Добавьте новые фото",
+  "app.library.createModalUploadDescription":
+    "Перетащите сюда JPEG или PNG либо выберите их с диска. Загруженные фото автоматически отмечаются для нового альбома.",
+  "app.library.createModalUploadButton": "Выбрать файлы",
+  "app.library.createModalUploadProgress": "Загрузка {current} из {total}",
+  "app.library.createModalPickerEyebrow": "Выбрать существующие",
+  "app.library.createModalPickerTitle": "Выберите из своей библиотеки",
+  "app.library.createModalPickerFilterLabel": "Фильтр существующих фото",
+  "app.library.createModalPickerFilterPlaceholder": "Фильтр по имени файла",
+  "app.library.createModalNoPhotos":
+    "Нет фото из личной библиотеки, подходящих под текущий фильтр.",
+  "app.library.createModalSelected": "Выбрано",
+  "app.library.createModalSelect": "Выбрать",
+  "app.library.createModalSelectedCount": "Выбрано: {count}",
+  "app.library.createModalBatchProgress": "Добавление {current} из {total}",
+  "app.library.createModalFailuresTitle":
+    "Некоторые фото не удалось добавить",
+  "app.library.createModalSubmit": "Создать и открыть альбом",
+  "app.library.createModalCreating": "Создание альбома...",
+  "app.library.createModalNameRequired": "Название альбома обязательно.",
+  "app.library.createModalNameTooLong":
+    "Название альбома должно быть не длиннее 255 символов.",
+  "app.library.createModalDescriptionTooLong":
+    "Описание альбома должно быть не длиннее 2000 символов.",
+  "app.library.createModalCreateFailed": "Не удалось создать альбом.",
+  "app.library.createModalAddPhotoFailed":
+    "{fileName}: не удалось добавить фото в альбом.",
+  "app.library.createModalPartialFailure":
+    "Альбом создан, но некоторые фото не удалось добавить.",
+  "app.library.createModalOpenPartialAlbum": "Открыть созданный альбом",
   "app.library.albumsSpacesEyebrow": "Альбомы и Spaces",
   "app.library.albumsSpacesTitle": "Курируйте здесь, сотрудничайте в Spaces",
   "app.library.albumsSpacesDescription":
