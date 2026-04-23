@@ -546,4 +546,154 @@ class AlbumResourceTest {
 		authAs(intruderToken).when().delete("/api/v1/albums/{id}/cover", albumId).then().statusCode(404).body("error",
 				equalTo("not_found"));
 	}
+
+	@Test
+	void listAlbumsSortByNameAscOrderedAlphabetically() throws IOException {
+		String token = registerUserToken("sort-name");
+		String cId = createAlbum(token, "Charlie");
+		String aId = createAlbum(token, "Alpha");
+		String bId = createAlbum(token, "Bravo");
+
+		authAs(token).queryParam("sort", "name").queryParam("direction", "asc").when().get("/api/v1/albums").then()
+				.statusCode(200).body("items", hasSize(3)).body("items[0].id", equalTo(aId))
+				.body("items[1].id", equalTo(bId)).body("items[2].id", equalTo(cId));
+
+		authAs(token).queryParam("sort", "name").queryParam("direction", "desc").when().get("/api/v1/albums").then()
+				.statusCode(200).body("items[0].id", equalTo(cId)).body("items[1].id", equalTo(bId))
+				.body("items[2].id", equalTo(aId));
+
+		authAs(token).queryParam("sort", "name").when().get("/api/v1/albums").then().statusCode(200).body("items[0].id",
+				equalTo(aId));
+	}
+
+	@Test
+	void listAlbumsSortByItemCountOrdersByPhotoCount() throws IOException {
+		String token = registerUserToken("sort-count");
+		String oneId = createAlbum(token, "One");
+		String threeId = createAlbum(token, "Three");
+		String twoId = createAlbum(token, "Two");
+
+		addUniquePhotos(token, oneId, 1);
+		addUniquePhotos(token, threeId, 3);
+		addUniquePhotos(token, twoId, 2);
+
+		authAs(token).queryParam("sort", "itemCount").queryParam("direction", "desc").when().get("/api/v1/albums")
+				.then().statusCode(200).body("items[0].id", equalTo(threeId)).body("items[1].id", equalTo(twoId))
+				.body("items[2].id", equalTo(oneId));
+
+		authAs(token).queryParam("sort", "itemCount").queryParam("direction", "asc").when().get("/api/v1/albums").then()
+				.statusCode(200).body("items[0].id", equalTo(oneId)).body("items[1].id", equalTo(twoId))
+				.body("items[2].id", equalTo(threeId));
+	}
+
+	@Test
+	void listAlbumsSortByCreatedAtDescIsDefault() throws IOException {
+		String token = registerUserToken("sort-default");
+		String firstId = createAlbum(token, "First");
+		String secondId = createAlbum(token, "Second");
+		String thirdId = createAlbum(token, "Third");
+
+		authAs(token).when().get("/api/v1/albums").then().statusCode(200).body("items[0].id", equalTo(thirdId))
+				.body("items[1].id", equalTo(secondId)).body("items[2].id", equalTo(firstId));
+
+		authAs(token).queryParam("sort", "createdAt").queryParam("direction", "asc").when().get("/api/v1/albums").then()
+				.statusCode(200).body("items[0].id", equalTo(firstId)).body("items[1].id", equalTo(secondId))
+				.body("items[2].id", equalTo(thirdId));
+	}
+
+	@Test
+	void listAlbumsSortByUpdatedAtReflectsLastEdit() throws IOException {
+		String token = registerUserToken("sort-updated");
+		String firstId = createAlbum(token, "First");
+		String secondId = createAlbum(token, "Second");
+		String thirdId = createAlbum(token, "Third");
+
+		authAs(token).contentType(ContentType.JSON).body("{\"name\": \"First edited\"}").when()
+				.put("/api/v1/albums/{id}", firstId).then().statusCode(200);
+
+		authAs(token).queryParam("sort", "updatedAt").queryParam("direction", "desc").when().get("/api/v1/albums")
+				.then().statusCode(200).body("items[0].id", equalTo(firstId)).body("items[1].id", equalTo(thirdId))
+				.body("items[2].id", equalTo(secondId));
+	}
+
+	@Test
+	void listAlbumsSortByNewestPhotoPlacesEmptyAlbumsByNullPolicy() throws IOException {
+		String token = registerUserToken("sort-newest");
+		String emptyId = createAlbum(token, "Empty");
+		String olderId = createAlbum(token, "Older");
+		String newerId = createAlbum(token, "Newer");
+
+		String olderPhoto = uploadPhoto(token, "newest-older", 0x112233);
+		authAs(token).when().post("/api/v1/albums/{albumId}/photos/{photoId}", olderId, olderPhoto).then()
+				.statusCode(201);
+		String newerPhoto = uploadPhoto(token, "newest-newer", 0x445566);
+		authAs(token).when().post("/api/v1/albums/{albumId}/photos/{photoId}", newerId, newerPhoto).then()
+				.statusCode(201);
+
+		authAs(token).queryParam("sort", "newestPhoto").queryParam("direction", "desc").when().get("/api/v1/albums")
+				.then().statusCode(200).body("items[0].id", equalTo(newerId)).body("items[1].id", equalTo(olderId))
+				.body("items[2].id", equalTo(emptyId));
+
+		authAs(token).queryParam("sort", "newestPhoto").queryParam("direction", "asc").when().get("/api/v1/albums")
+				.then().statusCode(200).body("items[0].id", equalTo(emptyId)).body("items[1].id", equalTo(olderId))
+				.body("items[2].id", equalTo(newerId));
+	}
+
+	@Test
+	void listAlbumsInvalidSortReturns400() {
+		TestAuthHelper.authenticated().queryParam("sort", "bogus").when().get("/api/v1/albums").then().statusCode(400)
+				.body("error", equalTo("bad_request"));
+	}
+
+	@Test
+	void listAlbumsInvalidDirectionReturns400() {
+		TestAuthHelper.authenticated().queryParam("direction", "sideways").when().get("/api/v1/albums").then()
+				.statusCode(400).body("error", equalTo("bad_request"));
+	}
+
+	@Test
+	void listAlbumsPaginationStableUnderTies() throws IOException {
+		String token = registerUserToken("sort-pagination");
+		String firstId = createAlbum(token, "Same");
+		String secondId = createAlbum(token, "Same");
+		String thirdId = createAlbum(token, "Same");
+
+		String firstPageFirst = authAs(token).queryParam("sort", "name").queryParam("direction", "asc")
+				.queryParam("size", "2").queryParam("page", "0").when().get("/api/v1/albums").then().statusCode(200)
+				.body("items", hasSize(2)).extract().path("items[0].id");
+		String firstPageSecond = authAs(token).queryParam("sort", "name").queryParam("direction", "asc")
+				.queryParam("size", "2").queryParam("page", "0").when().get("/api/v1/albums").then().extract()
+				.path("items[1].id");
+		String secondPageFirst = authAs(token).queryParam("sort", "name").queryParam("direction", "asc")
+				.queryParam("size", "2").queryParam("page", "1").when().get("/api/v1/albums").then().statusCode(200)
+				.body("items", hasSize(1)).extract().path("items[0].id");
+
+		java.util.Set<String> collected = new java.util.HashSet<>();
+		collected.add(firstPageFirst);
+		collected.add(firstPageSecond);
+		collected.add(secondPageFirst);
+		org.junit.jupiter.api.Assertions.assertEquals(java.util.Set.of(firstId, secondId, thirdId), collected);
+	}
+
+	private String createAlbum(String token, String name) {
+		return authAs(token).contentType(ContentType.JSON).body("{\"name\": \"" + name + "\"}").when()
+				.post("/api/v1/albums").then().statusCode(201).extract().path("id");
+	}
+
+	private String uploadPhoto(String token, String prefix, int rgb) throws IOException {
+		Path image = createJpegImage(prefix, 60, 60, rgb);
+		return authAs(token).multiPart("file", image.toFile(), "image/jpeg").when().post("/api/v1/photos").then()
+				.statusCode(201).extract().path("id");
+	}
+
+	private void addUniquePhotos(String token, String albumId, int count) throws IOException {
+		for (int i = 0; i < count; i++) {
+			String suffix = UUID.randomUUID().toString().substring(0, 6);
+			Path image = createJpegImage("sort-count-" + suffix, 60 + i, 60 + i, 0x112233 ^ (i * 0x55AA77));
+			String photoId = authAs(token).multiPart("file", image.toFile(), "image/jpeg").when().post("/api/v1/photos")
+					.then().statusCode(201).extract().path("id");
+			authAs(token).when().post("/api/v1/albums/{albumId}/photos/{photoId}", albumId, photoId).then()
+					.statusCode(201);
+		}
+	}
 }

@@ -220,10 +220,20 @@ public class SpaceResource {
 	@Path("/{id}/albums")
 	public Response listAlbums(@PathParam("id") UUID id, @QueryParam("page") @DefaultValue("0") @Min(0) int page,
 			@QueryParam("size") @DefaultValue("50") @Positive int size,
-			@QueryParam("needsTotal") @DefaultValue("false") boolean needsTotal) {
+			@QueryParam("needsTotal") @DefaultValue("false") boolean needsTotal, @QueryParam("sort") String sort,
+			@QueryParam("direction") String direction) {
+		AlbumService.SortField sortField;
+		AlbumService.SortDirection sortDirection;
+		try {
+			sortField = AlbumService.SortField.parse(sort);
+			sortDirection = AlbumService.SortDirection.parse(direction, sortField.defaultDirection());
+		} catch (IllegalArgumentException e) {
+			return ApiErrors.badRequest(e.getMessage());
+		}
 		var user = userResolver.currentUser();
 		return requireRole(id, user.id, SpaceRole.VIEWER).map(role -> {
-			var albums = albumService.listBySpace(id, new PageRequest(page, size, needsTotal));
+			var albums = albumService.listBySpace(id, new PageRequest(page, size, needsTotal), sortField,
+					sortDirection);
 			var summaries = albumService.buildSummaries(albums.items());
 			var summaryPage = new PageResult<>(summaries, albums.page(), albums.size(), albums.hasNext(),
 					albums.totalItems(), albums.totalPages());

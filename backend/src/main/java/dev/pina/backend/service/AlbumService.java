@@ -21,7 +21,9 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -49,6 +51,43 @@ public class AlbumService {
 		}
 
 		record PhotoNotInAlbum() implements SetCoverResult {
+		}
+	}
+
+	public enum SortField {
+		NAME, ITEM_COUNT, CREATED_AT, UPDATED_AT, NEWEST_PHOTO;
+
+		public static SortField parse(String raw) {
+			if (raw == null || raw.isBlank()) {
+				return CREATED_AT;
+			}
+			return switch (raw.strip().toLowerCase(Locale.ROOT)) {
+				case "name" -> NAME;
+				case "itemcount" -> ITEM_COUNT;
+				case "createdat" -> CREATED_AT;
+				case "updatedat" -> UPDATED_AT;
+				case "newestphoto" -> NEWEST_PHOTO;
+				default -> throw new IllegalArgumentException("Invalid sort: " + raw);
+			};
+		}
+
+		public SortDirection defaultDirection() {
+			return this == NAME ? SortDirection.ASC : SortDirection.DESC;
+		}
+	}
+
+	public enum SortDirection {
+		ASC, DESC;
+
+		public static SortDirection parse(String raw, SortDirection defaultDirection) {
+			if (raw == null || raw.isBlank()) {
+				return defaultDirection;
+			}
+			return switch (raw.strip().toLowerCase(Locale.ROOT)) {
+				case "asc" -> ASC;
+				case "desc" -> DESC;
+				default -> throw new IllegalArgumentException("Invalid direction: " + raw);
+			};
 		}
 	}
 
@@ -113,24 +152,71 @@ public class AlbumService {
 		return true;
 	}
 
-	public PageResult<Album> listByOwner(UUID ownerId, PageRequest pageRequest) {
-		int effectiveSize = pageRequest.effectiveSize(MAX_PAGE_SIZE);
-		List<Album> results = em.createQuery(
-				"SELECT a FROM Album a LEFT JOIN FETCH a.owner LEFT JOIN FETCH a.personalLibrary WHERE a.personalLibrary.owner.id = :ownerId ORDER BY a.createdAt DESC",
-				Album.class).setParameter("ownerId", ownerId).setFirstResult(pageRequest.offset(MAX_PAGE_SIZE))
-				.setMaxResults(effectiveSize + 1).getResultList();
-		return toPage(results, pageRequest, effectiveSize,
-				"SELECT COUNT(a) FROM Album a WHERE a.personalLibrary.owner.id = :ownerId", "ownerId", ownerId);
+	public PageResult<Album> listByOwner(UUID ownerId, PageRequest pageRequest, SortField sort,
+			SortDirection direction) {
+		return listAlbums(pageRequest, sort, direction,
+				"SELECT a.id FROM Album a WHERE a.personalLibrary.owner.id = :ownerId",
+				"SELECT COUNT(a) FROM Album a WHERE a.personalLibrary.owner.id = :ownerId",
+				"LEFT JOIN FETCH a.owner LEFT JOIN FETCH a.personalLibrary", "ownerId", ownerId);
 	}
 
-	public PageResult<Album> listBySpace(UUID spaceId, PageRequest pageRequest) {
+	public PageResult<Album> listBySpace(UUID spaceId, PageRequest pageRequest, SortField sort,
+			SortDirection direction) {
+		return listAlbums(pageRequest, sort, direction, "SELECT a.id FROM Album a WHERE a.space.id = :spaceId",
+				"SELECT COUNT(a) FROM Album a WHERE a.space.id = :spaceId",
+				"LEFT JOIN FETCH a.owner LEFT JOIN FETCH a.space", "spaceId", spaceId);
+	}
+
+	private PageResult<Album> listAlbums(PageRequest pageRequest, SortField sort, SortDirection direction,
+			String idSelect, String countQuery, String fetchJoins, String paramName, Object paramValue) {
 		int effectiveSize = pageRequest.effectiveSize(MAX_PAGE_SIZE);
-		List<Album> results = em.createQuery(
-				"SELECT a FROM Album a LEFT JOIN FETCH a.owner LEFT JOIN FETCH a.space WHERE a.space.id = :spaceId ORDER BY a.createdAt DESC",
-				Album.class).setParameter("spaceId", spaceId).setFirstResult(pageRequest.offset(MAX_PAGE_SIZE))
+		String orderBy = buildOrderByClause(sort, direction);
+		List<UUID> idsWithLookahead = em.createQuery(idSelect + " ORDER BY " + orderBy, UUID.class)
+				.setParameter(paramName, paramValue).setFirstResult(pageRequest.offset(MAX_PAGE_SIZE))
 				.setMaxResults(effectiveSize + 1).getResultList();
-		return toPage(results, pageRequest, effectiveSize, "SELECT COUNT(a) FROM Album a WHERE a.space.id = :spaceId",
-				"spaceId", spaceId);
+		boolean hasNext = idsWithLookahead.size() > effectiveSize;
+		List<UUID> pageIds = hasNext ? idsWithLookahead.subList(0, effectiveSize) : idsWithLookahead;
+
+		List<Album> items = fetchAlbumsInOrder(pageIds, fetchJoins);
+
+		Long totalItems = null;
+		Long totalPages = null;
+		if (pageRequest.needsTotal()) {
+			totalItems = em.createQuery(countQuery, Long.class).setParameter(paramName, paramValue).getSingleResult();
+			totalPages = PageResult.totalPages(totalItems, effectiveSize);
+		}
+		return new PageResult<>(items, pageRequest.page(), effectiveSize, hasNext, totalItems, totalPages);
+	}
+
+	private List<Album> fetchAlbumsInOrder(List<UUID> ids, String fetchJoins) {
+		if (ids.isEmpty()) {
+			return List.of();
+		}
+		List<Album> albums = em
+				.createQuery("SELECT DISTINCT a FROM Album a " + fetchJoins + " WHERE a.id IN :ids", Album.class)
+				.setParameter("ids", ids).getResultList();
+		Map<UUID, Album> byId = new HashMap<>(albums.size() * 2);
+		for (Album album : albums) {
+			byId.put(album.id, album);
+		}
+		return ids.stream().map(byId::get).filter(Objects::nonNull).toList();
+	}
+
+	private String buildOrderByClause(SortField sort, SortDirection direction) {
+		String dir = direction == SortDirection.ASC ? "ASC" : "DESC";
+		String nullsClause = "";
+		String sortExpr = switch (sort) {
+			case NAME -> "a.name";
+			case ITEM_COUNT -> "(SELECT COUNT(ap) FROM AlbumPhoto ap WHERE ap.album.id = a.id)";
+			case CREATED_AT -> "a.createdAt";
+			case UPDATED_AT -> "a.updatedAt";
+			case NEWEST_PHOTO ->
+				"(SELECT MAX(COALESCE(p.takenAt, p.createdAt)) FROM AlbumPhoto ap JOIN ap.photo p WHERE ap.album.id = a.id)";
+		};
+		if (sort == SortField.NEWEST_PHOTO) {
+			nullsClause = direction == SortDirection.ASC ? " NULLS FIRST" : " NULLS LAST";
+		}
+		return sortExpr + " " + dir + nullsClause + ", a.id " + dir;
 	}
 
 	/**
@@ -227,19 +313,6 @@ public class AlbumService {
 					agg.latestPhotoAddedAt(), cover));
 		}
 		return summaries;
-	}
-
-	private <T> PageResult<T> toPage(List<T> results, PageRequest pageRequest, int effectiveSize, String countQuery,
-			String paramName, Object paramValue) {
-		boolean hasNext = results.size() > effectiveSize;
-		List<T> items = hasNext ? results.subList(0, effectiveSize) : results;
-		Long totalItems = null;
-		Long totalPages = null;
-		if (pageRequest.needsTotal()) {
-			totalItems = em.createQuery(countQuery, Long.class).setParameter(paramName, paramValue).getSingleResult();
-			totalPages = PageResult.totalPages(totalItems, effectiveSize);
-		}
-		return new PageResult<>(items, pageRequest.page(), effectiveSize, hasNext, totalItems, totalPages);
 	}
 
 	public boolean hasPhoto(Album album, Photo photo) {
