@@ -226,7 +226,8 @@ describe("frontend accessibility smoke", () => {
       {
         path: "/app/library",
         Component: AppLibraryRoute,
-        loader: async () => appLibraryClientLoader(),
+        loader: async ({ request }) =>
+          appLibraryClientLoader({ request } as never),
       },
     ]);
 

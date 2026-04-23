@@ -1,7 +1,7 @@
 ---
 id: TASK-053.08
 title: ALBM-FE-003 Album grid sort control
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-04-22 12:16'
 labels:
@@ -41,10 +41,10 @@ ALBM-BE-002 adds `sort` + `direction` to `GET /api/v1/albums`. The albums view n
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Sort dropdown with all five sort keys and both directions, labelled in `en` and `ru`
-- [ ] #2 Selection persists to URL (`?sort=`, `?dir=`) and survives page reload
-- [ ] #3 `listAlbums` helper accepts `sort` and `direction` params and they are sent to the backend
-- [ ] #4 Default sort is `createdAt desc` when no params present — matching current behaviour
-- [ ] #5 Invalid combinations (e.g. unsupported sort) reset to default and surface an inline hint
-- [ ] #6 Vitest covers URL sync, default behaviour, and the API call shape
+- [x] #1 Sort dropdown with all five sort keys and both directions, labelled in `en` and `ru`
+- [x] #2 Selection persists to URL (`?sort=`, `?dir=`) and survives page reload
+- [x] #3 `listAlbums` helper accepts `sort` and `direction` params and they are sent to the backend
+- [x] #4 Default sort is `createdAt desc` when no params present — matching current behaviour
+- [x] #5 Invalid combinations (e.g. unsupported sort) reset to default and surface an inline hint
+- [x] #6 Vitest covers URL sync, default behaviour, and the API call shape
 <!-- AC:END -->

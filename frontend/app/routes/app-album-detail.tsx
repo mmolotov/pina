@@ -16,16 +16,23 @@ import {
   Panel,
   SurfaceCard,
 } from "~/components/ui";
+import { AlbumShareDialog } from "~/components/album-share-dialog";
 import {
   addFavorite,
   addPhotoToAlbum,
+  clearAlbumCover,
+  createAlbumShareLink,
   deleteAlbum,
+  downloadAlbumArchive,
   getPhotoBlob,
   listAllAlbumPhotos,
+  listAlbumShareLinks,
   listAllPhotos,
   listAlbums,
   listFavorites,
   removeFavorite,
+  revokeAlbumShareLink,
+  setAlbumCover,
   removePhotoFromAlbum,
   updateAlbum,
   uploadPhoto,
@@ -44,7 +51,12 @@ import {
   buildTimelineGroups,
   formatDayLabel,
 } from "~/lib/timeline";
-import type { AlbumDto, FavoriteDto, PhotoDto } from "~/types/api";
+import type {
+  AlbumDto,
+  AlbumShareLinkDto,
+  FavoriteDto,
+  PhotoDto,
+} from "~/types/api";
 
 interface AlbumDetailLoaderData {
   album: AlbumDto | null;
@@ -183,13 +195,25 @@ function formatUploadSummary(
   });
 }
 
+function triggerBlobDownload(blob: Blob, filename: string) {
+  const objectUrl = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = objectUrl;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(objectUrl);
+}
+
 function AlbumPhotoTile(props: {
   albumId: string;
   photo: PhotoDto;
+  isCoverBusy: boolean;
+  isCurrentCover: boolean;
   isRemoveBusy: boolean;
+  onSetCover: () => void;
   removeLabel: string;
+  coverLabel: string;
   setCoverLabel: string;
-  setCoverPendingLabel: string;
   photoForms: RelativeCountForms;
 }) {
   const { t } = useI18n();
@@ -249,12 +273,16 @@ function AlbumPhotoTile(props: {
 
         <div className="pointer-events-none absolute inset-x-0 bottom-0 flex translate-y-2 justify-end gap-2 bg-linear-to-t from-black/55 via-black/20 to-transparent p-3 opacity-0 transition duration-200 group-hover:translate-y-0 group-hover:opacity-100">
           <button
-            className="pointer-events-auto rounded-full border border-white/25 bg-black/45 px-3 py-1 text-xs font-medium text-white/75"
-            disabled
-            title={props.setCoverPendingLabel}
+            className="pointer-events-auto rounded-full border border-white/25 bg-black/45 px-3 py-1 text-xs font-medium text-white"
+            disabled={props.isCurrentCover || props.isCoverBusy}
+            onClick={props.onSetCover}
             type="button"
           >
-            {props.setCoverLabel}
+            {props.isCurrentCover
+              ? props.coverLabel
+              : props.isCoverBusy
+                ? t("common.saving")
+                : props.setCoverLabel}
           </button>
           <Form className="pointer-events-auto" method="post">
             <input name="intent" type="hidden" value="remove-photo-from-album" />
@@ -322,6 +350,21 @@ export default function AppAlbumDetailRoute({
     completed: number;
     currentFileName: string | null;
   } | null>(null);
+  const [isCoverBusy, setIsCoverBusy] = useState<string | null>(null);
+  const [isClearingCover, setIsClearingCover] = useState(false);
+  const [isDownloadingAlbum, setIsDownloadingAlbum] = useState(false);
+  const [shareDialogOpen, setShareDialogOpen] = useState(false);
+  const [shareDialogLinks, setShareDialogLinks] = useState<AlbumShareLinkDto[]>(
+    [],
+  );
+  const [shareDialogLoading, setShareDialogLoading] = useState(false);
+  const [shareDialogCreating, setShareDialogCreating] = useState(false);
+  const [shareDialogRevokeBusyId, setShareDialogRevokeBusyId] = useState<
+    string | null
+  >(null);
+  const [shareDialogToken, setShareDialogToken] = useState<string | null>(null);
+  const [shareDialogError, setShareDialogError] = useState<string | null>(null);
+  const [shareDialogInfo, setShareDialogInfo] = useState<string | null>(null);
   const pendingIntent = String(navigation.formData?.get("intent") ?? "");
   const pendingPhotoId = String(navigation.formData?.get("photoId") ?? "");
 
@@ -527,6 +570,183 @@ export default function AppAlbumDetailRoute({
     }
   }
 
+  async function handleSetCover(photoId: string) {
+    if (!loaderData.albumId) {
+      return;
+    }
+
+    setIsCoverBusy(photoId);
+    setErrorMessage(null);
+
+    try {
+      const updatedAlbum = await setAlbumCover(loaderData.albumId, photoId);
+      setAlbum(updatedAlbum);
+      await refreshAlbumDetail();
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : t("app.albumDetail.setCoverFailed"),
+      );
+    } finally {
+      setIsCoverBusy(null);
+    }
+  }
+
+  async function handleClearCover() {
+    if (!loaderData.albumId) {
+      return;
+    }
+
+    setIsClearingCover(true);
+    setErrorMessage(null);
+
+    try {
+      const updatedAlbum = await clearAlbumCover(loaderData.albumId);
+      setAlbum(updatedAlbum);
+      setIsEditOpen(false);
+      await refreshAlbumDetail();
+      setUploadSuccessMessage(t("app.albumDetail.automaticCoverRestored"));
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : t("app.albumDetail.clearCoverFailed"),
+      );
+    } finally {
+      setIsClearingCover(false);
+    }
+  }
+
+  async function handleDownloadAlbum() {
+    if (!loaderData.albumId || !album) {
+      return;
+    }
+
+    setIsDownloadingAlbum(true);
+    setErrorMessage(null);
+
+    try {
+      const { blob, filename } = await downloadAlbumArchive(
+        loaderData.albumId,
+        "ORIGINAL",
+      );
+      triggerBlobDownload(blob, filename);
+      setUploadSuccessMessage(
+        t("app.albumDetail.downloadStarted", { albumName: album.name }),
+      );
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : t("app.albumDetail.downloadFailed"),
+      );
+    } finally {
+      setIsDownloadingAlbum(false);
+    }
+  }
+
+  async function openShareDialog() {
+    if (!loaderData.albumId) {
+      return;
+    }
+
+    setShareDialogOpen(true);
+    setShareDialogLoading(true);
+    setShareDialogLinks([]);
+    setShareDialogToken(null);
+    setShareDialogError(null);
+    setShareDialogInfo(null);
+
+    try {
+      const links = await listAlbumShareLinks(loaderData.albumId);
+      setShareDialogLinks(links);
+    } catch (error) {
+      setShareDialogError(
+        error instanceof Error ? error.message : t("app.albumShare.loadFailed"),
+      );
+    } finally {
+      setShareDialogLoading(false);
+    }
+  }
+
+  function closeShareDialog() {
+    setShareDialogOpen(false);
+    setShareDialogLoading(false);
+    setShareDialogLinks([]);
+    setShareDialogCreating(false);
+    setShareDialogRevokeBusyId(null);
+    setShareDialogToken(null);
+    setShareDialogError(null);
+    setShareDialogInfo(null);
+  }
+
+  async function copyShareText(
+    value: string,
+    successMessage: string,
+    failureMessage: string,
+  ) {
+    try {
+      if (!navigator.clipboard?.writeText) {
+        throw new Error(failureMessage);
+      }
+
+      await navigator.clipboard.writeText(value);
+      setShareDialogError(null);
+      setShareDialogInfo(successMessage);
+    } catch (error) {
+      setShareDialogError(
+        error instanceof Error ? error.message : failureMessage,
+      );
+    }
+  }
+
+  async function handleCreateShareLink() {
+    if (!loaderData.albumId || !album) {
+      return;
+    }
+
+    setShareDialogCreating(true);
+    setShareDialogError(null);
+    setShareDialogInfo(null);
+
+    try {
+      const created = await createAlbumShareLink(loaderData.albumId);
+      setShareDialogToken(created.token);
+      setShareDialogLinks((current) => [created.link, ...current]);
+      setShareDialogInfo(
+        t("app.albumShare.createdSuccess", { albumName: album.name }),
+      );
+    } catch (error) {
+      setShareDialogError(
+        error instanceof Error ? error.message : t("app.albumShare.createFailed"),
+      );
+    } finally {
+      setShareDialogCreating(false);
+    }
+  }
+
+  async function handleRevokeShareLink(linkId: string) {
+    if (!loaderData.albumId) {
+      return;
+    }
+
+    setShareDialogRevokeBusyId(linkId);
+    setShareDialogError(null);
+    setShareDialogInfo(null);
+
+    try {
+      await revokeAlbumShareLink(loaderData.albumId, linkId);
+      const links = await listAlbumShareLinks(loaderData.albumId);
+      setShareDialogLinks(links);
+      setShareDialogInfo(t("app.albumShare.revokedSuccess"));
+    } catch (error) {
+      setShareDialogError(
+        error instanceof Error ? error.message : t("app.albumShare.revokeFailed"),
+      );
+    } finally {
+      setShareDialogRevokeBusyId(null);
+    }
+  }
+
   if (!loaderData.albumId) {
     return (
       <Panel className="p-6">
@@ -579,16 +799,21 @@ export default function AppAlbumDetailRoute({
             </button>
             <button
               className="button-secondary"
-              disabled
-              title={t("app.albumDetail.downloadPending")}
+              disabled={isDownloadingAlbum}
+              onClick={() => {
+                void handleDownloadAlbum();
+              }}
               type="button"
             >
-              {t("app.albumDetail.downloadAlbum")}
+              {isDownloadingAlbum
+                ? t("common.loading")
+                : t("app.albumDetail.downloadAlbum")}
             </button>
             <button
               className="button-secondary"
-              disabled
-              title={t("app.albumDetail.sharePending")}
+              onClick={() => {
+                void openShareDialog();
+              }}
               type="button"
             >
               {t("app.albumDetail.shareAlbum")}
@@ -767,6 +992,21 @@ export default function AppAlbumDetailRoute({
                 : t("app.albumDetail.saveAlbum")}
             </button>
           </Form>
+
+          <div className="mt-4 flex flex-wrap justify-end gap-2">
+            <button
+              className="button-secondary"
+              disabled={album.coverPhotoId == null || isClearingCover}
+              onClick={() => {
+                void handleClearCover();
+              }}
+              type="button"
+            >
+              {isClearingCover
+                ? t("common.saving")
+                : t("app.albumDetail.useAutomaticCover")}
+            </button>
+          </div>
         </Panel>
       ) : null}
 
@@ -896,16 +1136,21 @@ export default function AppAlbumDetailRoute({
                   {group.photos.map((photo) => (
                     <AlbumPhotoTile
                       albumId={loaderData.albumId}
+                      coverLabel={t("app.albumDetail.currentCover")}
+                      isCoverBusy={isCoverBusy === photo.id}
+                      isCurrentCover={coverPhotoId === photo.id}
                       isRemoveBusy={
                         pendingIntent === "remove-photo-from-album" &&
                         pendingPhotoId === photo.id
                       }
                       key={photo.id}
+                      onSetCover={() => {
+                        void handleSetCover(photo.id);
+                      }}
                       photo={photo}
                       photoForms={photoForms}
                       removeLabel={t("app.albumDetail.removePhoto")}
                       setCoverLabel={t("app.albumDetail.setAsCover")}
-                      setCoverPendingLabel={t("app.albumDetail.setCoverPending")}
                     />
                   ))}
                 </div>
@@ -928,6 +1173,40 @@ export default function AppAlbumDetailRoute({
           </div>
         </section>
       )}
+
+      {shareDialogOpen && album ? (
+        <AlbumShareDialog
+          albumName={album.name}
+          createdToken={shareDialogToken}
+          errorMessage={shareDialogError}
+          infoMessage={shareDialogInfo}
+          isCreating={shareDialogCreating}
+          isLoading={shareDialogLoading}
+          links={shareDialogLinks}
+          onClose={closeShareDialog}
+          onCopyLink={(url) => {
+            void copyShareText(
+              url,
+              t("app.albumShare.linkCopied"),
+              t("app.albumShare.copyLinkFailed"),
+            );
+          }}
+          onCopyToken={(token) => {
+            void copyShareText(
+              token,
+              t("app.albumShare.tokenCopied"),
+              t("app.albumShare.copyTokenFailed"),
+            );
+          }}
+          onCreate={() => {
+            void handleCreateShareLink();
+          }}
+          onRevoke={(linkId) => {
+            void handleRevokeShareLink(linkId);
+          }}
+          revokeBusyLinkId={shareDialogRevokeBusyId}
+        />
+      ) : null}
     </div>
   );
 }

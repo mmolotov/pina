@@ -166,6 +166,7 @@ const enMessages = {
   "shell.theme.switchToLight": "Switch to light theme",
   "shell.logout": "Log out",
   "common.clear": "Clear",
+  "common.close": "Close",
   "common.clearFilter": "Clear filter",
   "common.clearFilters": "Clear filters",
   "common.add": "Add",
@@ -362,6 +363,9 @@ const enMessages = {
   "app.library.createModalDescriptionTooLong":
     "Album description must be 2000 characters or fewer.",
   "app.library.createModalCreateFailed": "Failed to create album.",
+  "app.library.createModalUploading": "Uploading selected photos...",
+  "app.library.createModalWaitForUploads":
+    "Wait for the current uploads to finish before creating the album.",
   "app.library.createModalAddPhotoFailed":
     "{fileName}: Failed to add photo to the album.",
   "app.library.createModalPartialFailure":
@@ -374,6 +378,19 @@ const enMessages = {
   "app.library.openSpaces": "Open Spaces",
   "app.library.albumsEyebrow": "Albums",
   "app.library.albumsTitle": "Curated personal albums",
+  "app.library.albumSortLabel": "Sort albums",
+  "app.library.albumSortReset":
+    "Album sort was reset to the default order because the requested sort is not supported.",
+  "app.library.albumSortOption.nameAsc": "Name (A-Z)",
+  "app.library.albumSortOption.nameDesc": "Name (Z-A)",
+  "app.library.albumSortOption.itemCountAsc": "Item count (few to many)",
+  "app.library.albumSortOption.itemCountDesc": "Item count (many to few)",
+  "app.library.albumSortOption.createdAtDesc": "Album created (newest first)",
+  "app.library.albumSortOption.createdAtAsc": "Album created (oldest first)",
+  "app.library.albumSortOption.updatedAtDesc": "Album updated (newest first)",
+  "app.library.albumSortOption.updatedAtAsc": "Album updated (oldest first)",
+  "app.library.albumSortOption.newestPhotoDesc": "Newest photo (newest first)",
+  "app.library.albumSortOption.newestPhotoAsc": "Newest photo (oldest first)",
   "app.library.noAlbums":
     "No personal albums yet. Use the form above to create one.",
   "app.library.noAlbumsMatch": "No albums match the current filter.",
@@ -412,6 +429,9 @@ const enMessages = {
   "app.library.cancel": "Cancel",
   "app.library.albumShareCopied": '"{albumName}" link copied to clipboard.',
   "app.library.albumShareFailed": "Failed to copy album link.",
+  "app.library.albumDownloadStarted":
+    'Album archive for "{albumName}" is ready to save.',
+  "app.library.albumDownloadFailed": "Failed to download the album archive.",
   "app.library.saveAlbum": "Save album",
   "app.library.photoForAlbumAria": "Photo for album {albumName}",
   "app.library.selectPhotoToAdd": "Select photo to add",
@@ -445,10 +465,9 @@ const enMessages = {
   "app.albumDetail.editAlbum": "Edit album",
   "app.albumDetail.downloadAlbum": "Download",
   "app.albumDetail.shareAlbum": "Share",
-  "app.albumDetail.downloadPending":
-    "Album download wiring is delivered in the follow-up action task.",
-  "app.albumDetail.sharePending":
-    "Public share dialog wiring is delivered in the follow-up action task.",
+  "app.albumDetail.downloadFailed": "Failed to download the album archive.",
+  "app.albumDetail.downloadStarted":
+    'Album archive for "{albumName}" is ready to save.',
   "app.albumDetail.coverAlt": "{albumName} cover",
   "app.albumDetail.noCover": "No album cover yet",
   "app.albumDetail.summaryEyebrow": "Album summary",
@@ -465,6 +484,12 @@ const enMessages = {
   "app.albumDetail.editEyebrow": "Edit",
   "app.albumDetail.editTitle": "Update album details",
   "app.albumDetail.saveAlbum": "Save album",
+  "app.albumDetail.useAutomaticCover": "Use automatic cover",
+  "app.albumDetail.automaticCoverRestored":
+    "Automatic cover selection is active again.",
+  "app.albumDetail.setCoverFailed": "Failed to update the album cover.",
+  "app.albumDetail.clearCoverFailed":
+    "Failed to restore automatic cover selection.",
   "app.albumDetail.addPhotosEyebrow": "Add photos",
   "app.albumDetail.addPhotosTitle": "Grow this album",
   "app.albumDetail.addPhotosDescription":
@@ -484,9 +509,43 @@ const enMessages = {
     "Use the add-photos action to upload new images or attach existing library photos to this album.",
   "app.albumDetail.removePhoto": "Remove",
   "app.albumDetail.setAsCover": "Set as cover",
-  "app.albumDetail.setCoverPending":
-    "Cover selection wiring is delivered in the follow-up action task.",
+  "app.albumDetail.currentCover": "Cover",
   "app.albumDetail.dayGroups": "day groups",
+  "app.albumShare.eyebrow": "Public sharing",
+  "app.albumShare.title": 'Share "{albumName}"',
+  "app.albumShare.description":
+    "Create token-based public access for this album, copy the link or token once, and revoke access when it is no longer needed.",
+  "app.albumShare.createEyebrow": "Create link",
+  "app.albumShare.createTitle": "Issue a new public link",
+  "app.albumShare.createDescription":
+    "Each new share link returns its plaintext token only once. Copy it now if you need to keep it.",
+  "app.albumShare.creating": "Creating link...",
+  "app.albumShare.createButton": "Create public link",
+  "app.albumShare.createdLinkLabel": "Public endpoint",
+  "app.albumShare.copyLink": "Copy link",
+  "app.albumShare.tokenLabel": "Plaintext token",
+  "app.albumShare.copyToken": "Copy token",
+  "app.albumShare.existingEyebrow": "Existing links",
+  "app.albumShare.existingTitle": "Manage issued access",
+  "app.albumShare.noLinks":
+    "No public share links have been created for this album yet.",
+  "app.albumShare.createdAt": "Created",
+  "app.albumShare.expiresAt": "Expires",
+  "app.albumShare.status": "Status",
+  "app.albumShare.noExpiry": "No expiry",
+  "app.albumShare.active": "Active",
+  "app.albumShare.revoked": "Revoked",
+  "app.albumShare.revoke": "Revoke",
+  "app.albumShare.linkCopied": "Public link copied to clipboard.",
+  "app.albumShare.copyLinkFailed": "Failed to copy the public link.",
+  "app.albumShare.tokenCopied": "Token copied to clipboard.",
+  "app.albumShare.copyTokenFailed": "Failed to copy the token.",
+  "app.albumShare.createdSuccess":
+    'New public link created for "{albumName}".',
+  "app.albumShare.revokedSuccess": "Share link revoked.",
+  "app.albumShare.loadFailed": "Failed to load album share links.",
+  "app.albumShare.createFailed": "Failed to create a public link.",
+  "app.albumShare.revokeFailed": "Failed to revoke the share link.",
   "app.albumPhotoDetail.loadFailed": "Failed to load album photo.",
   "app.albumPhotoDetail.missingId": "Album or photo id is missing.",
   "app.albumPhotoDetail.notFound":
@@ -899,6 +958,7 @@ const ruMessages: Partial<MessageCatalog> = {
   "shell.theme.switchToLight": "Переключить на светлую тему",
   "shell.logout": "Выйти",
   "common.clear": "Очистить",
+  "common.close": "Закрыть",
   "common.clearFilter": "Сбросить фильтр",
   "common.clearFilters": "Сбросить фильтры",
   "common.add": "Добавить",
@@ -1097,6 +1157,9 @@ const ruMessages: Partial<MessageCatalog> = {
   "app.library.createModalDescriptionTooLong":
     "Описание альбома должно быть не длиннее 2000 символов.",
   "app.library.createModalCreateFailed": "Не удалось создать альбом.",
+  "app.library.createModalUploading": "Загружаются выбранные фото...",
+  "app.library.createModalWaitForUploads":
+    "Дождитесь завершения текущей загрузки, прежде чем создавать альбом.",
   "app.library.createModalAddPhotoFailed":
     "{fileName}: не удалось добавить фото в альбом.",
   "app.library.createModalPartialFailure":
@@ -1109,6 +1172,27 @@ const ruMessages: Partial<MessageCatalog> = {
   "app.library.openSpaces": "Открыть Spaces",
   "app.library.albumsEyebrow": "Альбомы",
   "app.library.albumsTitle": "Личные курируемые альбомы",
+  "app.library.albumSortLabel": "Сортировка альбомов",
+  "app.library.albumSortReset":
+    "Сортировка альбомов сброшена на порядок по умолчанию, потому что запрошенный вариант не поддерживается.",
+  "app.library.albumSortOption.nameAsc": "Название (А-Я)",
+  "app.library.albumSortOption.nameDesc": "Название (Я-А)",
+  "app.library.albumSortOption.itemCountAsc":
+    "Количество элементов (меньше-больше)",
+  "app.library.albumSortOption.itemCountDesc":
+    "Количество элементов (больше-меньше)",
+  "app.library.albumSortOption.createdAtDesc":
+    "Дата создания альбома (сначала новые)",
+  "app.library.albumSortOption.createdAtAsc":
+    "Дата создания альбома (сначала старые)",
+  "app.library.albumSortOption.updatedAtDesc":
+    "Дата обновления альбома (сначала новые)",
+  "app.library.albumSortOption.updatedAtAsc":
+    "Дата обновления альбома (сначала старые)",
+  "app.library.albumSortOption.newestPhotoDesc":
+    "Новейшее фото (сначала новые)",
+  "app.library.albumSortOption.newestPhotoAsc":
+    "Новейшее фото (сначала старые)",
   "app.library.noAlbums":
     "Пока нет личных альбомов. Используйте форму выше, чтобы создать первый.",
   "app.library.noAlbumsMatch": "Нет альбомов, подходящих под текущий фильтр.",
@@ -1147,6 +1231,9 @@ const ruMessages: Partial<MessageCatalog> = {
   "app.library.cancel": "Отмена",
   "app.library.albumShareCopied": 'Ссылка на "{albumName}" скопирована.',
   "app.library.albumShareFailed": "Не удалось скопировать ссылку на альбом.",
+  "app.library.albumDownloadStarted":
+    'Архив альбома "{albumName}" готов к сохранению.',
+  "app.library.albumDownloadFailed": "Не удалось скачать архив альбома.",
   "app.library.saveAlbum": "Сохранить альбом",
   "app.library.photoForAlbumAria": "Фото для альбома {albumName}",
   "app.library.selectPhotoToAdd": "Выберите фото для добавления",
@@ -1182,10 +1269,9 @@ const ruMessages: Partial<MessageCatalog> = {
   "app.albumDetail.editAlbum": "Редактировать альбом",
   "app.albumDetail.downloadAlbum": "Скачать",
   "app.albumDetail.shareAlbum": "Поделиться",
-  "app.albumDetail.downloadPending":
-    "Подключение скачивания альбома вынесено в следующую задачу действий.",
-  "app.albumDetail.sharePending":
-    "Подключение публичного шаринга вынесено в следующую задачу действий.",
+  "app.albumDetail.downloadFailed": "Не удалось скачать архив альбома.",
+  "app.albumDetail.downloadStarted":
+    'Архив альбома "{albumName}" готов к сохранению.',
   "app.albumDetail.coverAlt": "Обложка альбома {albumName}",
   "app.albumDetail.noCover": "У альбома пока нет обложки",
   "app.albumDetail.summaryEyebrow": "Сводка по альбому",
@@ -1202,6 +1288,12 @@ const ruMessages: Partial<MessageCatalog> = {
   "app.albumDetail.editEyebrow": "Редактирование",
   "app.albumDetail.editTitle": "Обновить данные альбома",
   "app.albumDetail.saveAlbum": "Сохранить альбом",
+  "app.albumDetail.useAutomaticCover": "Использовать автоматическую обложку",
+  "app.albumDetail.automaticCoverRestored":
+    "Автоматический выбор обложки снова активен.",
+  "app.albumDetail.setCoverFailed": "Не удалось обновить обложку альбома.",
+  "app.albumDetail.clearCoverFailed":
+    "Не удалось вернуть автоматический выбор обложки.",
   "app.albumDetail.addPhotosEyebrow": "Добавление фото",
   "app.albumDetail.addPhotosTitle": "Расширьте этот альбом",
   "app.albumDetail.addPhotosDescription":
@@ -1221,9 +1313,43 @@ const ruMessages: Partial<MessageCatalog> = {
     "Используйте действие добавления фото, чтобы загрузить новые изображения или прикрепить существующие фото из библиотеки.",
   "app.albumDetail.removePhoto": "Удалить",
   "app.albumDetail.setAsCover": "Сделать обложкой",
-  "app.albumDetail.setCoverPending":
-    "Подключение выбора обложки вынесено в следующую задачу действий.",
+  "app.albumDetail.currentCover": "Обложка",
   "app.albumDetail.dayGroups": "групп по дням",
+  "app.albumShare.eyebrow": "Публичный доступ",
+  "app.albumShare.title": 'Поделиться "{albumName}"',
+  "app.albumShare.description":
+    "Создавайте публичный доступ по токену к этому альбому, копируйте ссылку или токен один раз и отзывайте доступ, когда он больше не нужен.",
+  "app.albumShare.createEyebrow": "Создание ссылки",
+  "app.albumShare.createTitle": "Выпустить новую публичную ссылку",
+  "app.albumShare.createDescription":
+    "Каждая новая share-ссылка возвращает токен в открытом виде только один раз. Скопируйте его сейчас, если хотите сохранить.",
+  "app.albumShare.creating": "Создаётся ссылка...",
+  "app.albumShare.createButton": "Создать публичную ссылку",
+  "app.albumShare.createdLinkLabel": "Публичный endpoint",
+  "app.albumShare.copyLink": "Скопировать ссылку",
+  "app.albumShare.tokenLabel": "Токен в открытом виде",
+  "app.albumShare.copyToken": "Скопировать токен",
+  "app.albumShare.existingEyebrow": "Существующие ссылки",
+  "app.albumShare.existingTitle": "Управление выданным доступом",
+  "app.albumShare.noLinks":
+    "Для этого альбома пока не создано ни одной публичной share-ссылки.",
+  "app.albumShare.createdAt": "Создана",
+  "app.albumShare.expiresAt": "Истекает",
+  "app.albumShare.status": "Статус",
+  "app.albumShare.noExpiry": "Без срока действия",
+  "app.albumShare.active": "Активна",
+  "app.albumShare.revoked": "Отозвана",
+  "app.albumShare.revoke": "Отозвать",
+  "app.albumShare.linkCopied": "Публичная ссылка скопирована.",
+  "app.albumShare.copyLinkFailed": "Не удалось скопировать публичную ссылку.",
+  "app.albumShare.tokenCopied": "Токен скопирован.",
+  "app.albumShare.copyTokenFailed": "Не удалось скопировать токен.",
+  "app.albumShare.createdSuccess":
+    'Новая публичная ссылка для "{albumName}" создана.',
+  "app.albumShare.revokedSuccess": "Share-ссылка отозвана.",
+  "app.albumShare.loadFailed": "Не удалось загрузить share-ссылки альбома.",
+  "app.albumShare.createFailed": "Не удалось создать публичную ссылку.",
+  "app.albumShare.revokeFailed": "Не удалось отозвать share-ссылку.",
   "app.albumPhotoDetail.loadFailed": "Не удалось загрузить фото из альбома.",
   "app.albumPhotoDetail.missingId":
     "Отсутствует идентификатор альбома или фото.",

@@ -284,7 +284,7 @@ describe("api helpers", () => {
 
     vi.stubGlobal("fetch", fetchMock);
 
-    const albums = await listAlbums(1);
+    const albums = await listAlbums({ size: 1 });
 
     expect(albums.map((album) => album.id)).toEqual(["album-1", "album-2"]);
     expect(fetchMock).toHaveBeenNthCalledWith(
@@ -295,6 +295,34 @@ describe("api helpers", () => {
     expect(fetchMock).toHaveBeenNthCalledWith(
       2,
       "/api/v1/albums?page=1&size=1&needsTotal=true",
+      expect.any(Object),
+    );
+  });
+
+  it("sends album sort and direction query params when requested", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          items: [{ id: "album-1" }],
+          page: 0,
+          size: 1,
+          hasNext: false,
+          totalItems: 1,
+          totalPages: 1,
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    await listAlbums({ size: 1, sort: "updatedAt", direction: "asc" });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/v1/albums?page=0&size=1&needsTotal=true&sort=updatedAt&direction=asc",
       expect.any(Object),
     );
   });

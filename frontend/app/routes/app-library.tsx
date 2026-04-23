@@ -22,20 +22,25 @@ import {
   InlineMessage,
   Panel,
 } from "~/components/ui";
+import { AlbumShareDialog } from "~/components/album-share-dialog";
 import { ProportionalTimelineRail } from "~/components/proportional-timeline-rail";
 import {
   ApiError,
   addFavorite,
   addPhotoToAlbum,
+  createAlbumShareLink,
   createAlbum,
+  downloadAlbumArchive,
   deleteAlbum,
   deletePhoto,
   getPhotoBlob,
   listGeoPhotos,
   listAllPhotos,
+  listAlbumShareLinks,
   listAlbums,
   listFavorites,
   removeFavorite,
+  revokeAlbumShareLink,
   updateAlbum,
   uploadPhoto,
 } from "~/lib/api";
@@ -65,6 +70,9 @@ import {
 } from "~/lib/timeline";
 import type {
   AlbumDto,
+  AlbumShareLinkDto,
+  AlbumSortDirection,
+  AlbumSortField,
   FavoriteDto,
   PhotoDto,
   PhotoGeoBounds,
@@ -88,6 +96,11 @@ interface LibraryLoaderData {
   albums: AlbumDto[];
   photoFavorites: Record<string, FavoriteDto>;
   albumFavorites: Record<string, FavoriteDto>;
+  albumSort: {
+    sort: AlbumSortField;
+    direction: AlbumSortDirection;
+  };
+  albumSortReset: boolean;
 }
 
 interface UploadProgressState {
@@ -107,6 +120,71 @@ type LibraryActionResult =
       intent: "delete-photo" | "create-album" | "update-album" | "delete-album";
       errorMessage: string;
     };
+
+const DEFAULT_ALBUM_SORT: {
+  sort: AlbumSortField;
+  direction: AlbumSortDirection;
+} = {
+  sort: "createdAt",
+  direction: "desc",
+};
+
+const ALBUM_SORT_OPTIONS: Array<{
+  direction: AlbumSortDirection;
+  labelKey: string;
+  sort: AlbumSortField;
+}> = [
+  {
+    sort: "name",
+    direction: "asc",
+    labelKey: "app.library.albumSortOption.nameAsc",
+  },
+  {
+    sort: "name",
+    direction: "desc",
+    labelKey: "app.library.albumSortOption.nameDesc",
+  },
+  {
+    sort: "itemCount",
+    direction: "asc",
+    labelKey: "app.library.albumSortOption.itemCountAsc",
+  },
+  {
+    sort: "itemCount",
+    direction: "desc",
+    labelKey: "app.library.albumSortOption.itemCountDesc",
+  },
+  {
+    sort: "createdAt",
+    direction: "desc",
+    labelKey: "app.library.albumSortOption.createdAtDesc",
+  },
+  {
+    sort: "createdAt",
+    direction: "asc",
+    labelKey: "app.library.albumSortOption.createdAtAsc",
+  },
+  {
+    sort: "updatedAt",
+    direction: "desc",
+    labelKey: "app.library.albumSortOption.updatedAtDesc",
+  },
+  {
+    sort: "updatedAt",
+    direction: "asc",
+    labelKey: "app.library.albumSortOption.updatedAtAsc",
+  },
+  {
+    sort: "newestPhoto",
+    direction: "desc",
+    labelKey: "app.library.albumSortOption.newestPhotoDesc",
+  },
+  {
+    sort: "newestPhoto",
+    direction: "asc",
+    labelKey: "app.library.albumSortOption.newestPhotoAsc",
+  },
+];
 
 function getSupportedUploadFiles(files: Iterable<File>) {
   return Array.from(files).filter(
@@ -147,12 +225,60 @@ function buildAlbumDetailPath(albumId: string) {
   return `/app/library/albums/${albumId}`;
 }
 
-function buildAlbumShareUrl(albumId: string) {
-  if (typeof window === "undefined") {
-    return buildAlbumDetailPath(albumId);
+function buildAlbumSortOptionValue(
+  sort: AlbumSortField,
+  direction: AlbumSortDirection,
+) {
+  return `${sort}:${direction}`;
+}
+
+function parseAlbumSortValue(value: string | null) {
+  const [sort, direction] = value?.split(":") ?? [];
+  return resolveAlbumSort(sort ?? null, direction ?? null);
+}
+
+function resolveAlbumSort(
+  rawSort: string | null,
+  rawDirection: string | null,
+): {
+  resetRequired: boolean;
+  sort: AlbumSortField;
+  direction: AlbumSortDirection;
+} {
+  const sort = rawSort as AlbumSortField | null;
+  const direction = rawDirection as AlbumSortDirection | null;
+  const valid = ALBUM_SORT_OPTIONS.some(
+    (option) => option.sort === sort && option.direction === direction,
+  );
+
+  if (valid) {
+    return {
+      sort: sort!,
+      direction: direction!,
+      resetRequired: false,
+    };
   }
 
-  return new URL(buildAlbumDetailPath(albumId), window.location.origin).toString();
+  if (rawSort == null && rawDirection == null) {
+    return {
+      ...DEFAULT_ALBUM_SORT,
+      resetRequired: false,
+    };
+  }
+
+  return {
+    ...DEFAULT_ALBUM_SORT,
+    resetRequired: true,
+  };
+}
+
+function triggerBlobDownload(blob: Blob, filename: string) {
+  const objectUrl = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = objectUrl;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(objectUrl);
 }
 
 function AlbumTile(props: {
@@ -167,10 +293,12 @@ function AlbumTile(props: {
   isFavorite: boolean;
   isFavoriteBusy: boolean;
   isShareBusy: boolean;
+  isDownloadBusy: boolean;
   isDeleteBusy: boolean;
   onFavoriteToggle: () => void;
   onEdit: () => void;
   onShare: () => void;
+  onDownload: () => void;
   onDelete: () => void;
 }) {
   const { t } = useI18n();
@@ -283,12 +411,17 @@ function AlbumTile(props: {
                 : t("app.library.shareAlbumMenu")}
             </button>
             <button
-              className="rounded-xl px-3 py-2 text-left text-sm font-medium text-[var(--color-text-muted)] disabled:cursor-not-allowed disabled:opacity-70"
-              disabled
-              title={t("app.library.downloadAlbumPending")}
+              className="rounded-xl px-3 py-2 text-left text-sm font-medium transition hover:bg-[var(--color-surface-strong)] disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={props.isDownloadBusy}
+              onClick={() => {
+                setIsMenuOpen(false);
+                props.onDownload();
+              }}
               type="button"
             >
-              {t("app.library.downloadAlbumMenu")}
+              {props.isDownloadBusy
+                ? t("common.loading")
+                : t("app.library.downloadAlbumMenu")}
             </button>
             <button
               className="rounded-xl px-3 py-2 text-left text-sm font-medium text-[var(--color-danger)] transition hover:bg-[var(--color-surface-strong)] disabled:cursor-not-allowed disabled:opacity-60"
@@ -534,6 +667,8 @@ function CreateAlbumDialog(props: {
   const { t } = useI18n();
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const initialFocusRef = useRef<HTMLInputElement | null>(null);
+  const isUploading = props.uploadProgress != null;
+  const canClose = !props.isBusy && !isUploading;
 
   useEffect(() => {
     initialFocusRef.current?.focus();
@@ -541,6 +676,9 @@ function CreateAlbumDialog(props: {
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
+      if (!canClose) {
+        return;
+      }
       if (event.key === "Escape") {
         event.preventDefault();
         props.onClose();
@@ -551,7 +689,7 @@ function CreateAlbumDialog(props: {
     return () => {
       document.removeEventListener("keydown", handleKeyDown);
     };
-  }, [props.onClose]);
+  }, [canClose, props.onClose]);
 
   function trapFocus(event: React.KeyboardEvent<HTMLDivElement>) {
     if (event.key !== "Tab" || !dialogRef.current) {
@@ -599,7 +737,12 @@ function CreateAlbumDialog(props: {
               {t("app.library.createModalDescription")}
             </p>
           </div>
-          <button className="button-secondary" onClick={props.onClose} type="button">
+          <button
+            className="button-secondary"
+            disabled={!canClose}
+            onClick={props.onClose}
+            type="button"
+          >
             {t("app.library.cancel")}
           </button>
         </div>
@@ -663,6 +806,9 @@ function CreateAlbumDialog(props: {
                 }}
                 onDrop={(event) => {
                   event.preventDefault();
+                  if (props.isBusy) {
+                    return;
+                  }
                   props.onUploadTargetActiveChange(false);
                   props.onUploadFiles(Array.from(event.dataTransfer.files));
                 }}
@@ -695,6 +841,7 @@ function CreateAlbumDialog(props: {
                         accept="image/jpeg,image/png"
                         aria-label={t("app.library.createModalUploadButton")}
                         className="hidden"
+                        disabled={props.isBusy}
                         multiple
                         onChange={(event) => {
                           const files = event.target.files
@@ -751,6 +898,7 @@ function CreateAlbumDialog(props: {
                               ? "border-[var(--color-accent-strong)] bg-[var(--color-surface-strong)]"
                               : "border-[var(--color-border)] bg-[var(--color-panel)] hover:border-[var(--color-accent)]"
                           }`}
+                          disabled={props.isBusy || isUploading}
                           key={photo.id}
                           onClick={() => {
                             props.onTogglePhoto(photo.id);
@@ -847,18 +995,25 @@ function CreateAlbumDialog(props: {
         </div>
 
         <div className="mt-6 flex flex-wrap justify-end gap-2">
-          <button className="button-secondary" onClick={props.onClose} type="button">
+          <button
+            className="button-secondary"
+            disabled={!canClose}
+            onClick={props.onClose}
+            type="button"
+          >
             {t("app.library.cancel")}
           </button>
           <button
             className="button-primary"
-            disabled={props.isBusy}
+            disabled={props.isBusy || isUploading}
             onClick={props.onSubmit}
             type="button"
           >
             {props.isBusy
               ? t("app.library.createModalCreating")
-              : t("app.library.createModalSubmit")}
+              : isUploading
+                ? t("app.library.createModalUploading")
+                : t("app.library.createModalSubmit")}
           </button>
         </div>
       </div>
@@ -986,9 +1141,19 @@ function LibraryPhotoTile(props: {
   );
 }
 
-async function loadLibraryData(): Promise<LibraryLoaderData> {
+async function loadLibraryData(albumSort = DEFAULT_ALBUM_SORT): Promise<{
+  photos: PhotoDto[];
+  albums: AlbumDto[];
+  photoFavorites: Record<string, FavoriteDto>;
+  albumFavorites: Record<string, FavoriteDto>;
+}> {
   const [photos, albums, photoFavoriteList, albumFavoriteList] = await Promise.all(
-    [listAllPhotos(), listAlbums(), listFavorites("PHOTO"), listFavorites("ALBUM")],
+    [
+      listAllPhotos(),
+      listAlbums(albumSort),
+      listFavorites("PHOTO"),
+      listFavorites("ALBUM"),
+    ],
   );
 
   return {
@@ -1003,8 +1168,39 @@ async function loadLibraryData(): Promise<LibraryLoaderData> {
   };
 }
 
-export async function clientLoader() {
-  return loadLibraryData();
+export async function clientLoader({ request }: Route.ClientLoaderArgs) {
+  const url = new URL(request.url);
+  const resolvedSort = resolveAlbumSort(
+    url.searchParams.get("sort"),
+    url.searchParams.get("dir"),
+  );
+
+  try {
+    const data = await loadLibraryData({
+      sort: resolvedSort.sort,
+      direction: resolvedSort.direction,
+    });
+
+    return {
+      ...data,
+      albumSort: {
+        sort: resolvedSort.sort,
+        direction: resolvedSort.direction,
+      },
+      albumSortReset: resolvedSort.resetRequired,
+    };
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 400) {
+      const data = await loadLibraryData(DEFAULT_ALBUM_SORT);
+      return {
+        ...data,
+        albumSort: DEFAULT_ALBUM_SORT,
+        albumSortReset: true,
+      };
+    }
+
+    throw error;
+  }
 }
 
 export async function clientAction({
@@ -1071,6 +1267,8 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
   const revalidator = useRevalidator();
   const [searchParams, setSearchParams] = useSearchParams();
   const createAlbumTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const photosRef = useRef(loaderData.photos);
+  const createSelectedPhotoIdsRef = useRef<string[]>([]);
   const [photos, setPhotos] = useState<PhotoDto[]>(loaderData.photos);
   const [albums, setAlbums] = useState<AlbumDto[]>(loaderData.albums);
   const [photoFavorites, setPhotoFavorites] = useState<
@@ -1121,12 +1319,30 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
     string | null
   >(null);
   const [albumActionSuccess, setAlbumActionSuccess] = useState<string | null>(null);
+  const [albumSortMessage, setAlbumSortMessage] = useState<string | null>(
+    loaderData.albumSortReset ? t("app.library.albumSortReset") : null,
+  );
   const [editingAlbumId, setEditingAlbumId] = useState<string | null>(null);
   const [editAlbumDraft, setEditAlbumDraft] = useState({
     name: "",
     description: "",
   });
   const [shareBusyAlbumId, setShareBusyAlbumId] = useState<string | null>(null);
+  const [downloadBusyAlbumId, setDownloadBusyAlbumId] = useState<string | null>(
+    null,
+  );
+  const [shareDialogAlbum, setShareDialogAlbum] = useState<AlbumDto | null>(null);
+  const [shareDialogLinks, setShareDialogLinks] = useState<AlbumShareLinkDto[]>(
+    [],
+  );
+  const [shareDialogLoading, setShareDialogLoading] = useState(false);
+  const [shareDialogCreating, setShareDialogCreating] = useState(false);
+  const [shareDialogRevokeBusyId, setShareDialogRevokeBusyId] = useState<
+    string | null
+  >(null);
+  const [shareDialogToken, setShareDialogToken] = useState<string | null>(null);
+  const [shareDialogError, setShareDialogError] = useState<string | null>(null);
+  const [shareDialogInfo, setShareDialogInfo] = useState<string | null>(null);
   const [deleteDialogAlbumId, setDeleteDialogAlbumId] = useState<string | null>(
     null,
   );
@@ -1141,6 +1357,11 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
   const pendingIntent = String(navigation.formData?.get("intent") ?? "");
   const pendingAlbumId = String(navigation.formData?.get("albumId") ?? "");
   const pendingPhotoId = String(navigation.formData?.get("photoId") ?? "");
+  const albumSortSelection = useMemo(
+    () =>
+      resolveAlbumSort(searchParams.get("sort"), searchParams.get("dir")),
+    [searchParams],
+  );
   const geoViewport = useMemo(
     () => parseGeoViewportFromSearchParams(searchParams),
     [searchParams],
@@ -1286,13 +1507,30 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
   }, [searchParams]);
 
   useEffect(() => {
+    photosRef.current = photos;
+  }, [photos]);
+
+  useEffect(() => {
     startTransition(() => {
       setPhotos(loaderData.photos);
       setAlbums(loaderData.albums);
       setPhotoFavorites(loaderData.photoFavorites);
       setAlbumFavorites(loaderData.albumFavorites);
     });
+    photosRef.current = loaderData.photos;
   }, [loaderData]);
+
+  useEffect(() => {
+    if (!loaderData.albumSortReset) {
+      return;
+    }
+
+    setAlbumSortMessage(t("app.library.albumSortReset"));
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.set("sort", DEFAULT_ALBUM_SORT.sort);
+    nextParams.set("dir", DEFAULT_ALBUM_SORT.direction);
+    setSearchParams(nextParams, { replace: true });
+  }, [loaderData.albumSortReset, searchParams, setSearchParams, t]);
 
   useEffect(() => {
     if (!albumActionSuccess) {
@@ -1428,7 +1666,10 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
   async function reloadLibrary() {
     try {
       setErrorMessage(null);
-      const nextData = await loadLibraryData();
+      const nextData = await loadLibraryData({
+        sort: albumSortSelection.sort,
+        direction: albumSortSelection.direction,
+      });
 
       startTransition(() => {
         setPhotos(nextData.photos);
@@ -1436,6 +1677,7 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
         setPhotoFavorites(nextData.photoFavorites);
         setAlbumFavorites(nextData.albumFavorites);
       });
+      photosRef.current = nextData.photos;
     } catch (error: unknown) {
       setErrorMessage(
         error instanceof Error ? error.message : t("app.library.loadFailed"),
@@ -1527,6 +1769,7 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
   }
 
   function resetCreateAlbumState() {
+    createSelectedPhotoIdsRef.current = [];
     setCreateAlbumDraft({
       name: "",
       description: "",
@@ -1549,6 +1792,9 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
   }
 
   function closeCreateAlbumDialog() {
+    if (isCreatingAlbum || createUploadProgress != null) {
+      return;
+    }
     setIsCreateAlbumOpen(false);
     resetCreateAlbumState();
     window.setTimeout(() => {
@@ -1568,9 +1814,13 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
 
   function toggleCreateAlbumPhotoSelection(photoId: string) {
     setCreateSelectedPhotoIds((current) =>
-      current.includes(photoId)
-        ? current.filter((id) => id !== photoId)
-        : [...current, photoId],
+      {
+        const next = current.includes(photoId)
+          ? current.filter((id) => id !== photoId)
+          : [...current, photoId];
+        createSelectedPhotoIdsRef.current = next;
+        return next;
+      },
     );
   }
 
@@ -1626,11 +1876,19 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
       }
 
       if (uploadedPhotos.length > 0) {
+        const mergedSelectedPhotoIds = [
+          ...new Set([
+            ...createSelectedPhotoIdsRef.current,
+            ...uploadedPhotos.map((photo) => photo.id),
+          ]),
+        ];
+        const nextPhotos = [...uploadedPhotos, ...photosRef.current];
+        createSelectedPhotoIdsRef.current = mergedSelectedPhotoIds;
+        photosRef.current = nextPhotos;
+
         startTransition(() => {
-          setPhotos((current) => [...uploadedPhotos, ...current]);
-          setCreateSelectedPhotoIds((current) => [
-            ...new Set([...current, ...uploadedPhotos.map((photo) => photo.id)]),
-          ]);
+          setPhotos(nextPhotos);
+          setCreateSelectedPhotoIds(mergedSelectedPhotoIds);
         });
       }
 
@@ -1643,6 +1901,11 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
   }
 
   async function handleCreateAlbumSubmit() {
+    if (createUploadProgress != null) {
+      setCreateAlbumError(t("app.library.createModalWaitForUploads"));
+      return;
+    }
+
     const trimmedName = createAlbumDraft.name.trim();
     const trimmedDescription = createAlbumDraft.description.trim();
 
@@ -1669,8 +1932,9 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
         name: trimmedName,
         description: trimmedDescription,
       });
-      const selectedPhotos = photos.filter((photo) =>
-        createSelectedPhotoIds.includes(photo.id),
+      const selectedPhotoIds = createSelectedPhotoIdsRef.current;
+      const selectedPhotos = photosRef.current.filter((photo) =>
+        selectedPhotoIds.includes(photo.id),
       );
 
       if (selectedPhotos.length > 0) {
@@ -1782,18 +2046,126 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
     }
   }
 
-  async function handleAlbumShare(album: AlbumDto) {
+  async function openAlbumShareDialog(album: AlbumDto) {
     setShareBusyAlbumId(album.id);
+    setShareDialogAlbum(album);
+    setShareDialogLoading(true);
+    setShareDialogLinks([]);
+    setShareDialogToken(null);
+    setShareDialogError(null);
+    setShareDialogInfo(null);
 
     try {
+      const links = await listAlbumShareLinks(album.id);
+      setShareDialogLinks(links);
+    } catch (error) {
+      if (error instanceof Error && error.message) {
+        setShareDialogError(error.message);
+      } else {
+        setShareDialogError(t("app.library.albumShareFailed"));
+      }
+    } finally {
+      setShareDialogLoading(false);
+      setShareBusyAlbumId(null);
+    }
+  }
+
+  function closeAlbumShareDialog() {
+    setShareDialogAlbum(null);
+    setShareDialogLinks([]);
+    setShareDialogLoading(false);
+    setShareDialogCreating(false);
+    setShareDialogRevokeBusyId(null);
+    setShareDialogToken(null);
+    setShareDialogError(null);
+    setShareDialogInfo(null);
+  }
+
+  async function copyTextToClipboard(
+    value: string,
+    successMessage: string,
+    failureMessage: string,
+  ) {
+    try {
       if (!navigator.clipboard?.writeText) {
-        throw new Error(t("app.library.albumShareFailed"));
+        throw new Error(failureMessage);
       }
 
-      await navigator.clipboard.writeText(buildAlbumShareUrl(album.id));
-      setAlbumActionError(null);
+      await navigator.clipboard.writeText(value);
+      setShareDialogError(null);
+      setShareDialogInfo(successMessage);
+    } catch (error) {
+      if (error instanceof Error && error.message) {
+        setShareDialogError(error.message);
+      } else {
+        setShareDialogError(failureMessage);
+      }
+    }
+  }
+
+  async function handleCreateShareLink() {
+    if (!shareDialogAlbum) {
+      return;
+    }
+
+    setShareDialogCreating(true);
+    setShareDialogError(null);
+    setShareDialogInfo(null);
+
+    try {
+      const created = await createAlbumShareLink(shareDialogAlbum.id);
+      setShareDialogToken(created.token);
+      setShareDialogLinks((current) => [created.link, ...current]);
+      setShareDialogInfo(
+        t("app.albumShare.createdSuccess", {
+          albumName: shareDialogAlbum.name,
+        }),
+      );
+    } catch (error) {
+      if (error instanceof Error && error.message) {
+        setShareDialogError(error.message);
+      } else {
+        setShareDialogError(t("app.library.albumShareFailed"));
+      }
+    } finally {
+      setShareDialogCreating(false);
+    }
+  }
+
+  async function handleRevokeShareLink(linkId: string) {
+    if (!shareDialogAlbum) {
+      return;
+    }
+
+    setShareDialogRevokeBusyId(linkId);
+    setShareDialogError(null);
+    setShareDialogInfo(null);
+
+    try {
+      await revokeAlbumShareLink(shareDialogAlbum.id, linkId);
+      const links = await listAlbumShareLinks(shareDialogAlbum.id);
+      setShareDialogLinks(links);
+      setShareDialogInfo(t("app.albumShare.revokedSuccess"));
+    } catch (error) {
+      if (error instanceof Error && error.message) {
+        setShareDialogError(error.message);
+      } else {
+        setShareDialogError(t("app.albumShare.revokeFailed"));
+      }
+    } finally {
+      setShareDialogRevokeBusyId(null);
+    }
+  }
+
+  async function handleAlbumDownload(album: AlbumDto) {
+    setDownloadBusyAlbumId(album.id);
+    setAlbumActionError(null);
+
+    try {
+      const { blob, filename } = await downloadAlbumArchive(album.id, "ORIGINAL");
+      triggerBlobDownload(blob, filename);
       setAlbumActionSuccess(
-        t("app.library.albumShareCopied", {
+        t("app.library.albumDownloadStarted", {
           albumName: album.name,
         }),
       );
@@ -1801,11 +2173,11 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
       if (error instanceof Error && error.message) {
         setAlbumActionError(error.message);
       } else {
-        setAlbumActionError(t("app.library.albumShareFailed"));
+        setAlbumActionError(t("app.library.albumDownloadFailed"));
       }
       setAlbumActionSuccess(null);
     } finally {
-      setShareBusyAlbumId(null);
+      setDownloadBusyAlbumId(null);
     }
   }
 
@@ -1863,6 +2235,16 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
     } else {
       nextParams.set("filter", value);
     }
+    setSearchParams(nextParams, { replace: true });
+  }
+
+  function updateAlbumSort(value: string) {
+    const resolved = parseAlbumSortValue(value);
+    setAlbumSortMessage(null);
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.set("view", "albums");
+    nextParams.set("sort", resolved.sort);
+    nextParams.set("dir", resolved.direction);
     setSearchParams(nextParams, { replace: true });
   }
 
@@ -1938,9 +2320,9 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
 
       <section
         className={`grid gap-6 ${
-          libraryView === "map"
-              ? ""
-              : "xl:grid-cols-[minmax(0,1fr)_15rem]"
+          libraryView === "photos" || libraryView === "timeline"
+            ? "xl:grid-cols-[minmax(0,1fr)_15rem]"
+            : ""
         }`}
       >
         {(libraryView === "photos" ||
@@ -2422,6 +2804,10 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
               <InlineMessage tone="success">{albumActionSuccess}</InlineMessage>
             ) : null}
 
+            {albumSortMessage ? (
+              <InlineMessage tone="danger">{albumSortMessage}</InlineMessage>
+            ) : null}
+
             <Panel className="p-4">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
                 <div>
@@ -2444,6 +2830,39 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
                 </div>
               </div>
 
+              <div className="mt-6 flex flex-col gap-2 sm:max-w-sm">
+                <label
+                  className="text-sm font-medium"
+                  htmlFor="album-sort-select"
+                >
+                  {t("app.library.albumSortLabel")}
+                </label>
+                <select
+                  className="field"
+                  id="album-sort-select"
+                  onChange={(event) => updateAlbumSort(event.target.value)}
+                  value={buildAlbumSortOptionValue(
+                    albumSortSelection.sort,
+                    albumSortSelection.direction,
+                  )}
+                >
+                  {ALBUM_SORT_OPTIONS.map((option) => (
+                    <option
+                      key={buildAlbumSortOptionValue(
+                        option.sort,
+                        option.direction,
+                      )}
+                      value={buildAlbumSortOptionValue(
+                        option.sort,
+                        option.direction,
+                      )}
+                    >
+                      {t(option.labelKey as Parameters<typeof t>[0])}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               {albums.length === 0 ? (
                 <EmptyHint className="mt-6 px-5 py-6 leading-7">
                   {t("app.library.noAlbums")}
@@ -2461,6 +2880,7 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
                         pendingIntent === "delete-album" &&
                         pendingAlbumId === album.id
                       }
+                      isDownloadBusy={downloadBusyAlbumId === album.id}
                       isFavorite={Boolean(albumFavorites[album.id])}
                       isFavoriteBusy={favoriteBusyKey === `album:${album.id}`}
                       isShareBusy={shareBusyAlbumId === album.id}
@@ -2478,7 +2898,10 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
                         void handleAlbumFavoriteToggle(album.id);
                       }}
                       onShare={() => {
-                        void handleAlbumShare(album);
+                        void openAlbumShareDialog(album);
+                      }}
+                      onDownload={() => {
+                        void handleAlbumDownload(album);
                       }}
                       photoForms={photoForms}
                     />
@@ -2540,6 +2963,40 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
             pendingIntent === "delete-album" &&
             pendingAlbumId === deleteDialogAlbum.id
           }
+        />
+      ) : null}
+
+      {shareDialogAlbum ? (
+        <AlbumShareDialog
+          albumName={shareDialogAlbum.name}
+          createdToken={shareDialogToken}
+          errorMessage={shareDialogError}
+          infoMessage={shareDialogInfo}
+          isCreating={shareDialogCreating}
+          isLoading={shareDialogLoading}
+          links={shareDialogLinks}
+          onClose={closeAlbumShareDialog}
+          onCopyLink={(url) => {
+            void copyTextToClipboard(
+              url,
+              t("app.albumShare.linkCopied"),
+              t("app.albumShare.copyLinkFailed"),
+            );
+          }}
+          onCopyToken={(token) => {
+            void copyTextToClipboard(
+              token,
+              t("app.albumShare.tokenCopied"),
+              t("app.albumShare.copyTokenFailed"),
+            );
+          }}
+          onCreate={() => {
+            void handleCreateShareLink();
+          }}
+          onRevoke={(linkId) => {
+            void handleRevokeShareLink(linkId);
+          }}
+          revokeBusyLinkId={shareDialogRevokeBusyId}
         />
       ) : null}
     </div>

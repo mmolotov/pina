@@ -1,7 +1,7 @@
 ---
 id: TASK-053
 title: ALBM-EPIC Redesign albums page
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-04-22 12:13'
 labels:
@@ -46,8 +46,8 @@ This epic coordinates backend and frontend subtasks. See child tasks (ALBM-BE-* 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 All ALBM-BE-* subtasks completed and merged
-- [ ] #2 All ALBM-FE-* subtasks completed and merged
-- [ ] #3 Albums grid, creation modal, detail route, and sorting all function end-to-end against the real backend
-- [ ] #4 No regression in existing album CRUD behaviour (existing tests continue to pass)
+- [x] #1 All ALBM-BE-* subtasks completed and merged
+- [x] #2 All ALBM-FE-* subtasks completed and merged
+- [x] #3 Albums grid, creation modal, detail route, and sorting all function end-to-end against the real backend
+- [x] #4 No regression in existing album CRUD behaviour (existing tests continue to pass)
 <!-- AC:END -->

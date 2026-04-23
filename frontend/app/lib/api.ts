@@ -5,6 +5,10 @@ import {
 } from "~/lib/session";
 import type {
   AlbumDto,
+  AlbumShareLinkCreatedDto,
+  AlbumShareLinkDto,
+  AlbumSortDirection,
+  AlbumSortField,
   AdminInviteLinkDto,
   AdminHealthDto,
   AdminSettingsDto,
@@ -267,6 +271,62 @@ async function requestBlob(
   }
 
   return response.blob();
+}
+
+async function fetchApiResponse(
+  path: string,
+  options: RequestOptions = {},
+  retried = false,
+) {
+  const session = getSessionSnapshot();
+  let response: Response;
+
+  try {
+    response = await fetch(`/api/v1${path}`, {
+      ...options,
+      headers: buildHeaders(
+        options,
+        options.auth ? session?.accessToken : undefined,
+      ),
+      body:
+        options.body &&
+        !(options.body instanceof FormData) &&
+        typeof options.body !== "string"
+          ? JSON.stringify(options.body)
+          : (options.body ?? undefined),
+    });
+  } catch {
+    throw new ApiError(
+      503,
+      "backend_unavailable",
+      "Backend is unavailable. Check that the server is running and try again.",
+    );
+  }
+
+  if (response.status === 401 && options.auth && !retried) {
+    const refreshed = await refreshSession();
+    if (refreshed) {
+      return fetchApiResponse(path, options, true);
+    }
+  }
+
+  if (!response.ok) {
+    let payload: ApiErrorPayload | null = null;
+
+    try {
+      payload = await parseJson<ApiErrorPayload>(response);
+    } catch {
+      payload = null;
+    }
+
+    throw new ApiError(
+      response.status,
+      payload?.error ?? "request_failed",
+      payload?.message ?? `Request failed with status ${response.status}`,
+    );
+  }
+
+  return response;
 }
 
 async function refreshSession() {
@@ -595,15 +655,117 @@ export async function getSpaceAlbumPhotoBlob(
   );
 }
 
-function listAlbumsPage(page = 0, size = 100) {
+function listAlbumsPage(
+  page = 0,
+  size = 100,
+  options: {
+    sort?: AlbumSortField;
+    direction?: AlbumSortDirection;
+  } = {},
+) {
+  const query = buildQuery({
+    page,
+    size,
+    needsTotal: true,
+    sort: options.sort,
+    direction: options.direction,
+  });
+
   return request<PageResponse<AlbumDto>>(
-    `/albums?page=${page}&size=${size}&needsTotal=true`,
+    `/albums?${query}`,
     { auth: true },
   );
 }
 
-export function listAlbums(size = 100) {
-  return listAllPages(listAlbumsPage, size);
+export function listAlbums(
+  options: {
+    size?: number;
+    sort?: AlbumSortField;
+    direction?: AlbumSortDirection;
+  } = {},
+) {
+  const { size = 100, sort, direction } = options;
+  return listAllPages(
+    (page, pageSize) => listAlbumsPage(page, pageSize, { sort, direction }),
+    size,
+  );
+}
+
+function extractResponseFilename(response: Response, fallback: string) {
+  const contentDisposition = response.headers.get("Content-Disposition");
+  if (!contentDisposition) {
+    return fallback;
+  }
+
+  const utf8Match = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i);
+  if (utf8Match?.[1]) {
+    try {
+      return decodeURIComponent(utf8Match[1]);
+    } catch {
+      return utf8Match[1];
+    }
+  }
+
+  const plainMatch = contentDisposition.match(/filename="([^"]+)"/i);
+  if (plainMatch?.[1]) {
+    return plainMatch[1];
+  }
+
+  return fallback;
+}
+
+export async function downloadAlbumArchive(
+  albumId: string,
+  variant = "ORIGINAL",
+) {
+  const response = await fetchApiResponse(
+    `/albums/${albumId}/download?variant=${variant}`,
+    { auth: true },
+  );
+
+  return {
+    blob: await response.blob(),
+    filename: extractResponseFilename(response, "album.zip"),
+  };
+}
+
+export function setAlbumCover(albumId: string, photoId: string) {
+  return request<AlbumDto>(`/albums/${albumId}/cover`, {
+    auth: true,
+    method: "PUT",
+    body: { photoId },
+  });
+}
+
+export function clearAlbumCover(albumId: string) {
+  return request<AlbumDto>(`/albums/${albumId}/cover`, {
+    auth: true,
+    method: "DELETE",
+  });
+}
+
+export function listAlbumShareLinks(albumId: string) {
+  return request<AlbumShareLinkDto[]>(`/albums/${albumId}/share-links`, {
+    auth: true,
+  });
+}
+
+export function createAlbumShareLink(
+  albumId: string,
+  expiresAt?: string | null,
+) {
+  return request<AlbumShareLinkCreatedDto>(`/albums/${albumId}/share-links`, {
+    auth: true,
+    method: "POST",
+    body: expiresAt ? { expiresAt } : {},
+  });
+}
+
+export function revokeAlbumShareLink(albumId: string, linkId: string) {
+  return request<void>(`/albums/${albumId}/share-links/${linkId}`, {
+    auth: true,
+    method: "DELETE",
+  });
 }
 
 export function listSpaces() {

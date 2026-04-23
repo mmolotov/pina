@@ -21,9 +21,17 @@ const apiMocks = vi.hoisted(() => ({
   updateAlbum: vi.fn(),
   deleteAlbum: vi.fn(),
   addPhotoToAlbum: vi.fn(),
+  clearAlbumCover: vi.fn(),
+  createAlbumShareLink: vi.fn(),
+  downloadAlbumArchive: vi.fn(),
+  listAlbumShareLinks: vi.fn(),
   removePhotoFromAlbum: vi.fn(),
+  revokeAlbumShareLink: vi.fn(),
+  setAlbumCover: vi.fn(),
   uploadPhoto: vi.fn(),
 }));
+
+const clipboardWriteText = vi.fn();
 
 vi.mock("~/lib/api", () => ({
   ...apiMocks,
@@ -31,6 +39,16 @@ vi.mock("~/lib/api", () => ({
 
 describe("AppAlbumDetailRoute", () => {
   beforeEach(() => {
+    vi.clearAllMocks();
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    clipboardWriteText.mockReset();
+    clipboardWriteText.mockResolvedValue(undefined);
+    Object.defineProperty(window.navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: clipboardWriteText,
+      },
+    });
     apiMocks.listAlbums.mockResolvedValue([
       {
         id: "album-1",
@@ -126,7 +144,56 @@ describe("AppAlbumDetailRoute", () => {
     apiMocks.updateAlbum.mockResolvedValue(undefined);
     apiMocks.deleteAlbum.mockResolvedValue(undefined);
     apiMocks.addPhotoToAlbum.mockResolvedValue(undefined);
+    apiMocks.clearAlbumCover.mockResolvedValue({
+      id: "album-1",
+      name: "Summer Week",
+      description: "Pier, market, and long golden evenings",
+      ownerId: "user-1",
+      personalLibraryId: "library-1",
+      spaceId: null,
+      createdAt: "2026-04-01T10:00:00Z",
+      updatedAt: "2026-04-05T18:30:00Z",
+      coverPhotoId: null,
+      coverVariants: [],
+      photoCount: 2,
+      mediaRangeStart: "2026-04-01T09:00:00Z",
+      mediaRangeEnd: "2026-04-02T20:15:00Z",
+      latestPhotoAddedAt: "2026-04-05T18:30:00Z",
+    });
+    apiMocks.createAlbumShareLink.mockResolvedValue({
+      link: {
+        id: "share-1",
+        albumId: "album-1",
+        createdById: "user-1",
+        createdAt: "2026-04-06T08:00:00Z",
+        expiresAt: null,
+        revokedAt: null,
+      },
+      token: "plain-token-1",
+    });
+    apiMocks.downloadAlbumArchive.mockResolvedValue({
+      blob: new Blob(["zip"], { type: "application/zip" }),
+      filename: "summer-week.zip",
+    });
+    apiMocks.listAlbumShareLinks.mockResolvedValue([]);
     apiMocks.removePhotoFromAlbum.mockResolvedValue(undefined);
+    apiMocks.revokeAlbumShareLink.mockResolvedValue(undefined);
+    apiMocks.setAlbumCover.mockResolvedValue({
+      id: "album-1",
+      name: "Summer Week",
+      description: "Pier, market, and long golden evenings",
+      ownerId: "user-1",
+      personalLibraryId: "library-1",
+      spaceId: null,
+      createdAt: "2026-04-01T10:00:00Z",
+      updatedAt: "2026-04-05T18:30:00Z",
+      coverPhotoId: "photo-2",
+      coverVariants: [],
+      photoCount: 2,
+      mediaRangeStart: "2026-04-01T09:00:00Z",
+      mediaRangeEnd: "2026-04-02T20:15:00Z",
+      latestPhotoAddedAt: "2026-04-05T18:30:00Z",
+    });
     apiMocks.uploadPhoto.mockResolvedValue(undefined);
   });
 
@@ -206,5 +273,97 @@ describe("AppAlbumDetailRoute", () => {
     expect(
       screen.getAllByRole("button", { name: /add photos|добавить фото/i })[0],
     ).toBeInTheDocument();
+  });
+
+  it("sets an explicit album cover and can restore automatic cover selection", async () => {
+    renderRoute();
+
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Summer Week" }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /set as cover/i }));
+
+    await waitFor(() => {
+      expect(apiMocks.setAlbumCover).toHaveBeenCalledWith("album-1", "photo-2");
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /edit album/i }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: /use automatic cover/i }),
+    );
+
+    await waitFor(() => {
+      expect(apiMocks.clearAlbumCover).toHaveBeenCalledWith("album-1");
+    });
+  });
+
+  it("downloads the album archive from the detail toolbar", async () => {
+    renderRoute();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: /download|скачать/i }),
+    );
+
+    await waitFor(() => {
+      expect(apiMocks.downloadAlbumArchive).toHaveBeenCalledWith(
+        "album-1",
+        "ORIGINAL",
+      );
+    });
+  });
+
+  it("creates and revokes public share links from the share dialog", async () => {
+    apiMocks.listAlbumShareLinks.mockResolvedValueOnce([
+      {
+        id: "share-old",
+        albumId: "album-1",
+        createdById: "user-1",
+        createdAt: "2026-04-05T12:00:00Z",
+        expiresAt: null,
+        revokedAt: null,
+      },
+    ]);
+    apiMocks.listAlbumShareLinks.mockResolvedValueOnce([
+      {
+        id: "share-old",
+        albumId: "album-1",
+        createdById: "user-1",
+        createdAt: "2026-04-05T12:00:00Z",
+        expiresAt: null,
+        revokedAt: "2026-04-06T10:00:00Z",
+      },
+    ]);
+
+    renderRoute();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: /share|поделиться/i }),
+    );
+
+    expect(
+      await screen.findByRole("heading", { name: /share "summer week"/i }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /create public link/i }));
+
+    await waitFor(() => {
+      expect(apiMocks.createAlbumShareLink).toHaveBeenCalledWith("album-1");
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /copy token/i }));
+
+    await waitFor(() => {
+      expect(clipboardWriteText).toHaveBeenCalledWith("plain-token-1");
+    });
+
+    fireEvent.click(screen.getAllByRole("button", { name: /revoke/i })[1]!);
+
+    await waitFor(() => {
+      expect(apiMocks.revokeAlbumShareLink).toHaveBeenCalledWith(
+        "album-1",
+        "share-old",
+      );
+    });
   });
 });

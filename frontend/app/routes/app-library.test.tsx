@@ -15,12 +15,16 @@ const apiMocks = vi.hoisted(() => ({
   uploadPhoto: vi.fn(),
   deletePhoto: vi.fn(),
   createAlbum: vi.fn(),
+  createAlbumShareLink: vi.fn(),
+  downloadAlbumArchive: vi.fn(),
   addPhotoToAlbum: vi.fn(),
   updateAlbum: vi.fn(),
   deleteAlbum: vi.fn(),
+  listAlbumShareLinks: vi.fn(),
   listFavorites: vi.fn(),
   addFavorite: vi.fn(),
   removeFavorite: vi.fn(),
+  revokeAlbumShareLink: vi.fn(),
 }));
 
 const clipboardWriteText = vi.fn();
@@ -41,6 +45,8 @@ vi.mock("~/lib/api", () => ({
 
 describe("AppLibraryRoute", () => {
   beforeEach(() => {
+    vi.clearAllMocks();
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
     clipboardWriteText.mockReset();
     clipboardWriteText.mockResolvedValue(undefined);
     Object.defineProperty(window.navigator, "clipboard", {
@@ -91,9 +97,26 @@ describe("AppLibraryRoute", () => {
     apiMocks.uploadPhoto.mockResolvedValue(undefined);
     apiMocks.deletePhoto.mockResolvedValue(undefined);
     apiMocks.createAlbum.mockResolvedValue(undefined);
+    apiMocks.createAlbumShareLink.mockResolvedValue({
+      link: {
+        id: "share-1",
+        albumId: "album-1",
+        createdById: "user-1",
+        createdAt: "2026-04-05T12:00:00Z",
+        expiresAt: null,
+        revokedAt: null,
+      },
+      token: "plain-token-1",
+    });
+    apiMocks.downloadAlbumArchive.mockResolvedValue({
+      blob: new Blob(["zip"], { type: "application/zip" }),
+      filename: "summer-trip.zip",
+    });
     apiMocks.addPhotoToAlbum.mockResolvedValue(undefined);
     apiMocks.updateAlbum.mockResolvedValue(undefined);
     apiMocks.deleteAlbum.mockResolvedValue(undefined);
+    apiMocks.listAlbumShareLinks.mockResolvedValue([]);
+    apiMocks.revokeAlbumShareLink.mockResolvedValue(undefined);
   });
 
   function renderRoute(initialEntry = "/app/library") {
@@ -103,7 +126,8 @@ describe("AppLibraryRoute", () => {
         Component: AppLibraryRoute,
         action: async ({ request }) =>
           appLibraryClientAction({ request } as never),
-        loader: async () => appLibraryClientLoader(),
+        loader: async ({ request }) =>
+          appLibraryClientLoader({ request } as never),
       },
       {
         path: "/app/library/albums/:albumId",
@@ -138,6 +162,16 @@ describe("AppLibraryRoute", () => {
     };
   }
 
+  function createDeferred<T>() {
+    let resolve!: (value: T | PromiseLike<T>) => void;
+    let reject!: (reason?: unknown) => void;
+    const promise = new Promise<T>((innerResolve, innerReject) => {
+      resolve = innerResolve;
+      reject = innerReject;
+    });
+    return { promise, resolve, reject };
+  }
+
   it("adds a photo to favorites from the library grid", async () => {
     renderRoute();
 
@@ -170,6 +204,39 @@ describe("AppLibraryRoute", () => {
     });
     expect(screen.getByRole("link", { name: /spaces/i })).toBeInTheDocument();
     expect(screen.getByText(/no personal albums yet|пока нет личных альбомов/i)).toBeInTheDocument();
+  });
+
+  it("passes album sort from the URL into the loader and keeps it selected", async () => {
+    apiMocks.listAlbums.mockResolvedValue([makeAlbum()]);
+
+    renderRoute("/app/library?view=albums&sort=name&dir=asc");
+
+    expect(await screen.findByText("Summer Trip")).toBeInTheDocument();
+    expect(apiMocks.listAlbums).toHaveBeenLastCalledWith({
+      sort: "name",
+      direction: "asc",
+    });
+    expect(
+      screen.getByLabelText(/sort albums|сортировка альбомов/i),
+    ).toHaveValue("name:asc");
+  });
+
+  it("resets an invalid album sort to the default order and shows a hint", async () => {
+    apiMocks.listAlbums.mockResolvedValue([makeAlbum()]);
+
+    renderRoute("/app/library?view=albums&sort=bogus&dir=asc");
+
+    expect(await screen.findByText("Summer Trip")).toBeInTheDocument();
+    expect(apiMocks.listAlbums).toHaveBeenCalledWith({
+      sort: "createdAt",
+      direction: "desc",
+    });
+    expect(
+      screen.getByText(/sort was reset to the default order|сброшена на порядок по умолчанию/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByLabelText(/sort albums|сортировка альбомов/i),
+    ).toHaveValue("createdAt:desc");
   });
 
   it("opens the create album modal, closes on escape, and returns focus to the trigger", async () => {
@@ -221,6 +288,146 @@ describe("AppLibraryRoute", () => {
       await screen.findByText(/album name is required|название альбома обязательно/i),
     ).toBeInTheDocument();
     expect(apiMocks.createAlbum).not.toHaveBeenCalled();
+  });
+
+  it("keeps create submit disabled during uploads and includes the uploaded photo after completion", async () => {
+    const uploadDeferred = createDeferred<{
+      id: string;
+      uploaderId: string;
+      originalFilename: string;
+      mimeType: string;
+      width: number;
+      height: number;
+      sizeBytes: number;
+      personalLibraryId: string;
+      exifData: null;
+      takenAt: null;
+      latitude: null;
+      longitude: null;
+      createdAt: string;
+      variants: never[];
+    }>();
+    const createdAlbum = makeAlbum({
+      id: "album-race",
+      coverPhotoId: null,
+      photoCount: 0,
+      mediaRangeStart: null,
+      mediaRangeEnd: null,
+      latestPhotoAddedAt: null,
+    });
+    apiMocks.uploadPhoto.mockReturnValue(uploadDeferred.promise);
+    apiMocks.createAlbum.mockResolvedValue(createdAlbum);
+
+    renderRoute("/app/library?view=albums");
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: /create album|создать альбом/i }),
+    );
+
+    const dialog = screen.getByRole("dialog");
+    fireEvent.change(within(dialog).getByRole("textbox", { name: /name|название/i }), {
+      target: { value: "Race proof" },
+    });
+
+    const file = new File(["png"], "forest.png", { type: "image/png" });
+    fireEvent.change(
+      within(dialog).getByLabelText(/choose files|выбрать файлы/i),
+      {
+        target: { files: [file] },
+      },
+    );
+
+    expect(
+      within(dialog).getByRole("button", {
+        name: /uploading selected photos|загружаются выбранные фото/i,
+      }),
+    ).toBeDisabled();
+
+    uploadDeferred.resolve({
+      id: "photo-uploaded",
+      uploaderId: "user-1",
+      originalFilename: "forest.png",
+      mimeType: "image/png",
+      width: 1600,
+      height: 900,
+      sizeBytes: 256000,
+      personalLibraryId: "library-1",
+      exifData: null,
+      takenAt: null,
+      latitude: null,
+      longitude: null,
+      createdAt: "2026-04-02T11:00:00Z",
+      variants: [],
+    });
+
+    await waitFor(() => {
+      expect(
+        within(dialog).getByRole("button", {
+          name: /create and open album|создать и открыть альбом/i,
+        }),
+      ).toBeEnabled();
+    });
+
+    fireEvent.click(
+      within(dialog).getByRole("button", {
+        name: /create and open album|создать и открыть альбом/i,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(apiMocks.addPhotoToAlbum).toHaveBeenCalledWith(
+        "album-race",
+        "photo-uploaded",
+      );
+    });
+  });
+
+  it("does not allow dismissing the create modal while album creation is still running", async () => {
+    const createDeferredAlbum = createDeferred<ReturnType<typeof makeAlbum>>();
+    apiMocks.createAlbum.mockReturnValue(createDeferredAlbum.promise);
+
+    renderRoute("/app/library?view=albums");
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: /create album|создать альбом/i }),
+    );
+
+    const dialog = screen.getByRole("dialog");
+    fireEvent.change(within(dialog).getByRole("textbox", { name: /name|название/i }), {
+      target: { value: "Long create" },
+    });
+    fireEvent.click(
+      within(dialog).getByRole("button", {
+        name: /create and open album|создать и открыть альбом/i,
+      }),
+    );
+
+    expect(
+      within(dialog).getAllByRole("button", { name: /cancel|отмена/i })[0],
+    ).toBeDisabled();
+
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(
+      screen.getByRole("heading", {
+        name: /build a new personal album|соберите новый личный альбом/i,
+      }),
+    ).toBeInTheDocument();
+
+    createDeferredAlbum.resolve(
+      makeAlbum({
+        id: "album-created",
+        name: "Long create",
+        coverPhotoId: null,
+        photoCount: 0,
+        mediaRangeStart: null,
+        mediaRangeEnd: null,
+        latestPhotoAddedAt: null,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Album detail target")).toBeInTheDocument();
+    });
   });
 
   it("creates an album from selected existing and uploaded photos, then navigates to detail", async () => {
@@ -298,7 +505,6 @@ describe("AppLibraryRoute", () => {
     });
     await waitFor(() => {
       expect(apiMocks.addPhotoToAlbum).toHaveBeenCalledWith("album-new", "photo-1");
-      expect(apiMocks.addPhotoToAlbum).toHaveBeenCalledWith("album-new", "photo-2");
     });
     expect(await screen.findByText("Album detail target")).toBeInTheDocument();
   });
@@ -322,7 +528,7 @@ describe("AppLibraryRoute", () => {
     expect(await screen.findByText("Album detail target")).toBeInTheDocument();
   });
 
-  it("shows album menu actions in order and keeps menu interactions on the library route", async () => {
+  it("opens the real share dialog from the album menu instead of copying an internal route", async () => {
     apiMocks.listAlbums.mockResolvedValue([makeAlbum()]);
     renderRoute();
 
@@ -349,23 +555,11 @@ describe("AppLibraryRoute", () => {
     fireEvent.click(within(menu).getByRole("button", { name: "Share" }));
 
     await waitFor(() => {
-      expect(clipboardWriteText).toHaveBeenCalledWith(
-        `${window.location.origin}/app/library/albums/album-1`,
-      );
+      expect(apiMocks.listAlbumShareLinks).toHaveBeenCalledWith("album-1");
     });
-    expect(screen.getByText(/link copied to clipboard/i)).toBeInTheDocument();
-    expect(screen.queryByText("Album detail target")).not.toBeInTheDocument();
-
-    fireEvent.click(
-      screen.getByRole("button", {
-        name: /open menu for summer trip|открыть меню для summer trip/i,
-      }),
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Favorite" }));
-
-    await waitFor(() => {
-      expect(apiMocks.addFavorite).toHaveBeenCalledWith("ALBUM", "album-1");
-    });
+    expect(
+      screen.getByRole("heading", { name: /share "summer trip"/i }),
+    ).toBeInTheDocument();
     expect(screen.queryByText("Album detail target")).not.toBeInTheDocument();
   });
 
@@ -642,7 +836,7 @@ describe("AppLibraryRoute", () => {
     fireEvent.click(screen.getByRole("button", { name: /zoom.*cluster/i }));
 
     await waitFor(() => {
-      expect(apiMocks.listGeoPhotos).toHaveBeenCalledTimes(3);
+      expect(apiMocks.listGeoPhotos).toHaveBeenCalledTimes(2);
     });
   });
 

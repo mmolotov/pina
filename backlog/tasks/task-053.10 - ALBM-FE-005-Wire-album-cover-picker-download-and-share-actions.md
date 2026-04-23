@@ -1,7 +1,7 @@
 ---
 id: TASK-053.10
 title: 'ALBM-FE-005 Wire album cover picker, download, and share actions'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-04-22 12:16'
 labels:
@@ -37,10 +37,10 @@ ALBM-FE-002 and ALBM-FE-004 ship the action surface with download / share / cove
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Cover picker on the album detail page sets the cover via `PUT /albums/{id}/cover` and the grid reflects the change after revalidation
-- [ ] #2 Edit modal exposes "Use automatic cover" that calls `DELETE /albums/{id}/cover`
-- [ ] #3 Download action streams the archive; file name derives from album name; failures surface an inline error
-- [ ] #4 Share dialog creates a share link via `POST /albums/{id}/share-links`, shows the plaintext token once with a copy button, and lists existing links with a working revoke action
-- [ ] #5 All new copy translated in `en` and `ru`
-- [ ] #6 Vitest covers the three action paths with API mocks
+- [x] #1 Cover picker on the album detail page sets the cover via `PUT /albums/{id}/cover` and the grid reflects the change after revalidation
+- [x] #2 Edit modal exposes "Use automatic cover" that calls `DELETE /albums/{id}/cover`
+- [x] #3 Download action streams the archive; file name derives from album name; failures surface an inline error
+- [x] #4 Share dialog creates a share link via `POST /albums/{id}/share-links`, shows the plaintext token once with a copy button, and lists existing links with a working revoke action
+- [x] #5 All new copy translated in `en` and `ru`
+- [x] #6 Vitest covers the three action paths with API mocks
 <!-- AC:END -->

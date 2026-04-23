@@ -99,6 +99,29 @@ export interface AlbumDto {
   latestPhotoAddedAt: string | null;
 }
 
+export type AlbumSortField =
+  | "name"
+  | "itemCount"
+  | "createdAt"
+  | "updatedAt"
+  | "newestPhoto";
+
+export type AlbumSortDirection = "asc" | "desc";
+
+export interface AlbumShareLinkDto {
+  id: string;
+  albumId: string;
+  createdById: string | null;
+  createdAt: string;
+  expiresAt: string | null;
+  revokedAt: string | null;
+}
+
+export interface AlbumShareLinkCreatedDto {
+  link: AlbumShareLinkDto;
+  token: string;
+}
+
 export interface SpaceDto {
   id: string;
   name: string;
