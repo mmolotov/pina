@@ -233,7 +233,9 @@ describe("AppAlbumDetailRoute", () => {
     expect(
       await screen.findByRole("heading", { level: 1, name: "Summer Week" }),
     ).toBeInTheDocument();
-    expect(screen.getByText("Pier, market, and long golden evenings")).toBeInTheDocument();
+    expect(
+      screen.getByText("Pier, market, and long golden evenings"),
+    ).toBeInTheDocument();
     expect(
       screen.getByRole("link", { name: /back to albums|назад к альбомам/i }),
     ).toHaveAttribute("href", "/app/library?view=albums");
@@ -273,7 +275,9 @@ describe("AppAlbumDetailRoute", () => {
     renderRoute();
 
     expect(
-      await screen.findByText(/no photos in this album yet|в этом альбоме пока нет фото/i),
+      await screen.findByText(
+        /no photos in this album yet|в этом альбоме пока нет фото/i,
+      ),
     ).toBeInTheDocument();
     expect(
       screen.getAllByRole("button", { name: /add photos|добавить фото/i })[0],
@@ -390,7 +394,9 @@ describe("AppAlbumDetailRoute", () => {
       await screen.findByRole("heading", { name: /share "summer week"/i }),
     ).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: /create public link/i }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /create public link/i }),
+    );
 
     await waitFor(() => {
       expect(apiMocks.createAlbumShareLink).toHaveBeenCalledWith("album-1");

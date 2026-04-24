@@ -39,7 +39,9 @@ export function formatDateRange(
     return startLabel === endLabel ? startLabel : `${startLabel} – ${endLabel}`;
   }
 
-  return startLabel ?? endLabel ?? translateMessage(locale, "common.notAvailable");
+  return (
+    startLabel ?? endLabel ?? translateMessage(locale, "common.notAvailable")
+  );
 }
 
 export function formatRelativeCount(

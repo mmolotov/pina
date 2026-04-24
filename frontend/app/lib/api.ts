@@ -618,10 +618,7 @@ function listAlbumsPage(
     direction: options.direction,
   });
 
-  return request<PageResponse<AlbumDto>>(
-    `/albums?${query}`,
-    { auth: true },
-  );
+  return request<PageResponse<AlbumDto>>(`/albums?${query}`, { auth: true });
 }
 
 export function listAlbums(

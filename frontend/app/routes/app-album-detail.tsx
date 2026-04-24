@@ -1,5 +1,11 @@
 import type { Route } from "./+types/app-album-detail";
-import { startTransition, useCallback, useEffect, useMemo, useState } from "react";
+import {
+  startTransition,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import {
   Form,
   Link,
@@ -84,7 +90,7 @@ type AlbumDetailActionResult =
         | "add-photo-to-album"
         | "remove-photo-from-album";
       errorMessage: string;
-  };
+    };
 
 interface RelativeCountForms {
   one: string;
@@ -110,7 +116,8 @@ async function loadAlbumDetailData(
     photos,
     libraryPhotos: libraryPhotosPage.items,
     libraryPhotosHasNext: libraryPhotosPage.hasNext,
-    favorite: favorites.find((favorite) => favorite.targetId === albumId) ?? null,
+    favorite:
+      favorites.find((favorite) => favorite.targetId === albumId) ?? null,
     albumId,
   };
 }
@@ -152,7 +159,10 @@ export async function clientAction({
         await addPhotoToAlbum(albumId, String(formData.get("photoId") ?? ""));
         return { ok: true, intent };
       case "remove-photo-from-album":
-        await removePhotoFromAlbum(albumId, String(formData.get("photoId") ?? ""));
+        await removePhotoFromAlbum(
+          albumId,
+          String(formData.get("photoId") ?? ""),
+        );
         return { ok: true, intent };
       default:
         return {
@@ -290,7 +300,11 @@ function AlbumPhotoTile(props: {
                 : props.setCoverLabel}
           </button>
           <Form className="pointer-events-auto" method="post">
-            <input name="intent" type="hidden" value="remove-photo-from-album" />
+            <input
+              name="intent"
+              type="hidden"
+              value="remove-photo-from-album"
+            />
             <input name="photoId" type="hidden" value={props.photo.id} />
             <button
               className="rounded-full border border-white/25 bg-black/65 px-3 py-1 text-xs font-medium text-white"
@@ -417,7 +431,9 @@ export default function AppAlbumDetailRoute({
       });
     } catch (error) {
       setErrorMessage(
-        error instanceof Error ? error.message : t("app.albumDetail.loadFailed"),
+        error instanceof Error
+          ? error.message
+          : t("app.albumDetail.loadFailed"),
       );
     }
   }, [loaderData.albumId, t]);
@@ -503,7 +519,8 @@ export default function AppAlbumDetailRoute({
         await addFavorite("ALBUM", loaderData.albumId);
         const favorites = await listFavorites("ALBUM");
         setFavorite(
-          favorites.find((item) => item.targetId === loaderData.albumId) ?? null,
+          favorites.find((item) => item.targetId === loaderData.albumId) ??
+            null,
         );
       }
     } catch (error) {
@@ -594,7 +611,9 @@ export default function AppAlbumDetailRoute({
       await refreshAlbumDetail();
     } catch (error) {
       setErrorMessage(
-        error instanceof Error ? error.message : t("app.albumDetail.setCoverFailed"),
+        error instanceof Error
+          ? error.message
+          : t("app.albumDetail.setCoverFailed"),
       );
     } finally {
       setIsCoverBusy(null);
@@ -727,7 +746,9 @@ export default function AppAlbumDetailRoute({
       );
     } catch (error) {
       setShareDialogError(
-        error instanceof Error ? error.message : t("app.albumShare.createFailed"),
+        error instanceof Error
+          ? error.message
+          : t("app.albumShare.createFailed"),
       );
     } finally {
       setShareDialogCreating(false);
@@ -750,7 +771,9 @@ export default function AppAlbumDetailRoute({
       setShareDialogInfo(t("app.albumShare.revokedSuccess"));
     } catch (error) {
       setShareDialogError(
-        error instanceof Error ? error.message : t("app.albumShare.revokeFailed"),
+        error instanceof Error
+          ? error.message
+          : t("app.albumShare.revokeFailed"),
       );
     } finally {
       setShareDialogRevokeBusyId(null);
@@ -861,8 +884,12 @@ export default function AppAlbumDetailRoute({
         title={album.name}
       />
 
-      {errorMessage ? <InlineMessage tone="danger">{errorMessage}</InlineMessage> : null}
-      {uploadError ? <InlineMessage tone="danger">{uploadError}</InlineMessage> : null}
+      {errorMessage ? (
+        <InlineMessage tone="danger">{errorMessage}</InlineMessage>
+      ) : null}
+      {uploadError ? (
+        <InlineMessage tone="danger">{uploadError}</InlineMessage>
+      ) : null}
       {uploadSuccessMessage ? (
         <InlineMessage tone="success">{uploadSuccessMessage}</InlineMessage>
       ) : null}
@@ -904,7 +931,11 @@ export default function AppAlbumDetailRoute({
                 <div>
                   <dt className="eyebrow">{t("app.albumDetail.dateRange")}</dt>
                   <dd className="mt-1 text-base font-medium text-[var(--color-text)]">
-                    {formatDateRange(album.mediaRangeStart, album.mediaRangeEnd, locale)}
+                    {formatDateRange(
+                      album.mediaRangeStart,
+                      album.mediaRangeEnd,
+                      locale,
+                    )}
                   </dd>
                 </div>
                 <div>
@@ -940,7 +971,9 @@ export default function AppAlbumDetailRoute({
           <Panel className="p-4">
             <p className="eyebrow">{t("app.albumDetail.favoriteStat")}</p>
             <p className="mt-2 text-2xl font-semibold tracking-tight">
-              {favorite ? t("app.albumDetail.favoriteSaved") : t("app.albumDetail.favoriteIdle")}
+              {favorite
+                ? t("app.albumDetail.favoriteSaved")
+                : t("app.albumDetail.favoriteIdle")}
             </p>
           </Panel>
         </div>
@@ -970,13 +1003,19 @@ export default function AppAlbumDetailRoute({
             </button>
           </div>
 
-          <Form className="mt-4 grid gap-4 lg:grid-cols-[1fr_1fr_auto]" method="post">
+          <Form
+            className="mt-4 grid gap-4 lg:grid-cols-[1fr_1fr_auto]"
+            method="post"
+          >
             <input name="intent" type="hidden" value="update-album" />
             <input
               className="field"
               name="name"
               onChange={(event) =>
-                setEditDraft((current) => ({ ...current, name: event.target.value }))
+                setEditDraft((current) => ({
+                  ...current,
+                  name: event.target.value,
+                }))
               }
               required
               value={editDraft.name}
@@ -1070,7 +1109,9 @@ export default function AppAlbumDetailRoute({
             </SurfaceCard>
 
             <SurfaceCard className="rounded-[1.5rem] p-4">
-              <p className="eyebrow">{t("app.albumDetail.libraryPickerEyebrow")}</p>
+              <p className="eyebrow">
+                {t("app.albumDetail.libraryPickerEyebrow")}
+              </p>
               <Form className="mt-3 space-y-3" method="post">
                 <input name="intent" type="hidden" value="add-photo-to-album" />
                 <select
@@ -1108,7 +1149,9 @@ export default function AppAlbumDetailRoute({
                 ) : null}
                 <button
                   className="button-primary"
-                  disabled={!selectedPhotoId || pendingIntent === "add-photo-to-album"}
+                  disabled={
+                    !selectedPhotoId || pendingIntent === "add-photo-to-album"
+                  }
                   type="submit"
                 >
                   {pendingIntent === "add-photo-to-album"
@@ -1181,7 +1224,10 @@ export default function AppAlbumDetailRoute({
             ))}
           </div>
 
-          <div className="hidden xl:block xl:sticky xl:self-start" style={{ top: "3.5rem" }}>
+          <div
+            className="hidden xl:block xl:sticky xl:self-start"
+            style={{ top: "3.5rem" }}
+          >
             <div style={{ height: "calc(100vh - 6rem)" }}>
               <ProportionalTimelineRail
                 locale={locale}

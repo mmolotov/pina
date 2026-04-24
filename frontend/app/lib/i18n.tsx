@@ -557,8 +557,7 @@ const enMessages = {
   "app.albumShare.copyLinkFailed": "Failed to copy the public link.",
   "app.albumShare.tokenCopied": "Token copied to clipboard.",
   "app.albumShare.copyTokenFailed": "Failed to copy the token.",
-  "app.albumShare.createdSuccess":
-    'New public link created for "{albumName}".',
+  "app.albumShare.createdSuccess": 'New public link created for "{albumName}".',
   "app.albumShare.revokedSuccess": "Share link revoked.",
   "app.albumShare.loadFailed": "Failed to load album share links.",
   "app.albumShare.createFailed": "Failed to create a public link.",
@@ -1176,8 +1175,7 @@ const ruMessages: Partial<MessageCatalog> = {
   "app.library.createModalSelect": "Выбрать",
   "app.library.createModalSelectedCount": "Выбрано: {count}",
   "app.library.createModalBatchProgress": "Добавление {current} из {total}",
-  "app.library.createModalFailuresTitle":
-    "Некоторые фото не удалось добавить",
+  "app.library.createModalFailuresTitle": "Некоторые фото не удалось добавить",
   "app.library.createModalSubmit": "Создать и открыть альбом",
   "app.library.createModalCreating": "Создание альбома...",
   "app.library.createModalNameRequired": "Название альбома обязательно.",
@@ -1280,8 +1278,7 @@ const ruMessages: Partial<MessageCatalog> = {
   "app.albumDetail.loadFailed": "Не удалось загрузить детали альбома.",
   "app.albumDetail.favoriteFailed":
     "Не удалось обновить избранное для альбома.",
-  "app.albumDetail.uploadTypeError":
-    "Поддерживаются только файлы JPEG и PNG.",
+  "app.albumDetail.uploadTypeError": "Поддерживаются только файлы JPEG и PNG.",
   "app.albumDetail.uploadFileFailed": "{fileName}: ошибка загрузки фото.",
   "app.albumDetail.uploadSummaryFull": "Добавлено {count} загруженных фото.",
   "app.albumDetail.uploadSummaryPartial":
@@ -1387,8 +1384,7 @@ const ruMessages: Partial<MessageCatalog> = {
   "app.albumPhotoDetail.loadFailed": "Не удалось загрузить фото из альбома.",
   "app.albumPhotoDetail.missingId":
     "Отсутствует идентификатор альбома или фото.",
-  "app.albumPhotoDetail.notFound":
-    "Запрошенное фото из альбома не найдено.",
+  "app.albumPhotoDetail.notFound": "Запрошенное фото из альбома не найдено.",
   "app.albumPhotoDetail.eyebrow": "Фото альбома",
   "app.albumPhotoDetail.description":
     "Просматривайте фото из альбома, не теряя контекст самой коллекции. Альбом: {albumName}.",

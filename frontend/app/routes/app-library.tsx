@@ -16,12 +16,7 @@ import {
   useRevalidator,
   useSearchParams,
 } from "react-router";
-import {
-  EmptyHint,
-  EmptyState,
-  InlineMessage,
-  Panel,
-} from "~/components/ui";
+import { EmptyHint, EmptyState, InlineMessage, Panel } from "~/components/ui";
 import { AlbumShareDialog } from "~/components/album-share-dialog";
 import { ProportionalTimelineRail } from "~/components/proportional-timeline-rail";
 import {
@@ -428,14 +423,18 @@ function AlbumTile(props: {
       </div>
 
       <Link
-        aria-label={t("app.library.openAlbumAria", { albumName: props.album.name })}
+        aria-label={t("app.library.openAlbumAria", {
+          albumName: props.album.name,
+        })}
         className="block"
         to={buildAlbumDetailPath(props.album.id)}
       >
-        <div className="relative aspect-[4/3] overflow-hidden rounded-t-[1.5rem] bg-[radial-gradient(circle_at_top_left,_rgba(43,143,61,0.22),_transparent_55%),linear-gradient(180deg,rgba(216,226,197,0.92),rgba(244,240,231,0.98))]">
+        <div className="album-tile-placeholder relative aspect-[4/3] overflow-hidden rounded-t-[1.5rem]">
           {coverUrl ? (
             <img
-              alt={t("app.library.albumCoverAlt", { albumName: props.album.name })}
+              alt={t("app.library.albumCoverAlt", {
+                albumName: props.album.name,
+              })}
               className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-[1.03]"
               src={coverUrl}
             />
@@ -464,13 +463,16 @@ function AlbumTile(props: {
               {props.album.name}
             </h3>
             <p className="mt-1 line-clamp-2 min-h-[2.5rem] text-sm leading-5 text-[var(--color-text-muted)]">
-              {props.album.description || t("app.library.albumDescriptionFallback")}
+              {props.album.description ||
+                t("app.library.albumDescriptionFallback")}
             </p>
           </div>
 
           <dl className="grid gap-3 text-sm sm:grid-cols-2">
             <div>
-              <dt className="eyebrow">{t("app.library.albumDateRangeLabel")}</dt>
+              <dt className="eyebrow">
+                {t("app.library.albumDateRangeLabel")}
+              </dt>
               <dd className="mt-1 font-medium">{dateRangeLabel}</dd>
             </div>
             <div>
@@ -526,7 +528,9 @@ function AlbumEditDialog(props: {
           <input name="albumId" type="hidden" value={props.albumId} />
 
           <label className="block">
-            <span className="mb-2 block text-sm font-medium">{t("common.name")}</span>
+            <span className="mb-2 block text-sm font-medium">
+              {t("common.name")}
+            </span>
             <input
               className="field"
               name="name"
@@ -576,7 +580,11 @@ function AlbumEditDialog(props: {
             >
               {t("app.library.cancel")}
             </button>
-            <button className="button-primary" disabled={props.pending} type="submit">
+            <button
+              className="button-primary"
+              disabled={props.pending}
+              type="submit"
+            >
               {props.pending ? t("common.saving") : t("app.library.saveAlbum")}
             </button>
           </div>
@@ -609,13 +617,21 @@ function AlbumDeleteDialog(props: {
         </p>
 
         <div className="mt-6 flex flex-wrap justify-end gap-2">
-          <button className="button-secondary" onClick={props.onClose} type="button">
+          <button
+            className="button-secondary"
+            onClick={props.onClose}
+            type="button"
+          >
             {t("app.library.cancel")}
           </button>
           <Form method="post">
             <input name="intent" type="hidden" value="delete-album" />
             <input name="albumId" type="hidden" value={props.album.id} />
-            <button className="button-primary" disabled={props.pending} type="submit">
+            <button
+              className="button-primary"
+              disabled={props.pending}
+              type="submit"
+            >
               {props.pending
                 ? t("common.deleting")
                 : t("app.library.confirmDeleteAlbum")}
@@ -785,7 +801,9 @@ function CreateAlbumDialog(props: {
             </label>
 
             <div className="rounded-[1.25rem] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-              <p className="eyebrow">{t("app.library.createModalUploadEyebrow")}</p>
+              <p className="eyebrow">
+                {t("app.library.createModalUploadEyebrow")}
+              </p>
               <p className="mt-1 text-sm font-medium">
                 {t("app.library.createModalUploadTitle")}
               </p>
@@ -800,7 +818,9 @@ function CreateAlbumDialog(props: {
                 onDragLeave={(event) => {
                   event.preventDefault();
                   if (
-                    event.currentTarget.contains(event.relatedTarget as Node | null)
+                    event.currentTarget.contains(
+                      event.relatedTarget as Node | null,
+                    )
                   ) {
                     return;
                   }
@@ -872,7 +892,9 @@ function CreateAlbumDialog(props: {
             <div className="rounded-[1.25rem] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                 <div>
-                  <p className="eyebrow">{t("app.library.createModalPickerEyebrow")}</p>
+                  <p className="eyebrow">
+                    {t("app.library.createModalPickerEyebrow")}
+                  </p>
                   <p className="mt-1 text-sm font-medium">
                     {t("app.library.createModalPickerTitle")}
                   </p>
@@ -883,7 +905,9 @@ function CreateAlbumDialog(props: {
                   onChange={(event) => {
                     props.onDraftChange("existingFilter", event.target.value);
                   }}
-                  placeholder={t("app.library.createModalPickerFilterPlaceholder")}
+                  placeholder={t(
+                    "app.library.createModalPickerFilterPlaceholder",
+                  )}
                   type="search"
                   value={props.draft.existingFilter}
                 />
@@ -895,7 +919,9 @@ function CreateAlbumDialog(props: {
                 ) : (
                   <div className="grid gap-3 sm:grid-cols-2">
                     {props.existingPhotos.map((photo) => {
-                      const selected = props.selectedPhotoIds.includes(photo.id);
+                      const selected = props.selectedPhotoIds.includes(
+                        photo.id,
+                      );
                       return (
                         <button
                           aria-pressed={selected}
@@ -1153,14 +1179,13 @@ async function loadLibraryData(albumSort = DEFAULT_ALBUM_SORT): Promise<{
   photoFavorites: Record<string, FavoriteDto>;
   albumFavorites: Record<string, FavoriteDto>;
 }> {
-  const [photos, albums, photoFavoriteList, albumFavoriteList] = await Promise.all(
-    [
+  const [photos, albums, photoFavoriteList, albumFavoriteList] =
+    await Promise.all([
       listAllPhotos(),
       listAlbums(albumSort),
       listFavorites("PHOTO"),
       listFavorites("ALBUM"),
-    ],
-  );
+    ]);
 
   return {
     photos,
@@ -1306,9 +1331,9 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
     description: "",
     existingFilter: "",
   });
-  const [createSelectedPhotoIds, setCreateSelectedPhotoIds] = useState<string[]>(
-    [],
-  );
+  const [createSelectedPhotoIds, setCreateSelectedPhotoIds] = useState<
+    string[]
+  >([]);
   const [createUploadProgress, setCreateUploadProgress] =
     useState<UploadProgressState | null>(null);
   const [createBatchProgress, setCreateBatchProgress] =
@@ -1324,7 +1349,9 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
   const [partialCreatedAlbumId, setPartialCreatedAlbumId] = useState<
     string | null
   >(null);
-  const [albumActionSuccess, setAlbumActionSuccess] = useState<string | null>(null);
+  const [albumActionSuccess, setAlbumActionSuccess] = useState<string | null>(
+    null,
+  );
   const [albumSortMessage, setAlbumSortMessage] = useState<string | null>(
     loaderData.albumSortReset ? t("app.library.albumSortReset") : null,
   );
@@ -1337,7 +1364,9 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
   const [downloadBusyAlbumId, setDownloadBusyAlbumId] = useState<string | null>(
     null,
   );
-  const [shareDialogAlbum, setShareDialogAlbum] = useState<AlbumDto | null>(null);
+  const [shareDialogAlbum, setShareDialogAlbum] = useState<AlbumDto | null>(
+    null,
+  );
   const [shareDialogLinks, setShareDialogLinks] = useState<AlbumShareLinkDto[]>(
     [],
   );
@@ -1364,8 +1393,7 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
   const pendingAlbumId = String(navigation.formData?.get("albumId") ?? "");
   const pendingPhotoId = String(navigation.formData?.get("photoId") ?? "");
   const albumSortSelection = useMemo(
-    () =>
-      resolveAlbumSort(searchParams.get("sort"), searchParams.get("dir")),
+    () => resolveAlbumSort(searchParams.get("sort"), searchParams.get("dir")),
     [searchParams],
   );
   const geoViewport = useMemo(
@@ -1482,11 +1510,11 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
   const editingAlbum =
     editingAlbumId == null
       ? null
-      : albums.find((album) => album.id === editingAlbumId) ?? null;
+      : (albums.find((album) => album.id === editingAlbumId) ?? null);
   const deleteDialogAlbum =
     deleteDialogAlbumId == null
       ? null
-      : albums.find((album) => album.id === deleteDialogAlbumId) ?? null;
+      : (albums.find((album) => album.id === deleteDialogAlbumId) ?? null);
   const countFormatter = useMemo(() => new Intl.NumberFormat(locale), [locale]);
   const photoForms = {
     one: t("unit.photo.one"),
@@ -1819,15 +1847,13 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
   }
 
   function toggleCreateAlbumPhotoSelection(photoId: string) {
-    setCreateSelectedPhotoIds((current) =>
-      {
-        const next = current.includes(photoId)
-          ? current.filter((id) => id !== photoId)
-          : [...current, photoId];
-        createSelectedPhotoIdsRef.current = next;
-        return next;
-      },
-    );
+    setCreateSelectedPhotoIds((current) => {
+      const next = current.includes(photoId)
+        ? current.filter((id) => id !== photoId)
+        : [...current, photoId];
+      createSelectedPhotoIdsRef.current = next;
+      return next;
+    });
   }
 
   async function handleCreateAlbumUploads(files: File[]) {
@@ -2197,10 +2223,7 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
     setAlbumActionSuccess(null);
   }
 
-  function updateEditAlbumDraft(
-    field: "name" | "description",
-    value: string,
-  ) {
+  function updateEditAlbumDraft(field: "name" | "description", value: string) {
     setEditAlbumDraft((current) => ({
       ...current,
       [field]: value,
@@ -2830,7 +2853,9 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
                   <p className="font-medium text-[var(--color-text)]">
                     {t("app.library.albumsSpacesTitle")}
                   </p>
-                  <p className="mt-1">{t("app.library.albumsSpacesDescription")}</p>
+                  <p className="mt-1">
+                    {t("app.library.albumsSpacesDescription")}
+                  </p>
                   <Link
                     className="mt-3 inline-flex text-sm font-medium text-[var(--color-link)] hover:text-[var(--color-link-hover)]"
                     to="/app/spaces"
@@ -2958,7 +2983,8 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
           }}
           onDraftChange={updateEditAlbumDraft}
           pending={
-            pendingIntent === "update-album" && pendingAlbumId === editingAlbum.id
+            pendingIntent === "update-album" &&
+            pendingAlbumId === editingAlbum.id
           }
         />
       ) : null}

@@ -10,7 +10,9 @@ describe("ProportionalTimelineRail", () => {
   it("removes document drag listeners when unmounted during an active drag", () => {
     const addListenerSpy = vi.spyOn(document, "addEventListener");
     const removeListenerSpy = vi.spyOn(document, "removeEventListener");
-    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const consoleErrorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
 
     const { container, unmount } = render(
       <div style={{ height: 240 }}>
@@ -70,7 +72,10 @@ describe("ProportionalTimelineRail", () => {
 
     unmount();
 
-    expect(removeListenerSpy).toHaveBeenCalledWith("mousemove", mouseMoveListener);
+    expect(removeListenerSpy).toHaveBeenCalledWith(
+      "mousemove",
+      mouseMoveListener,
+    );
     expect(removeListenerSpy).toHaveBeenCalledWith("mouseup", mouseUpListener);
 
     fireEvent.mouseMove(document, { clientY: 48 });

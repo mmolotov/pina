@@ -110,9 +110,7 @@ function PublicAlbumView(props: {
       setNextPage(next.photos.page + 1);
     } catch (error) {
       const message =
-        error instanceof ApiError
-          ? error.message
-          : t("public.album.notFound");
+        error instanceof ApiError ? error.message : t("public.album.notFound");
       setLoadError(message);
     } finally {
       setIsLoadingMore(false);
@@ -146,10 +144,7 @@ function PublicAlbumView(props: {
             <div>
               <dt className="eyebrow">{countLabel}</dt>
               <dd className="mt-1">
-                {formatDateRange(
-                  album.mediaRangeStart,
-                  album.mediaRangeEnd,
-                )}
+                {formatDateRange(album.mediaRangeStart, album.mediaRangeEnd)}
               </dd>
             </div>
           </dl>
@@ -194,10 +189,7 @@ function PublicAlbumView(props: {
   );
 }
 
-function PublicAlbumThumb(props: {
-  photo: PublicPhotoDto;
-  token: string;
-}) {
+function PublicAlbumThumb(props: { photo: PublicPhotoDto; token: string }) {
   const { t } = useI18n();
   const thumbUrl = buildPublicAlbumPhotoFileUrl(
     props.token,

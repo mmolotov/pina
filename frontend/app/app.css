@@ -59,6 +59,17 @@
   --map-shell-end: rgba(229, 217, 185, 0.88);
   --map-overlay: rgba(247, 244, 236, 0.72);
   --map-selected-ring: rgba(82, 204, 255, 0.18);
+  --album-tile-placeholder-bg:
+    radial-gradient(
+      circle at top left,
+      rgba(43, 143, 61, 0.22),
+      transparent 55%
+    ),
+    linear-gradient(
+      180deg,
+      rgba(216, 226, 197, 0.92),
+      rgba(244, 240, 231, 0.98)
+    );
 }
 
 [data-theme="dark"],
@@ -98,6 +109,13 @@
   --color-status-loading: #8fa0e6;
   --map-overlay: rgba(7, 14, 26, 0.7);
   --map-selected-ring: rgba(82, 204, 255, 0.24);
+  --album-tile-placeholder-bg:
+    radial-gradient(
+      circle at top left,
+      rgba(122, 203, 47, 0.18),
+      transparent 55%
+    ),
+    linear-gradient(180deg, rgba(42, 54, 36, 0.96), rgba(23, 29, 22, 0.98));
 }
 
 html,
@@ -532,6 +550,10 @@ a {
 
 .timeline-magnifier-visible {
   opacity: 1;
+}
+
+.album-tile-placeholder {
+  background: var(--album-tile-placeholder-bg);
 }
 
 .text-link-danger {

@@ -119,7 +119,9 @@ export default function AppAlbumPhotoDetailRoute({
         title={photo.originalFilename}
       />
 
-      {errorMessage ? <InlineMessage tone="danger">{errorMessage}</InlineMessage> : null}
+      {errorMessage ? (
+        <InlineMessage tone="danger">{errorMessage}</InlineMessage>
+      ) : null}
 
       <section className="grid gap-6 xl:grid-cols-[minmax(0,1.3fr)_0.7fr]">
         <Panel className="preview-frame overflow-hidden p-3">
@@ -140,17 +142,22 @@ export default function AppAlbumPhotoDetailRoute({
 
         <div className="space-y-4">
           <Panel className="p-5">
-            <p className="eyebrow">{t("app.albumPhotoDetail.contextEyebrow")}</p>
+            <p className="eyebrow">
+              {t("app.albumPhotoDetail.contextEyebrow")}
+            </p>
             <h2 className="mt-2 text-xl font-semibold tracking-tight">
               {album.name}
             </h2>
             <p className="mt-2 text-sm leading-6 text-[var(--color-text-muted)]">
-              {album.description || t("app.albumPhotoDetail.noAlbumDescription")}
+              {album.description ||
+                t("app.albumPhotoDetail.noAlbumDescription")}
             </p>
           </Panel>
 
           <Panel className="p-5">
-            <p className="eyebrow">{t("app.albumPhotoDetail.metadataEyebrow")}</p>
+            <p className="eyebrow">
+              {t("app.albumPhotoDetail.metadataEyebrow")}
+            </p>
             <dl className="mt-4 space-y-3 text-sm text-[var(--color-text-muted)]">
               <div className="flex justify-between gap-4">
                 <dt>{t("app.albumPhotoDetail.mimeType")}</dt>
@@ -176,7 +183,9 @@ export default function AppAlbumPhotoDetailRoute({
           </Panel>
 
           <SurfaceCard className="rounded-[1.5rem] p-5" tone="subtle">
-            <p className="eyebrow">{t("app.albumPhotoDetail.metadataPayloadEyebrow")}</p>
+            <p className="eyebrow">
+              {t("app.albumPhotoDetail.metadataPayloadEyebrow")}
+            </p>
             <pre className="mt-3 max-h-64 overflow-auto text-xs leading-6 whitespace-pre-wrap text-[var(--color-text-muted)]">
               {photo.exifData || t("app.albumPhotoDetail.noExif")}
             </pre>

@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { createRoutesStub } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "~/lib/i18n";
@@ -203,7 +209,9 @@ describe("AppLibraryRoute", () => {
       ).toBeInTheDocument();
     });
     expect(screen.getByRole("link", { name: /spaces/i })).toBeInTheDocument();
-    expect(screen.getByText(/no personal albums yet|пока нет личных альбомов/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/no personal albums yet|пока нет личных альбомов/i),
+    ).toBeInTheDocument();
   });
 
   it("passes album sort from the URL into the loader and keeps it selected", async () => {
@@ -232,7 +240,9 @@ describe("AppLibraryRoute", () => {
       direction: "desc",
     });
     expect(
-      screen.getByText(/sort was reset to the default order|сброшена на порядок по умолчанию/i),
+      screen.getByText(
+        /sort was reset to the default order|сброшена на порядок по умолчанию/i,
+      ),
     ).toBeInTheDocument();
     expect(
       screen.getByLabelText(/sort albums|сортировка альбомов/i),
@@ -285,7 +295,9 @@ describe("AppLibraryRoute", () => {
     );
 
     expect(
-      await screen.findByText(/album name is required|название альбома обязательно/i),
+      await screen.findByText(
+        /album name is required|название альбома обязательно/i,
+      ),
     ).toBeInTheDocument();
     expect(apiMocks.createAlbum).not.toHaveBeenCalled();
   });
@@ -321,13 +333,18 @@ describe("AppLibraryRoute", () => {
     renderRoute("/app/library?view=albums");
 
     fireEvent.click(
-      await screen.findByRole("button", { name: /create album|создать альбом/i }),
+      await screen.findByRole("button", {
+        name: /create album|создать альбом/i,
+      }),
     );
 
     const dialog = screen.getByRole("dialog");
-    fireEvent.change(within(dialog).getByRole("textbox", { name: /name|название/i }), {
-      target: { value: "Race proof" },
-    });
+    fireEvent.change(
+      within(dialog).getByRole("textbox", { name: /name|название/i }),
+      {
+        target: { value: "Race proof" },
+      },
+    );
 
     const file = new File(["png"], "forest.png", { type: "image/png" });
     fireEvent.change(
@@ -389,13 +406,18 @@ describe("AppLibraryRoute", () => {
     renderRoute("/app/library?view=albums");
 
     fireEvent.click(
-      await screen.findByRole("button", { name: /create album|создать альбом/i }),
+      await screen.findByRole("button", {
+        name: /create album|создать альбом/i,
+      }),
     );
 
     const dialog = screen.getByRole("dialog");
-    fireEvent.change(within(dialog).getByRole("textbox", { name: /name|название/i }), {
-      target: { value: "Long create" },
-    });
+    fireEvent.change(
+      within(dialog).getByRole("textbox", { name: /name|название/i }),
+      {
+        target: { value: "Long create" },
+      },
+    );
     fireEvent.click(
       within(dialog).getByRole("button", {
         name: /create and open album|создать и открыть альбом/i,
@@ -468,9 +490,12 @@ describe("AppLibraryRoute", () => {
     );
 
     const dialog = screen.getByRole("dialog");
-    fireEvent.change(within(dialog).getByRole("textbox", { name: /name|название/i }), {
-      target: { value: "Road notes" },
-    });
+    fireEvent.change(
+      within(dialog).getByRole("textbox", { name: /name|название/i }),
+      {
+        target: { value: "Road notes" },
+      },
+    );
 
     fireEvent.click(
       within(dialog).getByRole("button", { name: /beach\.jpg/i }),
@@ -504,7 +529,10 @@ describe("AppLibraryRoute", () => {
       });
     });
     await waitFor(() => {
-      expect(apiMocks.addPhotoToAlbum).toHaveBeenCalledWith("album-new", "photo-1");
+      expect(apiMocks.addPhotoToAlbum).toHaveBeenCalledWith(
+        "album-new",
+        "photo-1",
+      );
     });
     expect(await screen.findByText("Album detail target")).toBeInTheDocument();
   });
@@ -518,11 +546,15 @@ describe("AppLibraryRoute", () => {
     );
 
     expect(await screen.findByText("Summer Trip")).toBeInTheDocument();
-    expect(screen.getByText(/sea, wind, and long evenings/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/sea, wind, and long evenings/i),
+    ).toBeInTheDocument();
     expect(screen.getByText(/3 photos|3 фото/i)).toBeInTheDocument();
 
     fireEvent.click(
-      screen.getByRole("link", { name: /open album summer trip|открыть альбом summer trip/i }),
+      screen.getByRole("link", {
+        name: /open album summer trip|открыть альбом summer trip/i,
+      }),
     );
 
     expect(await screen.findByText("Album detail target")).toBeInTheDocument();
@@ -584,11 +616,16 @@ describe("AppLibraryRoute", () => {
     const editOverlay = screen.getByRole("dialog");
     expect(editDialog).toBeInTheDocument();
 
-    fireEvent.change(within(editOverlay!).getByRole("textbox", { name: /name|название/i }), {
-      target: { value: "Summer 2026" },
-    });
     fireEvent.change(
-      within(editOverlay!).getByRole("textbox", { name: /description|описание/i }),
+      within(editOverlay!).getByRole("textbox", { name: /name|название/i }),
+      {
+        target: { value: "Summer 2026" },
+      },
+    );
+    fireEvent.change(
+      within(editOverlay!).getByRole("textbox", {
+        name: /description|описание/i,
+      }),
       {
         target: { value: "Updated album copy." },
       },
@@ -647,7 +684,9 @@ describe("AppLibraryRoute", () => {
     );
 
     expect(
-      await screen.findByText(/no albums match the current filter|нет альбомов, подходящих под текущий фильтр/i),
+      await screen.findByText(
+        /no albums match the current filter|нет альбомов, подходящих под текущий фильтр/i,
+      ),
     ).toBeInTheDocument();
   });
 
@@ -1145,7 +1184,9 @@ describe("AppLibraryRoute", () => {
 
     expect(await screen.findByText("Weekend picks")).toBeInTheDocument();
     expect(
-      screen.getByText(/no photos yet\. add the first image from the album detail route/i),
+      screen.getByText(
+        /no photos yet\. add the first image from the album detail route/i,
+      ),
     ).toBeInTheDocument();
     expect(screen.getByText(/0 photos/i)).toBeInTheDocument();
     expect(
