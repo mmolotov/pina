@@ -90,6 +90,9 @@ CREATE INDEX idx_photo_variants_photo ON photo_variants (photo_id);
 CREATE UNIQUE INDEX idx_photo_variants_unique ON photo_variants (photo_id, variant_type);
 
 -- Albums
+-- cover_photo_id is an explicit user choice; auto-fallback to the newest photo
+-- is resolved at read time. ON DELETE SET NULL keeps the album usable if the
+-- cover photo is deleted.
 CREATE TABLE albums
 (
     id                  UUID PRIMARY KEY                  DEFAULT gen_random_uuid(),
@@ -97,12 +100,14 @@ CREATE TABLE albums
     description         TEXT,
     owner_id            UUID                     NOT NULL REFERENCES users (id),
     personal_library_id UUID                     NOT NULL REFERENCES personal_libraries (id) ON DELETE CASCADE,
+    cover_photo_id      UUID                              REFERENCES photos (id) ON DELETE SET NULL,
     created_at          TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
     updated_at          TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
 );
 
 CREATE INDEX idx_albums_owner ON albums (owner_id);
 CREATE INDEX idx_albums_personal_library ON albums (personal_library_id);
+CREATE INDEX idx_albums_cover_photo ON albums (cover_photo_id);
 
 -- Album-Photo junction
 CREATE TABLE album_photos
@@ -115,6 +120,23 @@ CREATE TABLE album_photos
 );
 
 CREATE INDEX idx_album_photos_photo ON album_photos (photo_id);
+
+-- Tokenized read-only public share links for albums. The raw token is never
+-- stored; only the SHA-256 hash is persisted so that a database leak cannot
+-- reveal live tokens. Revocation is a soft flag (revoked_at), expiry is
+-- optional (expires_at NULL = no expiry).
+CREATE TABLE album_share_links
+(
+    id         UUID PRIMARY KEY                  DEFAULT gen_random_uuid(),
+    album_id   UUID                     NOT NULL REFERENCES albums (id) ON DELETE CASCADE,
+    token_hash VARCHAR(64)              NOT NULL UNIQUE,
+    created_by UUID                     NOT NULL REFERENCES users (id),
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+    expires_at TIMESTAMP WITH TIME ZONE,
+    revoked_at TIMESTAMP WITH TIME ZONE
+);
+
+CREATE INDEX idx_album_share_links_album ON album_share_links (album_id);
 
 -- Auto-update updated_at on every UPDATE
 CREATE OR REPLACE FUNCTION set_updated_at()
