@@ -200,7 +200,9 @@ describe("AppLibraryRoute", () => {
         name: /create album|создать альбом/i,
       }),
     ).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /spaces/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /^all$|^все$/i }),
+    ).toHaveAttribute("aria-pressed", "true");
     expect(
       screen.getByText(/no personal albums yet|пока нет личных альбомов/i),
     ).toBeInTheDocument();
@@ -647,7 +649,7 @@ describe("AppLibraryRoute", () => {
     renderRoute("/app/library?view=albums");
 
     fireEvent.change(
-      await screen.findByLabelText(/filter library|фильтр библиотеки/i),
+      await screen.findByLabelText(/search albums|поиск альбомов/i),
       {
         target: { value: "winter" },
       },

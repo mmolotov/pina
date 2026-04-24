@@ -382,14 +382,13 @@ const enMessages = {
   "app.library.createModalPartialFailure":
     "Album created, but some photos could not be added.",
   "app.library.createModalOpenPartialAlbum": "Open created album",
-  "app.library.albumsSpacesEyebrow": "Albums and Spaces",
-  "app.library.albumsSpacesTitle": "Curate here, collaborate in Spaces",
-  "app.library.albumsSpacesDescription":
-    "Albums keep a personal set of photos together. Spaces add members, inherited access, invites, and shared albums for team or family workflows.",
-  "app.library.openSpaces": "Open Spaces",
-  "app.library.albumsEyebrow": "Albums",
-  "app.library.albumsTitle": "Curated personal albums",
   "app.library.albumSortLabel": "Sort albums",
+  "app.library.searchAlbumsLabel": "Search albums",
+  "app.library.searchAlbumsPlaceholder": "Search",
+  "app.library.albumScopeLabel": "Album scope",
+  "app.library.albumScope.all": "All",
+  "app.library.albumScope.mine": "Mine",
+  "app.library.albumScope.favorites": "Favorites",
   "app.library.albumSortReset":
     "Album sort was reset to the default order because the requested sort is not supported.",
   "app.library.albumSortOption.nameAsc": "Name (A-Z)",
@@ -1190,14 +1189,13 @@ const ruMessages: Partial<MessageCatalog> = {
   "app.library.createModalPartialFailure":
     "Альбом создан, но некоторые фото не удалось добавить.",
   "app.library.createModalOpenPartialAlbum": "Открыть созданный альбом",
-  "app.library.albumsSpacesEyebrow": "Альбомы и Spaces",
-  "app.library.albumsSpacesTitle": "Курируйте здесь, сотрудничайте в Spaces",
-  "app.library.albumsSpacesDescription":
-    "Альбомы держат вместе личный набор фото. Spaces добавляют участников, наследуемый доступ, инвайты и общие альбомы для командных или семейных сценариев.",
-  "app.library.openSpaces": "Открыть Spaces",
-  "app.library.albumsEyebrow": "Альбомы",
-  "app.library.albumsTitle": "Личные курируемые альбомы",
   "app.library.albumSortLabel": "Сортировка альбомов",
+  "app.library.searchAlbumsLabel": "Поиск альбомов",
+  "app.library.searchAlbumsPlaceholder": "Поиск",
+  "app.library.albumScopeLabel": "Область альбомов",
+  "app.library.albumScope.all": "Все",
+  "app.library.albumScope.mine": "Мои",
+  "app.library.albumScope.favorites": "Избранные",
   "app.library.albumSortReset":
     "Сортировка альбомов сброшена на порядок по умолчанию, потому что запрошенный вариант не поддерживается.",
   "app.library.albumSortOption.nameAsc": "Название (А-Я)",

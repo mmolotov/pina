@@ -41,6 +41,10 @@ import {
 } from "~/lib/api";
 import { formatDateRange, formatRelativeCount } from "~/lib/format";
 import {
+  selectAlbumTilePreviewVariant,
+  selectLibraryTilePreviewVariant,
+} from "~/lib/photo-preview";
+import {
   applyGeoViewportToSearchParams,
   buildGeoClusters,
   DEFAULT_GEO_VIEWPORT,
@@ -56,6 +60,7 @@ import {
   type Locale,
 } from "~/lib/i18n";
 import { resolveActionIntent, toActionErrorMessage } from "~/lib/route-actions";
+import { useSession } from "~/lib/session";
 import {
   buildDaySectionId,
   buildProportionalTimeline,
@@ -74,6 +79,16 @@ import type {
 } from "~/types/api";
 
 type LibraryView = "photos" | "albums" | "map";
+
+type AlbumScope = "all" | "mine" | "favorites";
+
+const ALBUM_SCOPES: readonly AlbumScope[] = ["all", "mine", "favorites"];
+
+function resolveAlbumScope(value: string | null): AlbumScope {
+  return (ALBUM_SCOPES as readonly string[]).includes(value ?? "")
+    ? (value as AlbumScope)
+    : "all";
+}
 
 interface GeoMapState {
   items: PhotoDto[];
@@ -286,6 +301,9 @@ function AlbumTile(props: {
   const { t } = useI18n();
   const [coverUrl, setCoverUrl] = useState<string | null>(null);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const previewVariant = selectAlbumTilePreviewVariant(
+    props.album.coverVariants,
+  );
 
   useEffect(() => {
     if (!props.album.coverPhotoId) {
@@ -296,7 +314,7 @@ function AlbumTile(props: {
     let cancelled = false;
     let objectUrl: string | null = null;
 
-    getPhotoBlob(props.album.coverPhotoId, "THUMB_SM")
+    getPhotoBlob(props.album.coverPhotoId, previewVariant)
       .then((blob) => {
         if (cancelled) {
           return;
@@ -317,7 +335,7 @@ function AlbumTile(props: {
         URL.revokeObjectURL(objectUrl);
       }
     };
-  }, [props.album.coverPhotoId]);
+  }, [props.album.coverPhotoId, previewVariant]);
 
   const hasPhotos = props.album.photoCount > 0;
   const dateRangeLabel = hasPhotos
@@ -1060,12 +1078,13 @@ function LibraryPhotoTile(props: {
 }) {
   const { t } = useI18n();
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const previewVariant = selectLibraryTilePreviewVariant(props.photo.variants);
 
   useEffect(() => {
     let cancelled = false;
     let objectUrl: string | null = null;
 
-    getPhotoBlob(props.photo.id, "THUMB_SM")
+    getPhotoBlob(props.photo.id, previewVariant)
       .then((blob) => {
         if (cancelled) {
           return;
@@ -1086,7 +1105,7 @@ function LibraryPhotoTile(props: {
         URL.revokeObjectURL(objectUrl);
       }
     };
-  }, [props.photo.id]);
+  }, [props.photo.id, previewVariant]);
 
   const capturedAt = props.photo.takenAt ?? props.photo.createdAt;
 
@@ -1295,6 +1314,8 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
   const navigation = useNavigation();
   const revalidator = useRevalidator();
   const [searchParams, setSearchParams] = useSearchParams();
+  const session = useSession();
+  const currentUserId = session?.user.id ?? null;
   const createAlbumTriggerRef = useRef<HTMLButtonElement | null>(null);
   const photosRef = useRef(loaderData.photos);
   const createSelectedPhotoIdsRef = useRef<string[]>([]);
@@ -1394,6 +1415,10 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
     () => resolveAlbumSort(searchParams.get("sort"), searchParams.get("dir")),
     [searchParams],
   );
+  const albumScope = useMemo(
+    () => resolveAlbumScope(searchParams.get("scope")),
+    [searchParams],
+  );
   const geoViewport = useMemo(
     () => parseGeoViewportFromSearchParams(searchParams),
     [searchParams],
@@ -1418,6 +1443,12 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
   const filteredAlbums = useMemo(
     () =>
       albums.filter((album) => {
+        if (albumScope === "mine" && album.ownerId !== currentUserId) {
+          return false;
+        }
+        if (albumScope === "favorites" && !albumFavorites[album.id]) {
+          return false;
+        }
         if (normalizedLibraryFilter.length === 0) {
           return true;
         }
@@ -1428,7 +1459,13 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
             .includes(normalizedLibraryFilter)
         );
       }),
-    [albums, normalizedLibraryFilter],
+    [
+      albums,
+      albumFavorites,
+      albumScope,
+      currentUserId,
+      normalizedLibraryFilter,
+    ],
   );
   const filteredGeoItems = useMemo(
     () =>
@@ -2258,6 +2295,17 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
     setSearchParams(nextParams, { replace: true });
   }
 
+  function updateAlbumScope(nextScope: AlbumScope) {
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.set("view", "albums");
+    if (nextScope === "all") {
+      nextParams.delete("scope");
+    } else {
+      nextParams.set("scope", nextScope);
+    }
+    setSearchParams(nextParams, { replace: true });
+  }
+
   return (
     <div className="space-y-4">
       <div className="sticky top-0 z-10 -mx-4 -mt-4 border-b border-[var(--color-border)] bg-[var(--color-bg)] px-4 py-3 sm:-mx-6 sm:-mt-6 sm:px-6">
@@ -2265,15 +2313,75 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
           <h1 className="text-xl font-semibold tracking-tight text-[var(--color-text)]">
             {t(`app.library.view.${libraryView}` as const)}
           </h1>
-          <div className="ml-auto flex items-center gap-2">
+          {libraryView === "albums" ? (
             <input
-              aria-label={t("app.library.filterLabel")}
-              className="field w-48 py-1.5 text-sm lg:w-64"
+              aria-label={t("app.library.searchAlbumsLabel")}
+              className="field w-48 py-1.5 text-sm lg:w-80"
               onChange={(event) => updateLibraryFilter(event.target.value)}
-              placeholder={t("app.library.filterPlaceholder")}
+              placeholder={t("app.library.searchAlbumsPlaceholder")}
               type="search"
               value={libraryFilter}
             />
+          ) : null}
+          {libraryView === "albums" ? (
+            <div
+              aria-label={t("app.library.albumScopeLabel")}
+              className="flex gap-1 text-sm"
+              role="group"
+            >
+              {ALBUM_SCOPES.map((scope) => (
+                <button
+                  aria-pressed={albumScope === scope}
+                  className={`rounded-md px-3 py-1.5 font-medium transition-colors ${
+                    albumScope === scope
+                      ? "bg-[var(--nav-active-bg)] text-[var(--nav-active-text)]"
+                      : "text-[var(--color-text-muted)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text)]"
+                  }`}
+                  key={scope}
+                  onClick={() => updateAlbumScope(scope)}
+                  type="button"
+                >
+                  {t(`app.library.albumScope.${scope}` as const)}
+                </button>
+              ))}
+            </div>
+          ) : null}
+          <div className="ml-auto flex items-center gap-2">
+            {libraryView === "albums" ? (
+              <select
+                aria-label={t("app.library.albumSortLabel")}
+                className="field py-1.5 text-sm"
+                onChange={(event) => updateAlbumSort(event.target.value)}
+                value={buildAlbumSortOptionValue(
+                  albumSortSelection.sort,
+                  albumSortSelection.direction,
+                )}
+              >
+                {ALBUM_SORT_OPTIONS.map((option) => (
+                  <option
+                    key={buildAlbumSortOptionValue(
+                      option.sort,
+                      option.direction,
+                    )}
+                    value={buildAlbumSortOptionValue(
+                      option.sort,
+                      option.direction,
+                    )}
+                  >
+                    {t(option.labelKey as Parameters<typeof t>[0])}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input
+                aria-label={t("app.library.filterLabel")}
+                className="field w-48 py-1.5 text-sm lg:w-64"
+                onChange={(event) => updateLibraryFilter(event.target.value)}
+                placeholder={t("app.library.filterPlaceholder")}
+                type="search"
+                value={libraryFilter}
+              />
+            )}
             {libraryView === "albums" ? (
               <button
                 className="button-primary py-1.5 text-sm"
@@ -2793,109 +2901,51 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
               <InlineMessage tone="danger">{albumSortMessage}</InlineMessage>
             ) : null}
 
-            <Panel className="p-4">
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-                <div>
-                  <p className="eyebrow">{t("app.library.albumsEyebrow")}</p>
-                  <h2 className="mt-1 text-sm font-semibold">
-                    {t("app.library.albumsTitle")}
-                  </h2>
-                </div>
-                <div className="rounded-[1.25rem] border border-dashed border-[var(--color-border)] px-4 py-3 text-sm leading-6 text-[var(--color-text-muted)] lg:max-w-md">
-                  <p className="font-medium text-[var(--color-text)]">
-                    {t("app.library.albumsSpacesTitle")}
-                  </p>
-                  <p className="mt-1">
-                    {t("app.library.albumsSpacesDescription")}
-                  </p>
-                  <Link
-                    className="mt-3 inline-flex text-sm font-medium text-[var(--color-link)] hover:text-[var(--color-link-hover)]"
-                    to="/app/spaces"
-                  >
-                    {t("app.library.openSpaces")}
-                  </Link>
-                </div>
+            {albums.length === 0 ? (
+              <EmptyHint className="px-5 py-6 leading-7">
+                {t("app.library.noAlbums")}
+              </EmptyHint>
+            ) : filteredAlbums.length === 0 ? (
+              <EmptyHint className="px-5 py-6 leading-7">
+                {t("app.library.noAlbumsMatch")}
+              </EmptyHint>
+            ) : (
+              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+                {filteredAlbums.map((album) => (
+                  <AlbumTile
+                    album={album}
+                    isDeleteBusy={
+                      pendingIntent === "delete-album" &&
+                      pendingAlbumId === album.id
+                    }
+                    isDownloadBusy={downloadBusyAlbumId === album.id}
+                    isFavorite={Boolean(albumFavorites[album.id])}
+                    isFavoriteBusy={favoriteBusyKey === `album:${album.id}`}
+                    isShareBusy={shareBusyAlbumId === album.id}
+                    key={album.id}
+                    locale={locale}
+                    onDelete={() => {
+                      setDeleteDialogAlbumId(album.id);
+                      setAlbumActionError(null);
+                      setAlbumActionSuccess(null);
+                    }}
+                    onEdit={() => {
+                      openAlbumEditor(album);
+                    }}
+                    onFavoriteToggle={() => {
+                      void handleAlbumFavoriteToggle(album.id);
+                    }}
+                    onShare={() => {
+                      void openAlbumShareDialog(album);
+                    }}
+                    onDownload={() => {
+                      void handleAlbumDownload(album);
+                    }}
+                    photoForms={photoForms}
+                  />
+                ))}
               </div>
-
-              <div className="mt-6 flex flex-col gap-2 sm:max-w-sm">
-                <label
-                  className="text-sm font-medium"
-                  htmlFor="album-sort-select"
-                >
-                  {t("app.library.albumSortLabel")}
-                </label>
-                <select
-                  className="field"
-                  id="album-sort-select"
-                  onChange={(event) => updateAlbumSort(event.target.value)}
-                  value={buildAlbumSortOptionValue(
-                    albumSortSelection.sort,
-                    albumSortSelection.direction,
-                  )}
-                >
-                  {ALBUM_SORT_OPTIONS.map((option) => (
-                    <option
-                      key={buildAlbumSortOptionValue(
-                        option.sort,
-                        option.direction,
-                      )}
-                      value={buildAlbumSortOptionValue(
-                        option.sort,
-                        option.direction,
-                      )}
-                    >
-                      {t(option.labelKey as Parameters<typeof t>[0])}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {albums.length === 0 ? (
-                <EmptyHint className="mt-6 px-5 py-6 leading-7">
-                  {t("app.library.noAlbums")}
-                </EmptyHint>
-              ) : filteredAlbums.length === 0 ? (
-                <EmptyHint className="mt-6 px-5 py-6 leading-7">
-                  {t("app.library.noAlbumsMatch")}
-                </EmptyHint>
-              ) : (
-                <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-                  {filteredAlbums.map((album) => (
-                    <AlbumTile
-                      album={album}
-                      isDeleteBusy={
-                        pendingIntent === "delete-album" &&
-                        pendingAlbumId === album.id
-                      }
-                      isDownloadBusy={downloadBusyAlbumId === album.id}
-                      isFavorite={Boolean(albumFavorites[album.id])}
-                      isFavoriteBusy={favoriteBusyKey === `album:${album.id}`}
-                      isShareBusy={shareBusyAlbumId === album.id}
-                      key={album.id}
-                      locale={locale}
-                      onDelete={() => {
-                        setDeleteDialogAlbumId(album.id);
-                        setAlbumActionError(null);
-                        setAlbumActionSuccess(null);
-                      }}
-                      onEdit={() => {
-                        openAlbumEditor(album);
-                      }}
-                      onFavoriteToggle={() => {
-                        void handleAlbumFavoriteToggle(album.id);
-                      }}
-                      onShare={() => {
-                        void openAlbumShareDialog(album);
-                      }}
-                      onDownload={() => {
-                        void handleAlbumDownload(album);
-                      }}
-                      photoForms={photoForms}
-                    />
-                  ))}
-                </div>
-              )}
-            </Panel>
+            )}
           </div>
         )}
       </section>
