@@ -192,22 +192,14 @@ describe("AppLibraryRoute", () => {
     });
   });
 
-  it("switches to albums-only view", async () => {
-    renderRoute();
+  it("shows albums-only view when opened with view=albums", async () => {
+    renderRoute("/app/library?view=albums");
 
-    expect(await screen.findByText("beach.jpg")).toBeInTheDocument();
-
-    fireEvent.click(
-      screen.getAllByRole("button", { name: /albums|альбомы/i })[0]!,
-    );
-
-    await waitFor(() => {
-      expect(
-        screen.getByRole("button", {
-          name: /create album|создать альбом/i,
-        }),
-      ).toBeInTheDocument();
-    });
+    expect(
+      await screen.findByRole("button", {
+        name: /create album|создать альбом/i,
+      }),
+    ).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /spaces/i })).toBeInTheDocument();
     expect(
       screen.getByText(/no personal albums yet|пока нет личных альбомов/i),
@@ -250,13 +242,9 @@ describe("AppLibraryRoute", () => {
   });
 
   it("opens the create album modal, closes on escape, and returns focus to the trigger", async () => {
-    renderRoute();
+    renderRoute("/app/library?view=albums");
 
-    fireEvent.click(
-      await screen.findByRole("button", { name: /albums|альбомы/i }),
-    );
-
-    const trigger = screen.getByRole("button", {
+    const trigger = await screen.findByRole("button", {
       name: /create album|создать альбом/i,
     });
     fireEvent.click(trigger);
@@ -280,13 +268,12 @@ describe("AppLibraryRoute", () => {
   });
 
   it("validates create album modal input before submitting", async () => {
-    renderRoute();
+    renderRoute("/app/library?view=albums");
 
     fireEvent.click(
-      await screen.findByRole("button", { name: /albums|альбомы/i }),
-    );
-    fireEvent.click(
-      screen.getByRole("button", { name: /create album|создать альбом/i }),
+      await screen.findByRole("button", {
+        name: /create album|создать альбом/i,
+      }),
     );
     fireEvent.click(
       screen.getByRole("button", {
@@ -480,13 +467,12 @@ describe("AppLibraryRoute", () => {
       variants: [],
     });
 
-    renderRoute();
+    renderRoute("/app/library?view=albums");
 
     fireEvent.click(
-      await screen.findByRole("button", { name: /albums|альбомы/i }),
-    );
-    fireEvent.click(
-      screen.getByRole("button", { name: /create album|создать альбом/i }),
+      await screen.findByRole("button", {
+        name: /create album|создать альбом/i,
+      }),
     );
 
     const dialog = screen.getByRole("dialog");
@@ -539,11 +525,7 @@ describe("AppLibraryRoute", () => {
 
   it("renders album tiles and navigates into album detail from the tile body", async () => {
     apiMocks.listAlbums.mockResolvedValue([makeAlbum()]);
-    renderRoute();
-
-    fireEvent.click(
-      await screen.findByRole("button", { name: /albums|альбомы/i }),
-    );
+    renderRoute("/app/library?view=albums");
 
     expect(await screen.findByText("Summer Trip")).toBeInTheDocument();
     expect(
@@ -562,11 +544,7 @@ describe("AppLibraryRoute", () => {
 
   it("opens the real share dialog from the album menu instead of copying an internal route", async () => {
     apiMocks.listAlbums.mockResolvedValue([makeAlbum()]);
-    renderRoute();
-
-    fireEvent.click(
-      await screen.findByRole("button", { name: /albums|альбомы/i }),
-    );
+    renderRoute("/app/library?view=albums");
 
     fireEvent.click(
       await screen.findByRole("button", {
@@ -597,11 +575,7 @@ describe("AppLibraryRoute", () => {
 
   it("edits and deletes albums through dialogs launched from the tile menu", async () => {
     apiMocks.listAlbums.mockResolvedValue([makeAlbum()]);
-    renderRoute();
-
-    fireEvent.click(
-      await screen.findByRole("button", { name: /albums|альбомы/i }),
-    );
+    renderRoute("/app/library?view=albums");
 
     fireEvent.click(
       await screen.findByRole("button", {
@@ -670,14 +644,10 @@ describe("AppLibraryRoute", () => {
     apiMocks.listAlbums.mockResolvedValue([
       makeAlbum({ id: "album-1", name: "Summer Trip" }),
     ]);
-    renderRoute();
-
-    fireEvent.click(
-      await screen.findByRole("button", { name: /albums|альбомы/i }),
-    );
+    renderRoute("/app/library?view=albums");
 
     fireEvent.change(
-      screen.getByLabelText(/filter library|фильтр библиотеки/i),
+      await screen.findByLabelText(/filter library|фильтр библиотеки/i),
       {
         target: { value: "winter" },
       },
@@ -727,8 +697,8 @@ describe("AppLibraryRoute", () => {
     expect(await screen.findByText("beach.jpg")).toBeInTheDocument();
     expect(screen.getByText("dinner.jpg")).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: /photos|фото/i }),
-    ).toHaveAttribute("aria-pressed", "true");
+      screen.getByRole("heading", { level: 1, name: /photos|фото/i }),
+    ).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /Apr 2026/i }),
     ).toBeInTheDocument();
@@ -1171,11 +1141,7 @@ describe("AppLibraryRoute", () => {
       }),
     ]);
 
-    renderRoute();
-
-    fireEvent.click(
-      await screen.findByRole("button", { name: /albums|альбомы/i }),
-    );
+    renderRoute("/app/library?view=albums");
 
     expect(await screen.findByText("Weekend picks")).toBeInTheDocument();
     expect(

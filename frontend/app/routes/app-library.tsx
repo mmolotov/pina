@@ -73,7 +73,7 @@ import type {
   PhotoGeoBounds,
 } from "~/types/api";
 
-type LibraryView = "everything" | "photos" | "albums" | "map";
+type LibraryView = "photos" | "albums" | "map";
 
 interface GeoMapState {
   items: PhotoDto[];
@@ -2237,23 +2237,6 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
     setSearchParams(nextParams, { replace: true });
   }
 
-  function activateLibraryView(nextView: LibraryView) {
-    setLibraryView(nextView);
-    const nextParams = new URLSearchParams(searchParams);
-    nextParams.set("view", nextView);
-
-    if (nextView === "map") {
-      const seededParams = applyGeoViewportToSearchParams(
-        nextParams,
-        geoViewport,
-      );
-      setSearchParams(seededParams, { replace: true });
-      return;
-    }
-
-    setSearchParams(nextParams, { replace: true });
-  }
-
   function updateLibraryFilter(value: string) {
     setLibraryFilter(value);
     const nextParams = new URLSearchParams(searchParams);
@@ -2277,29 +2260,11 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
 
   return (
     <div className="space-y-4">
-      <div className="sticky top-0 z-10 -mx-4 -mt-4 border-b border-[var(--color-border)] bg-[var(--color-bg)] px-4 py-2 sm:-mx-6 sm:-mt-6 sm:px-6">
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex gap-1">
-            {[
-              { id: "photos", label: t("app.library.view.photos") },
-              { id: "map", label: t("app.library.view.map") },
-              { id: "albums", label: t("app.library.view.albums") },
-            ].map((option) => (
-              <button
-                aria-pressed={libraryView === option.id}
-                className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
-                  libraryView === option.id
-                    ? "bg-[var(--nav-active-bg)] text-[var(--nav-active-text)]"
-                    : "text-[var(--color-text-muted)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text)]"
-                }`}
-                key={option.id}
-                onClick={() => activateLibraryView(option.id as LibraryView)}
-                type="button"
-              >
-                {option.label}
-              </button>
-            ))}
-          </div>
+      <div className="sticky top-0 z-10 -mx-4 -mt-4 border-b border-[var(--color-border)] bg-[var(--color-bg)] px-4 py-3 sm:-mx-6 sm:-mt-6 sm:px-6">
+        <div className="flex flex-wrap items-center gap-3">
+          <h1 className="text-xl font-semibold tracking-tight text-[var(--color-text)]">
+            {t(`app.library.view.${libraryView}` as const)}
+          </h1>
           <div className="ml-auto flex items-center gap-2">
             <input
               aria-label={t("app.library.filterLabel")}
@@ -2762,9 +2727,9 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
                     key={group.dayKey}
                   >
                     <div className="flex items-baseline justify-between gap-3 pb-2">
-                      <h3 className="text-sm font-semibold">
+                      <h2 className="text-sm font-semibold">
                         {formatDayLabel(group.dayKey, locale)}
-                      </h3>
+                      </h2>
                       <span className="text-xs text-[var(--color-text-muted)]">
                         {formatRelativeCount(group.photos.length, photoForms)}
                       </span>
