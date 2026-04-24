@@ -135,15 +135,17 @@ describe("api helpers", () => {
 
   it("requests a signed album download URL without reading a blob", async () => {
     const blobSpy = vi.fn();
-    const jsonSpy = vi.fn().mockResolvedValue({
-      url: "/api/v1/albums/album-1/download-by-token?token=signed-token",
-      expiresAt: "2026-04-06T12:05:00Z",
-    });
+    const textSpy = vi.fn().mockResolvedValue(
+      JSON.stringify({
+        url: "/api/v1/albums/album-1/download-by-token?token=signed-token",
+        expiresAt: "2026-04-06T12:05:00Z",
+      }),
+    );
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
       headers: new Headers({ "Content-Type": "application/json" }),
-      json: jsonSpy,
+      text: textSpy,
       blob: blobSpy,
     });
 

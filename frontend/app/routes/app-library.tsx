@@ -73,7 +73,7 @@ import type {
   PhotoGeoBounds,
 } from "~/types/api";
 
-type LibraryView = "everything" | "photos" | "timeline" | "albums" | "map";
+type LibraryView = "everything" | "photos" | "albums" | "map";
 
 interface GeoMapState {
   items: PhotoDto[];
@@ -195,9 +195,7 @@ function formatUploadSummary(
 }
 
 function resolveLibraryView(value: string | null): LibraryView {
-  return value === "timeline" || value === "albums" || value === "map"
-    ? value
-    : "photos";
+  return value === "albums" || value === "map" ? value : "photos";
 }
 
 function formatCoordinate(value: number | null) {
@@ -2284,7 +2282,6 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
           <div className="flex gap-1">
             {[
               { id: "photos", label: t("app.library.view.photos") },
-              { id: "timeline", label: t("app.library.view.timeline") },
               { id: "map", label: t("app.library.view.map") },
               { id: "albums", label: t("app.library.view.albums") },
             ].map((option) => (
@@ -2349,14 +2346,10 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
 
       <section
         className={`grid gap-6 ${
-          libraryView === "photos" || libraryView === "timeline"
-            ? "xl:grid-cols-[minmax(0,1fr)_15rem]"
-            : ""
+          libraryView === "photos" ? "xl:grid-cols-[minmax(0,1fr)_15rem]" : ""
         }`}
       >
-        {(libraryView === "photos" ||
-          libraryView === "timeline" ||
-          libraryView === "map") && (
+        {(libraryView === "photos" || libraryView === "map") && (
           <div>
             {libraryView === "map" ? (
               <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -2777,13 +2770,7 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
                       </span>
                     </div>
 
-                    <div
-                      className={`grid gap-3 ${
-                        libraryView === "timeline"
-                          ? "sm:grid-cols-2 xl:grid-cols-3"
-                          : "sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4"
-                      }`}
-                    >
+                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
                       {group.photos.map((photo) => (
                         <LibraryPhotoTile
                           isDeleteBusy={
@@ -2809,7 +2796,7 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
           </div>
         )}
 
-        {(libraryView === "photos" || libraryView === "timeline") && (
+        {libraryView === "photos" && (
           <div className="xl:sticky xl:self-start" style={{ top: "3.5rem" }}>
             <div style={{ height: "calc(100vh - 6rem)" }}>
               <ProportionalTimelineRail

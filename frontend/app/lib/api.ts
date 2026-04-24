@@ -87,7 +87,11 @@ export function isBackendUnavailableError(error: unknown) {
 let refreshPromise: Promise<AuthResponse | null> | null = null;
 
 async function parseJson<T>(response: Response) {
-  return (await response.json()) as T;
+  const text = await response.text();
+  if (!text) {
+    return undefined as T;
+  }
+  return JSON.parse(text) as T;
 }
 
 function isFiniteOrNull(value: unknown) {

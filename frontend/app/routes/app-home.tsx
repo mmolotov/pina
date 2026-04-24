@@ -73,7 +73,7 @@ export default function AppHomeRoute({ loaderData }: Route.ComponentProps) {
             </Link>
             <Link
               className="button-secondary justify-center text-center"
-              to="/app/library?view=timeline"
+              to="/app/library?view=photos"
             >
               Open timeline
             </Link>

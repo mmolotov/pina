@@ -42,10 +42,7 @@ const navItems: NavItem[] = [
     icon: Image,
     isActive: (pathname, view) =>
       pathname.startsWith("/app/library") &&
-      (view === null ||
-        view === "everything" ||
-        view === "photos" ||
-        view === "timeline"),
+      (view === null || view === "everything" || view === "photos"),
   },
   {
     to: "/app/library?view=map",

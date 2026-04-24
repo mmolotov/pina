@@ -106,7 +106,7 @@ describe("AppHomeRoute", () => {
     expect(screen.getByText("Connected")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Open timeline" })).toHaveAttribute(
       "href",
-      "/app/library?view=timeline",
+      "/app/library?view=photos",
     );
     expect(screen.getByRole("link", { name: "Search shell" })).toHaveAttribute(
       "href",

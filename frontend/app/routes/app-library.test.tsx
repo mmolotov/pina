@@ -690,7 +690,7 @@ describe("AppLibraryRoute", () => {
     ).toBeInTheDocument();
   });
 
-  it("switches to timeline view and groups photos by day", async () => {
+  it("groups photos by day in the photos view", async () => {
     apiMocks.listAllPhotos.mockResolvedValue([
       {
         id: "photo-1",
@@ -725,18 +725,13 @@ describe("AppLibraryRoute", () => {
     renderRoute();
 
     expect(await screen.findByText("beach.jpg")).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: /timeline|таймлайн/i }));
-
-    await waitFor(() => {
-      expect(
-        screen.getByRole("button", { name: /timeline|таймлайн/i }),
-      ).toHaveAttribute("aria-pressed", "true");
-    });
+    expect(screen.getByText("dinner.jpg")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /photos|фото/i }),
+    ).toHaveAttribute("aria-pressed", "true");
     expect(
       screen.getByRole("button", { name: /Apr 2026/i }),
     ).toBeInTheDocument();
-    expect(screen.getByText("dinner.jpg")).toBeInTheDocument();
   });
 
   it("loads geo markers from URL viewport state in map view", async () => {

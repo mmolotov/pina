@@ -248,7 +248,6 @@ const enMessages = {
   "app.library.toolbarDescription":
     "Stay inside a photo-first library, switch between chronology, places, and curated albums, and keep the current filter in the URL.",
   "app.library.view.photos": "Photos",
-  "app.library.view.timeline": "Timeline",
   "app.library.view.map": "Map",
   "app.library.view.albums": "Albums",
   "app.library.filterLabel": "Filter library",
@@ -1057,7 +1056,6 @@ const ruMessages: Partial<MessageCatalog> = {
   "app.library.toolbarDescription":
     "Оставайтесь в фото-ориентированной библиотеке, переключайтесь между хронологией, местами и альбомами и сохраняйте текущий фильтр в URL.",
   "app.library.view.photos": "Фото",
-  "app.library.view.timeline": "Таймлайн",
   "app.library.view.map": "Карта",
   "app.library.view.albums": "Альбомы",
   "app.library.filterLabel": "Фильтр библиотеки",
