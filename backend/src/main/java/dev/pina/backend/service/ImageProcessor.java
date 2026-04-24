@@ -57,6 +57,18 @@ public class ImageProcessor {
 		return new ProcessedImage(tempFile, targetW, targetH, format, Files.size(tempFile));
 	}
 
+	public ProcessedImage thumbnailXs(BufferedImage source) throws IOException {
+		int targetSize = config.thumbnails().xsSize();
+		BufferedImage square = centerCropSquare(source);
+		String format = outputFormat();
+		Path tempFile = createTempFile(format);
+		try (OutputStream out = Files.newOutputStream(tempFile)) {
+			Thumbnails.of(square).forceSize(targetSize, targetSize).outputFormat(format).outputQuality(0.8)
+					.toOutputStream(out);
+		}
+		return new ProcessedImage(tempFile, targetSize, targetSize, format, Files.size(tempFile));
+	}
+
 	public ProcessedImage thumbnailSm(BufferedImage source) throws IOException {
 		int targetSize = config.thumbnails().smSize();
 		BufferedImage square = centerCropSquare(source);

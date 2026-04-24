@@ -585,7 +585,8 @@ Key properties from `src/main/resources/application.properties`:
 | `pina.photo.compression.format`         | `jpeg`                    | compressed output format                  |
 | `pina.photo.compression.quality`        | `82`                      | quality for compressed variant            |
 | `pina.photo.compression.max-resolution` | `2560`                    | max longest side                          |
-| `pina.photo.thumbnails.sm-size`         | `256`                     | square small thumbnail                    |
+| `pina.photo.thumbnails.xs-size`         | `256`                     | square extra-small thumbnail              |
+| `pina.photo.thumbnails.sm-size`         | `512`                     | square small thumbnail                    |
 | `pina.photo.thumbnails.md-width`        | `1280`                    | medium thumbnail width                    |
 | `pina.photo.thumbnails.lg-width`        | `1920`                    | large thumbnail width                     |
 

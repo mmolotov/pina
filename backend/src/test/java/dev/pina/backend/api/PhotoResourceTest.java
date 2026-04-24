@@ -47,7 +47,7 @@ class PhotoResourceTest {
 		String photoId = TestAuthHelper.authenticated().multiPart("file", testImage.toFile(), "image/jpeg").when()
 				.post("/api/v1/photos").then().statusCode(201).body("id", notNullValue())
 				.body("mimeType", equalTo("image/jpeg")).body("personalLibraryId", notNullValue())
-				.body("variants", hasSize(5)).extract().path("id");
+				.body("variants", hasSize(6)).extract().path("id");
 
 		TestAuthHelper.authenticated().when().get("/api/v1/photos/{id}", photoId).then().statusCode(200).body("id",
 				equalTo(photoId));
@@ -56,6 +56,9 @@ class PhotoResourceTest {
 				.statusCode(200).contentType(equalTo("image/jpeg"));
 
 		TestAuthHelper.authenticated().when().get("/api/v1/photos/{id}/file?variant=ORIGINAL", photoId).then()
+				.statusCode(200).contentType(equalTo("image/jpeg"));
+
+		TestAuthHelper.authenticated().when().get("/api/v1/photos/{id}/file?variant=THUMB_XS", photoId).then()
 				.statusCode(200).contentType(equalTo("image/jpeg"));
 
 		TestAuthHelper.authenticated().when().get("/api/v1/photos/{id}/file?variant=THUMB_SM", photoId).then()

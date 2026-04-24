@@ -48,8 +48,8 @@ class PhotoServiceTest {
 		assertEquals(150, photo.height);
 		assertNotNull(photo.contentHash);
 		assertNotNull(photo.personalLibrary);
-		// storeOriginal=true by default: ORIGINAL + COMPRESSED + 3 thumbnails = 5
-		assertEquals(5, photo.variants.size());
+		// storeOriginal=true by default: ORIGINAL + COMPRESSED + 4 thumbnails = 6
+		assertEquals(6, photo.variants.size());
 	}
 
 	@Test

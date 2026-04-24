@@ -59,12 +59,23 @@ class ImageProcessorTest {
 	}
 
 	@Test
+	void thumbnailXsIsSquareConstrained() throws IOException {
+		BufferedImage source = createTestBufferedImage(800, 600);
+		try (ProcessedImage thumb = imageProcessor.thumbnailXs(source)) {
+			assertNotNull(thumb);
+			assertEquals(256, thumb.width());
+			assertEquals(256, thumb.height());
+			assertTrue(thumb.sizeBytes() > 0);
+		}
+	}
+
+	@Test
 	void thumbnailSmIsSquareConstrained() throws IOException {
 		BufferedImage source = createTestBufferedImage(800, 600);
 		try (ProcessedImage thumb = imageProcessor.thumbnailSm(source)) {
 			assertNotNull(thumb);
-			assertEquals(256, thumb.width());
-			assertEquals(256, thumb.height());
+			assertEquals(512, thumb.width());
+			assertEquals(512, thumb.height());
 			assertTrue(thumb.sizeBytes() > 0);
 		}
 	}
@@ -90,11 +101,21 @@ class ImageProcessorTest {
 	}
 
 	@Test
-	void thumbnailSmallImageStaysWithinBounds() throws IOException {
+	void thumbnailXsSmallImageStaysWithinBounds() throws IOException {
 		BufferedImage source = createTestBufferedImage(100, 80);
-		try (ProcessedImage thumb = imageProcessor.thumbnailSm(source)) {
+		try (ProcessedImage thumb = imageProcessor.thumbnailXs(source)) {
 			assertEquals(256, thumb.width());
 			assertEquals(256, thumb.height());
+			assertTrue(thumb.sizeBytes() > 0);
+		}
+	}
+
+	@Test
+	void thumbnailSmSmallImageStaysWithinBounds() throws IOException {
+		BufferedImage source = createTestBufferedImage(100, 80);
+		try (ProcessedImage thumb = imageProcessor.thumbnailSm(source)) {
+			assertEquals(512, thumb.width());
+			assertEquals(512, thumb.height());
 			assertTrue(thumb.sizeBytes() > 0);
 		}
 	}

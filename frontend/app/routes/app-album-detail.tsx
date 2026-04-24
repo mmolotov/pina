@@ -49,6 +49,10 @@ import {
   formatDateTime,
   formatRelativeCount,
 } from "~/lib/format";
+import {
+  selectAlbumHeroPreviewVariant,
+  selectLibraryTilePreviewVariant,
+} from "~/lib/photo-preview";
 import { getActiveLocale, translateMessage, useI18n } from "~/lib/i18n";
 import { resolveActionIntent, toActionErrorMessage } from "~/lib/route-actions";
 import {
@@ -233,12 +237,13 @@ function AlbumPhotoTile(props: {
 }) {
   const { t } = useI18n();
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const previewVariant = selectLibraryTilePreviewVariant(props.photo.variants);
 
   useEffect(() => {
     let cancelled = false;
     let objectUrl: string | null = null;
 
-    getPhotoBlob(props.photo.id, "THUMB_SM")
+    getPhotoBlob(props.photo.id, previewVariant)
       .then((blob) => {
         if (cancelled) {
           return;
@@ -259,7 +264,7 @@ function AlbumPhotoTile(props: {
         URL.revokeObjectURL(objectUrl);
       }
     };
-  }, [props.photo.id]);
+  }, [props.photo.id, previewVariant]);
 
   return (
     <article className="group overflow-hidden rounded-[1.5rem] border border-[var(--color-border)] bg-[var(--color-surface)]">
@@ -409,6 +414,11 @@ export default function AppAlbumDetailRoute({
     [libraryPhotos, photos],
   );
   const coverPhotoId = album?.coverPhotoId ?? photos[0]?.id ?? null;
+  const coverPhotoVariants =
+    album?.coverPhotoId != null
+      ? (album?.coverVariants ?? [])
+      : (photos[0]?.variants ?? []);
+  const coverPreviewVariant = selectAlbumHeroPreviewVariant(coverPhotoVariants);
   const [coverUrl, setCoverUrl] = useState<string | null>(null);
 
   const refreshAlbumDetail = useCallback(async () => {
@@ -459,7 +469,7 @@ export default function AppAlbumDetailRoute({
     let cancelled = false;
     let objectUrl: string | null = null;
 
-    getPhotoBlob(coverPhotoId, "THUMB_SM")
+    getPhotoBlob(coverPhotoId, coverPreviewVariant)
       .then((blob) => {
         if (cancelled) {
           return;
@@ -479,7 +489,7 @@ export default function AppAlbumDetailRoute({
         URL.revokeObjectURL(objectUrl);
       }
     };
-  }, [coverPhotoId]);
+  }, [coverPhotoId, coverPreviewVariant]);
 
   useEffect(() => {
     if (!actionData) {

@@ -719,6 +719,7 @@ export function fetchPublicAlbumByToken(
 export type PublicAlbumPhotoVariant =
   | "ORIGINAL"
   | "COMPRESSED"
+  | "THUMB_XS"
   | "THUMB_SM"
   | "THUMB_MD"
   | "THUMB_LG";

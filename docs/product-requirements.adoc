@@ -146,7 +146,7 @@ a|
 a|
 * Uploading a valid JPEG returns HTTP 201 with photo metadata.
 * Uploading a duplicate (same SHA-256) by the same uploader returns the existing photo, no new file is stored.
-* All three thumbnails are generated and retrievable.
+* All four thumbnails are generated and retrievable.
 * EXIF data (date, GPS, camera) is extracted and stored as JSON.
 |===
 
@@ -160,7 +160,7 @@ a|
 | Users can browse their uploaded photos with pagination, retrieve photo metadata, download specific variants, and query geo-tagged photos for map-based browsing.
 
 | Variants
-| `ORIGINAL` (if stored), `COMPRESSED`, `THUMB_SM`, `THUMB_MD`, `THUMB_LG`.
+| `ORIGINAL` (if stored), `COMPRESSED`, `THUMB_XS`, `THUMB_SM`, `THUMB_MD`, `THUMB_LG`.
 
 | Behavior
 | List endpoint returns a paginated response for the active user's uploaded photos. Metadata endpoint returns JSON with photo details and variant list. File endpoint streams the binary with correct Content-Type. Geo endpoints return the active user's geo-tagged photos for a bounding box or nearby-radius query, exclude photos without GPS coordinates, and use a marker-oriented payload for map browsing.
@@ -169,7 +169,7 @@ a|
 a|
 * `GET /photos?page=&size=&needsTotal=` returns the active user's uploaded photos in reverse chronological order with pagination metadata.
 * `GET /photos/{id}` returns photo metadata with all variant info.
-* `GET /photos/{id}/file?variant=THUMB_SM` returns the small thumbnail with `image/*` content type.
+* `GET /photos/{id}/file?variant=THUMB_XS` returns the extra-small thumbnail with `image/*` content type.
 * [Implemented] `GET /photos/geo?swLat=&swLng=&neLat=&neLng=` returns only geo-tagged photos belonging to the active user for the requested viewport.
 * [Implemented] Geo map payloads omit heavy fields for marker lists: `exifData = null` and `variants = []`.
 * [Implemented] `GET /photos/geo/nearby?lat=&lng=&radiusKm=` returns only geo-tagged photos belonging to the active user within the requested radius and orders them by actual distance.
@@ -1337,7 +1337,7 @@ Browser session notes:
 | `POST` | `/api/v1/videos` | Upload video (multipart/form-data)
 | `GET` | `/api/v1/videos/{id}` | Video metadata (duration, resolution, codecs, variants)
 | `GET` | `/api/v1/videos/{id}/stream?profile=` | Stream transcoded video (720p default)
-| `GET` | `/api/v1/videos/{id}/poster?variant=` | Poster image (THUMB_SM / THUMB_MD / THUMB_LG)
+| `GET` | `/api/v1/videos/{id}/poster?variant=` | Poster image (THUMB_XS / THUMB_SM / THUMB_MD / THUMB_LG)
 | `GET` | `/api/v1/videos/{id}/animated-thumbnail` | Animated preview (short loop)
 | `GET` | `/api/v1/videos/{id}/transcode-status` | Transcoding progress
 | `POST` | `/api/v1/videos/{id}/retranscode` | Re-trigger transcoding (admin)
