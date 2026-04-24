@@ -1,7 +1,7 @@
 package dev.pina.backend.api;
 
-import dev.pina.backend.api.dto.AlbumDto;
 import dev.pina.backend.api.dto.PageResponse;
+import dev.pina.backend.api.dto.PublicAlbumDto;
 import dev.pina.backend.api.dto.PublicPhotoDto;
 import dev.pina.backend.api.error.ApiErrors;
 import dev.pina.backend.domain.VariantType;
@@ -52,7 +52,7 @@ public class PublicAlbumResource {
 		var album = linkOpt.get().album;
 		var summary = albumService.getSummary(album);
 		var photos = albumService.listPhotos(album.id, new PageRequest(page, size, needsTotal));
-		return noStore(Response.ok(new PublicAlbumResponse(AlbumDto.fromSummary(summary),
+		return noStore(Response.ok(new PublicAlbumResponse(PublicAlbumDto.fromSummary(summary),
 				PageResponse.from(photos, PublicPhotoDto::from)))).build();
 	}
 
@@ -71,7 +71,6 @@ public class PublicAlbumResource {
 		if (linkOpt.isEmpty()) {
 			return ApiErrors.notFound("Share link not found");
 		}
-		UUID albumId = linkOpt.get().album.id;
 		var photo = photoService.findById(photoId).filter(p -> albumService.hasPhoto(linkOpt.get().album, p));
 		if (photo.isEmpty()) {
 			return ApiErrors.notFound("Photo not found");
@@ -86,7 +85,7 @@ public class PublicAlbumResource {
 				stream.transferTo(os);
 			}
 		};
-		return noStore(Response.ok(output).type(contentType).header("X-Album-Id", albumId.toString())).build();
+		return noStore(Response.ok(output).type(contentType)).build();
 	}
 
 	private static VariantType parseVariant(String raw) {
@@ -97,6 +96,6 @@ public class PublicAlbumResource {
 		return builder.header("Cache-Control", "no-store");
 	}
 
-	public record PublicAlbumResponse(AlbumDto album, PageResponse<PublicPhotoDto> photos) {
+	public record PublicAlbumResponse(PublicAlbumDto album, PageResponse<PublicPhotoDto> photos) {
 	}
 }

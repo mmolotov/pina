@@ -5,6 +5,7 @@ import {
 } from "~/lib/session";
 import type {
   AlbumDto,
+  AlbumDownloadUrlDto,
   AlbumShareLinkCreatedDto,
   AlbumShareLinkDto,
   AlbumSortDirection,
@@ -30,6 +31,8 @@ import type {
   PhotoGeoSearchParams,
   PhotoNearbySearchParams,
   PhotoDto,
+  PublicAlbumResponseDto,
+  PublicPhotoDto,
   RegistrationMode,
   SearchHitDto,
   SearchMediaParams,
@@ -271,62 +274,6 @@ async function requestBlob(
   }
 
   return response.blob();
-}
-
-async function fetchApiResponse(
-  path: string,
-  options: RequestOptions = {},
-  retried = false,
-) {
-  const session = getSessionSnapshot();
-  let response: Response;
-
-  try {
-    response = await fetch(`/api/v1${path}`, {
-      ...options,
-      headers: buildHeaders(
-        options,
-        options.auth ? session?.accessToken : undefined,
-      ),
-      body:
-        options.body &&
-        !(options.body instanceof FormData) &&
-        typeof options.body !== "string"
-          ? JSON.stringify(options.body)
-          : (options.body ?? undefined),
-    });
-  } catch {
-    throw new ApiError(
-      503,
-      "backend_unavailable",
-      "Backend is unavailable. Check that the server is running and try again.",
-    );
-  }
-
-  if (response.status === 401 && options.auth && !retried) {
-    const refreshed = await refreshSession();
-    if (refreshed) {
-      return fetchApiResponse(path, options, true);
-    }
-  }
-
-  if (!response.ok) {
-    let payload: ApiErrorPayload | null = null;
-
-    try {
-      payload = await parseJson<ApiErrorPayload>(response);
-    } catch {
-      payload = null;
-    }
-
-    throw new ApiError(
-      response.status,
-      payload?.error ?? "request_failed",
-      payload?.message ?? `Request failed with status ${response.status}`,
-    );
-  }
-
-  return response;
 }
 
 async function refreshSession() {
@@ -691,42 +638,21 @@ export function listAlbums(
   );
 }
 
-function extractResponseFilename(response: Response, fallback: string) {
-  const contentDisposition = response.headers.get("Content-Disposition");
-  if (!contentDisposition) {
-    return fallback;
-  }
-
-  const utf8Match = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i);
-  if (utf8Match?.[1]) {
-    try {
-      return decodeURIComponent(utf8Match[1]);
-    } catch {
-      return utf8Match[1];
-    }
-  }
-
-  const plainMatch = contentDisposition.match(/filename="([^"]+)"/i);
-  if (plainMatch?.[1]) {
-    return plainMatch[1];
-  }
-
-  return fallback;
+export function getAlbum(albumId: string) {
+  return request<AlbumDto>(`/albums/${albumId}`, { auth: true });
 }
 
-export async function downloadAlbumArchive(
+export function createAlbumArchiveDownloadUrl(
   albumId: string,
   variant = "ORIGINAL",
 ) {
-  const response = await fetchApiResponse(
-    `/albums/${albumId}/download?variant=${variant}`,
-    { auth: true },
+  return request<AlbumDownloadUrlDto>(
+    `/albums/${albumId}/download-url?variant=${variant}`,
+    {
+      auth: true,
+      method: "POST",
+    },
   );
-
-  return {
-    blob: await response.blob(),
-    filename: extractResponseFilename(response, "album.zip"),
-  };
 }
 
 export function setAlbumCover(albumId: string, photoId: string) {
@@ -767,6 +693,44 @@ export function revokeAlbumShareLink(albumId: string, linkId: string) {
     method: "DELETE",
   });
 }
+
+export function fetchPublicAlbumByToken(
+  token: string,
+  params: { page?: number; size?: number; needsTotal?: boolean } = {},
+) {
+  const search = new URLSearchParams();
+  if (params.page != null) {
+    search.set("page", String(params.page));
+  }
+  if (params.size != null) {
+    search.set("size", String(params.size));
+  }
+  if (params.needsTotal) {
+    search.set("needsTotal", "true");
+  }
+  const query = search.toString();
+  const suffix = query ? `?${query}` : "";
+  return request<PublicAlbumResponseDto>(
+    `/public/albums/by-token/${encodeURIComponent(token)}${suffix}`,
+  );
+}
+
+export type PublicAlbumPhotoVariant =
+  | "ORIGINAL"
+  | "COMPRESSED"
+  | "THUMB_SM"
+  | "THUMB_MD"
+  | "THUMB_LG";
+
+export function buildPublicAlbumPhotoFileUrl(
+  token: string,
+  photoId: string,
+  variant: PublicAlbumPhotoVariant = "COMPRESSED",
+) {
+  return `/api/v1/public/albums/by-token/${encodeURIComponent(token)}/photos/${encodeURIComponent(photoId)}/file?variant=${variant}`;
+}
+
+export type { PublicPhotoDto };
 
 export function listSpaces() {
   return request<SpaceDto[]>("/spaces", { auth: true });

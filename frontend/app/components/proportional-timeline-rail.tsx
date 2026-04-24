@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Locale } from "~/lib/i18n";
 import {
   buildDaySectionId,
@@ -14,12 +14,21 @@ export function ProportionalTimelineRail(props: {
 }) {
   const railRef = useRef<HTMLDivElement>(null);
   const isDraggingRef = useRef(false);
+  const detachDragListenersRef = useRef<(() => void) | null>(null);
   const [hoverState, setHoverState] = useState<{
     label: string;
     topPx: number;
   } | null>(null);
   const [isHovering, setIsHovering] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+
+  useEffect(() => {
+    return () => {
+      isDraggingRef.current = false;
+      detachDragListenersRef.current?.();
+      detachDragListenersRef.current = null;
+    };
+  }, []);
 
   const positionToInfo = useCallback(
     (clientY: number) => {
@@ -69,6 +78,8 @@ export function ProportionalTimelineRail(props: {
       }
 
       event.preventDefault();
+      detachDragListenersRef.current?.();
+      detachDragListenersRef.current = null;
       isDraggingRef.current = true;
       setIsDragging(true);
       scrollToPosition(event.clientY);
@@ -84,15 +95,21 @@ export function ProportionalTimelineRail(props: {
         }
       };
 
-      const handleGlobalUp = () => {
-        isDraggingRef.current = false;
-        setIsDragging(false);
+      const detachListeners = () => {
         document.removeEventListener("mousemove", handleGlobalMove);
         document.removeEventListener("mouseup", handleGlobalUp);
       };
 
+      const handleGlobalUp = () => {
+        isDraggingRef.current = false;
+        setIsDragging(false);
+        detachListeners();
+        detachDragListenersRef.current = null;
+      };
+
       document.addEventListener("mousemove", handleGlobalMove);
       document.addEventListener("mouseup", handleGlobalUp);
+      detachDragListenersRef.current = detachListeners;
     },
     [positionToInfo, scrollToPosition],
   );

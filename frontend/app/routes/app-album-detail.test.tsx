@@ -11,9 +11,9 @@ import AppAlbumPhotoDetailRoute, {
 } from "~/routes/app-album-photo-detail";
 
 const apiMocks = vi.hoisted(() => ({
-  listAlbums: vi.fn(),
+  getAlbum: vi.fn(),
   listAllAlbumPhotos: vi.fn(),
-  listAllPhotos: vi.fn(),
+  listPhotos: vi.fn(),
   listFavorites: vi.fn(),
   getPhotoBlob: vi.fn(),
   addFavorite: vi.fn(),
@@ -23,7 +23,7 @@ const apiMocks = vi.hoisted(() => ({
   addPhotoToAlbum: vi.fn(),
   clearAlbumCover: vi.fn(),
   createAlbumShareLink: vi.fn(),
-  downloadAlbumArchive: vi.fn(),
+  createAlbumArchiveDownloadUrl: vi.fn(),
   listAlbumShareLinks: vi.fn(),
   removePhotoFromAlbum: vi.fn(),
   revokeAlbumShareLink: vi.fn(),
@@ -49,24 +49,22 @@ describe("AppAlbumDetailRoute", () => {
         writeText: clipboardWriteText,
       },
     });
-    apiMocks.listAlbums.mockResolvedValue([
-      {
-        id: "album-1",
-        name: "Summer Week",
-        description: "Pier, market, and long golden evenings",
-        ownerId: "user-1",
-        personalLibraryId: "library-1",
-        spaceId: null,
-        createdAt: "2026-04-01T10:00:00Z",
-        updatedAt: "2026-04-05T18:30:00Z",
-        coverPhotoId: "photo-1",
-        coverVariants: [],
-        photoCount: 2,
-        mediaRangeStart: "2026-04-01T09:00:00Z",
-        mediaRangeEnd: "2026-04-02T20:15:00Z",
-        latestPhotoAddedAt: "2026-04-05T18:30:00Z",
-      },
-    ]);
+    apiMocks.getAlbum.mockResolvedValue({
+      id: "album-1",
+      name: "Summer Week",
+      description: "Pier, market, and long golden evenings",
+      ownerId: "user-1",
+      personalLibraryId: "library-1",
+      spaceId: null,
+      createdAt: "2026-04-01T10:00:00Z",
+      updatedAt: "2026-04-05T18:30:00Z",
+      coverPhotoId: "photo-1",
+      coverVariants: [],
+      photoCount: 2,
+      mediaRangeStart: "2026-04-01T09:00:00Z",
+      mediaRangeEnd: "2026-04-02T20:15:00Z",
+      latestPhotoAddedAt: "2026-04-05T18:30:00Z",
+    });
     apiMocks.listAllAlbumPhotos.mockResolvedValue([
       {
         id: "photo-1",
@@ -101,40 +99,47 @@ describe("AppAlbumDetailRoute", () => {
         variants: [],
       },
     ]);
-    apiMocks.listAllPhotos.mockResolvedValue([
-      {
-        id: "photo-1",
-        uploaderId: "user-1",
-        originalFilename: "pier.jpg",
-        mimeType: "image/jpeg",
-        width: 1600,
-        height: 900,
-        sizeBytes: 320000,
-        personalLibraryId: "library-1",
-        exifData: null,
-        takenAt: "2026-04-02T20:15:00Z",
-        latitude: null,
-        longitude: null,
-        createdAt: "2026-04-02T20:15:00Z",
-        variants: [],
-      },
-      {
-        id: "photo-3",
-        uploaderId: "user-1",
-        originalFilename: "lanterns.jpg",
-        mimeType: "image/jpeg",
-        width: 1600,
-        height: 900,
-        sizeBytes: 290000,
-        personalLibraryId: "library-1",
-        exifData: null,
-        takenAt: "2026-04-03T21:00:00Z",
-        latitude: null,
-        longitude: null,
-        createdAt: "2026-04-03T21:00:00Z",
-        variants: [],
-      },
-    ]);
+    apiMocks.listPhotos.mockResolvedValue({
+      items: [
+        {
+          id: "photo-1",
+          uploaderId: "user-1",
+          originalFilename: "pier.jpg",
+          mimeType: "image/jpeg",
+          width: 1600,
+          height: 900,
+          sizeBytes: 320000,
+          personalLibraryId: "library-1",
+          exifData: null,
+          takenAt: "2026-04-02T20:15:00Z",
+          latitude: null,
+          longitude: null,
+          createdAt: "2026-04-02T20:15:00Z",
+          variants: [],
+        },
+        {
+          id: "photo-3",
+          uploaderId: "user-1",
+          originalFilename: "lanterns.jpg",
+          mimeType: "image/jpeg",
+          width: 1600,
+          height: 900,
+          sizeBytes: 290000,
+          personalLibraryId: "library-1",
+          exifData: null,
+          takenAt: "2026-04-03T21:00:00Z",
+          latitude: null,
+          longitude: null,
+          createdAt: "2026-04-03T21:00:00Z",
+          variants: [],
+        },
+      ],
+      page: 0,
+      size: 100,
+      hasNext: false,
+      totalItems: 2,
+      totalPages: 1,
+    });
     apiMocks.listFavorites.mockResolvedValue([]);
     apiMocks.getPhotoBlob.mockResolvedValue(
       new Blob(["thumb"], { type: "image/jpeg" }),
@@ -171,9 +176,9 @@ describe("AppAlbumDetailRoute", () => {
       },
       token: "plain-token-1",
     });
-    apiMocks.downloadAlbumArchive.mockResolvedValue({
-      blob: new Blob(["zip"], { type: "application/zip" }),
-      filename: "summer-week.zip",
+    apiMocks.createAlbumArchiveDownloadUrl.mockResolvedValue({
+      url: "/api/v1/albums/album-1/download-by-token?token=signed-token",
+      expiresAt: "2026-04-06T12:05:00Z",
     });
     apiMocks.listAlbumShareLinks.mockResolvedValue([]);
     apiMocks.removePhotoFromAlbum.mockResolvedValue(undefined);
@@ -242,28 +247,28 @@ describe("AppAlbumDetailRoute", () => {
     expect(
       screen.getByRole("link", { name: /^back to album$/i }),
     ).toHaveAttribute("href", "/app/library/albums/album-1");
+    expect(apiMocks.getAlbum).toHaveBeenCalledWith("album-1");
+    expect(apiMocks.listPhotos).toHaveBeenCalledWith(0, 100);
   });
 
   it("renders the empty album state", async () => {
     apiMocks.listAllAlbumPhotos.mockResolvedValue([]);
-    apiMocks.listAlbums.mockResolvedValue([
-      {
-        id: "album-1",
-        name: "Empty Album",
-        description: null,
-        ownerId: "user-1",
-        personalLibraryId: "library-1",
-        spaceId: null,
-        createdAt: "2026-04-01T10:00:00Z",
-        updatedAt: "2026-04-01T10:00:00Z",
-        coverPhotoId: null,
-        coverVariants: [],
-        photoCount: 0,
-        mediaRangeStart: null,
-        mediaRangeEnd: null,
-        latestPhotoAddedAt: null,
-      },
-    ]);
+    apiMocks.getAlbum.mockResolvedValue({
+      id: "album-1",
+      name: "Empty Album",
+      description: null,
+      ownerId: "user-1",
+      personalLibraryId: "library-1",
+      spaceId: null,
+      createdAt: "2026-04-01T10:00:00Z",
+      updatedAt: "2026-04-01T10:00:00Z",
+      coverPhotoId: null,
+      coverVariants: [],
+      photoCount: 0,
+      mediaRangeStart: null,
+      mediaRangeEnd: null,
+      latestPhotoAddedAt: null,
+    });
 
     renderRoute();
 
@@ -272,6 +277,46 @@ describe("AppAlbumDetailRoute", () => {
     ).toBeInTheDocument();
     expect(
       screen.getAllByRole("button", { name: /add photos|добавить фото/i })[0],
+    ).toBeInTheDocument();
+  });
+
+  it("shows that the existing-photo picker is bounded to the first page", async () => {
+    apiMocks.listPhotos.mockResolvedValue({
+      items: [
+        {
+          id: "photo-1",
+          uploaderId: "user-1",
+          originalFilename: "pier.jpg",
+          mimeType: "image/jpeg",
+          width: 1600,
+          height: 900,
+          sizeBytes: 320000,
+          personalLibraryId: "library-1",
+          exifData: null,
+          takenAt: "2026-04-02T20:15:00Z",
+          latitude: null,
+          longitude: null,
+          createdAt: "2026-04-02T20:15:00Z",
+          variants: [],
+        },
+      ],
+      page: 0,
+      size: 100,
+      hasNext: true,
+      totalItems: 300,
+      totalPages: 3,
+    });
+
+    renderRoute();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: /add photos|добавить фото/i }),
+    );
+
+    expect(
+      await screen.findByText(
+        "For performance this picker currently loads only the first 100 personal photos.",
+      ),
     ).toBeInTheDocument();
   });
 
@@ -306,7 +351,7 @@ describe("AppAlbumDetailRoute", () => {
     );
 
     await waitFor(() => {
-      expect(apiMocks.downloadAlbumArchive).toHaveBeenCalledWith(
+      expect(apiMocks.createAlbumArchiveDownloadUrl).toHaveBeenCalledWith(
         "album-1",
         "ORIGINAL",
       );
@@ -357,6 +402,14 @@ describe("AppAlbumDetailRoute", () => {
       expect(clipboardWriteText).toHaveBeenCalledWith("plain-token-1");
     });
 
+    fireEvent.click(screen.getByRole("button", { name: /copy link/i }));
+
+    await waitFor(() => {
+      expect(clipboardWriteText).toHaveBeenCalledWith(
+        expect.stringContaining("/s/album/plain-token-1"),
+      );
+    });
+
     fireEvent.click(screen.getAllByRole("button", { name: /revoke/i })[1]!);
 
     await waitFor(() => {
@@ -365,5 +418,27 @@ describe("AppAlbumDetailRoute", () => {
         "share-old",
       );
     });
+  });
+
+  it("marks expired public share links as expired and keeps revoke disabled", async () => {
+    apiMocks.listAlbumShareLinks.mockResolvedValueOnce([
+      {
+        id: "share-expired",
+        albumId: "album-1",
+        createdById: "user-1",
+        createdAt: "2026-04-05T12:00:00Z",
+        expiresAt: "2026-04-05T13:00:00Z",
+        revokedAt: null,
+      },
+    ]);
+
+    renderRoute();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: /share|поделиться/i }),
+    );
+
+    expect(await screen.findByText("Expired")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /revoke/i })).toBeDisabled();
   });
 });

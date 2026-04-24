@@ -99,6 +99,18 @@ const enMessages = {
   "public.joinInvite.backHome": "Back home",
   "public.joinInvite.loadingPreview": "Loading invite preview...",
   "public.joinInvite.errorFallback": "Failed to join invite.",
+  "public.album.eyebrow": "Shared album",
+  "public.album.loading": "Loading album...",
+  "public.album.notFound":
+    "This album link is no longer available. It may have been revoked or has expired.",
+  "public.album.photoCount": "{count} photos",
+  "public.album.photoCountOne": "1 photo",
+  "public.album.photoCountZero": "No photos",
+  "public.album.emptyDescription": "No description provided.",
+  "public.album.backHome": "Back home",
+  "public.album.openOriginal": "Open original",
+  "public.album.loadMore": "Load more",
+  "public.album.loadingMore": "Loading...",
   "shell.mobileEyebrow": "Media library",
   "shell.upload": "Upload",
   "shell.menuOpen": "Menu",
@@ -503,6 +515,10 @@ const enMessages = {
   "app.albumDetail.selectPhoto": "Select a photo to add",
   "app.albumDetail.noAvailablePhotos":
     "All available library photos are already part of this album.",
+  "app.albumDetail.noAvailablePhotosWithinLimit":
+    "No available photos were found in the first {count} loaded library items.",
+  "app.albumDetail.libraryPickerLimitNotice":
+    "For performance this picker currently loads only the first {count} personal photos.",
   "app.albumDetail.addSelectedPhoto": "Add selected photo",
   "app.albumDetail.emptyTitle": "No photos in this album yet",
   "app.albumDetail.emptyDescription":
@@ -535,6 +551,7 @@ const enMessages = {
   "app.albumShare.noExpiry": "No expiry",
   "app.albumShare.active": "Active",
   "app.albumShare.revoked": "Revoked",
+  "app.albumShare.expired": "Expired",
   "app.albumShare.revoke": "Revoke",
   "app.albumShare.linkCopied": "Public link copied to clipboard.",
   "app.albumShare.copyLinkFailed": "Failed to copy the public link.",
@@ -890,6 +907,18 @@ const ruMessages: Partial<MessageCatalog> = {
   "public.joinInvite.backHome": "На главную",
   "public.joinInvite.loadingPreview": "Загрузка превью приглашения...",
   "public.joinInvite.errorFallback": "Не удалось принять приглашение.",
+  "public.album.eyebrow": "Общий альбом",
+  "public.album.loading": "Загружаем альбом...",
+  "public.album.notFound":
+    "Эта ссылка на альбом больше недоступна. Возможно, она отозвана или истекла.",
+  "public.album.photoCount": "{count} фото",
+  "public.album.photoCountOne": "1 фото",
+  "public.album.photoCountZero": "Нет фото",
+  "public.album.emptyDescription": "Описание отсутствует.",
+  "public.album.backHome": "На главную",
+  "public.album.openOriginal": "Открыть оригинал",
+  "public.album.loadMore": "Загрузить ещё",
+  "public.album.loadingMore": "Загрузка...",
   "shell.mobileEyebrow": "Медиатека",
   "shell.upload": "Загрузить",
   "shell.menuOpen": "Меню",
@@ -1307,6 +1336,10 @@ const ruMessages: Partial<MessageCatalog> = {
   "app.albumDetail.selectPhoto": "Выберите фото для добавления",
   "app.albumDetail.noAvailablePhotos":
     "Все доступные фото из библиотеки уже входят в этот альбом.",
+  "app.albumDetail.noAvailablePhotosWithinLimit":
+    "В первых {count} загруженных элементах библиотеки не найдено доступных фото.",
+  "app.albumDetail.libraryPickerLimitNotice":
+    "Для производительности этот список сейчас загружает только первые {count} личных фото.",
   "app.albumDetail.addSelectedPhoto": "Добавить выбранное фото",
   "app.albumDetail.emptyTitle": "В этом альбоме пока нет фото",
   "app.albumDetail.emptyDescription":
@@ -1339,6 +1372,7 @@ const ruMessages: Partial<MessageCatalog> = {
   "app.albumShare.noExpiry": "Без срока действия",
   "app.albumShare.active": "Активна",
   "app.albumShare.revoked": "Отозвана",
+  "app.albumShare.expired": "Истекла",
   "app.albumShare.revoke": "Отозвать",
   "app.albumShare.linkCopied": "Публичная ссылка скопирована.",
   "app.albumShare.copyLinkFailed": "Не удалось скопировать публичную ссылку.",

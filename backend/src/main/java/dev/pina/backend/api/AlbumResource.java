@@ -1,5 +1,6 @@
 package dev.pina.backend.api;
 
+import dev.pina.backend.api.dto.AlbumDownloadUrlDto;
 import dev.pina.backend.api.dto.AlbumDto;
 import dev.pina.backend.api.dto.AlbumShareLinkCreatedDto;
 import dev.pina.backend.api.dto.AlbumShareLinkDto;
@@ -12,6 +13,7 @@ import dev.pina.backend.api.error.ApiErrors;
 import dev.pina.backend.domain.VariantType;
 import dev.pina.backend.pagination.PageRequest;
 import dev.pina.backend.pagination.PageResult;
+import dev.pina.backend.service.AlbumArchiveDownloadTokenService;
 import dev.pina.backend.service.AlbumService;
 import dev.pina.backend.service.AlbumShareLinkService;
 import dev.pina.backend.service.UserResolver;
@@ -31,6 +33,8 @@ import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.text.Normalizer;
 import java.util.Locale;
 import java.util.UUID;
@@ -45,6 +49,9 @@ public class AlbumResource {
 
 	@Inject
 	AlbumShareLinkService shareLinkService;
+
+	@Inject
+	AlbumArchiveDownloadTokenService albumArchiveDownloadTokenService;
 
 	@Inject
 	UserResolver userResolver;
@@ -77,6 +84,15 @@ public class AlbumResource {
 		var summaryPage = new PageResult<>(summaries, albums.page(), albums.size(), albums.hasNext(),
 				albums.totalItems(), albums.totalPages());
 		return Response.ok(PageResponse.from(summaryPage, AlbumDto::fromSummary)).build();
+	}
+
+	@GET
+	@Path("/{id}")
+	public Response get(@PathParam("id") UUID id) {
+		var user = userResolver.currentUser();
+		return albumService.findById(id).filter(album -> album.owner.id.equals(user.id))
+				.map(album -> Response.ok(AlbumDto.fromSummary(albumService.getSummary(album))).build())
+				.orElse(ApiErrors.notFound("Album not found"));
 	}
 
 	@GET
@@ -176,11 +192,43 @@ public class AlbumResource {
 		if (album.isEmpty() || !album.get().owner.id.equals(user.id)) {
 			return ApiErrors.notFound("Album not found");
 		}
-		var entries = albumService.collectArchiveEntries(id, variantType);
-		var output = albumService.streamAlbumArchive(entries);
-		String filename = slugifyAlbumName(album.get().name) + ".zip";
-		return Response.ok(output).type("application/zip")
-				.header("Content-Disposition", "attachment; filename=\"" + filename + "\"").build();
+		return buildArchiveDownloadResponse(album.get().name, id, variantType);
+	}
+
+	@POST
+	@Path("/{id}/download-url")
+	@Consumes(MediaType.WILDCARD)
+	public Response createDownloadUrl(@PathParam("id") UUID id, @QueryParam("variant") String variant) {
+		VariantType variantType;
+		try {
+			variantType = parseDownloadVariant(variant);
+		} catch (IllegalArgumentException e) {
+			return ApiErrors.badRequest(e.getMessage());
+		}
+		var user = userResolver.currentUser();
+		var album = albumService.findById(id);
+		if (album.isEmpty() || !album.get().owner.id.equals(user.id)) {
+			return ApiErrors.notFound("Album not found");
+		}
+		var minted = albumArchiveDownloadTokenService.mint(id, user.id, variantType);
+		String url = "/api/v1/albums/" + id + "/download-by-token?token="
+				+ URLEncoder.encode(minted.token(), StandardCharsets.UTF_8);
+		return Response.ok(new AlbumDownloadUrlDto(url, minted.expiresAt())).build();
+	}
+
+	@GET
+	@Path("/{id}/download-by-token")
+	@Produces("application/zip")
+	public Response downloadByToken(@PathParam("id") UUID id, @QueryParam("token") String token) {
+		var claims = albumArchiveDownloadTokenService.validate(id, token);
+		if (claims.isEmpty()) {
+			return ApiErrors.notFound("Album not found");
+		}
+		var album = albumService.findById(id);
+		if (album.isEmpty() || !album.get().owner.id.equals(claims.get().ownerId())) {
+			return ApiErrors.notFound("Album not found");
+		}
+		return buildArchiveDownloadResponse(album.get().name, id, claims.get().variantType());
 	}
 
 	private static VariantType parseDownloadVariant(String raw) {
@@ -194,13 +242,38 @@ public class AlbumResource {
 		};
 	}
 
-	private static String slugifyAlbumName(String name) {
+	private static String asciiDownloadFilename(String name) {
 		if (name == null) {
-			return "album";
+			return "album.zip";
 		}
 		String slug = Normalizer.normalize(name, Normalizer.Form.NFKD).replaceAll("\\p{M}+", "")
 				.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]+", "-").replaceAll("(^-|-$)", "");
-		return slug.isEmpty() ? "album" : slug;
+		return (slug.isEmpty() ? "album" : slug) + ".zip";
+	}
+
+	private static String unicodeDownloadFilename(String name) {
+		if (name == null || name.isBlank()) {
+			return "album.zip";
+		}
+		String sanitized = name.strip().replace('\\', '_').replace('/', '_').replaceAll("\\p{Cntrl}", "_");
+		return sanitized.isBlank() ? "album.zip" : sanitized + ".zip";
+	}
+
+	private static String contentDispositionAttachment(String asciiFilename, String utf8Filename) {
+		String encoded = URLEncoder.encode(utf8Filename, StandardCharsets.UTF_8).replace("+", "%20");
+		return "attachment; filename=\"" + asciiFilename + "\"; filename*=UTF-8''" + encoded;
+	}
+
+	private Response buildArchiveDownloadResponse(String albumName, UUID albumId, VariantType variantType) {
+		var entries = albumService.collectArchiveEntries(albumId, variantType);
+		var output = albumService.streamAlbumArchive(entries);
+		String filename = asciiDownloadFilename(albumName);
+		return noStore(Response.ok(output).type("application/zip").header("Content-Disposition",
+				contentDispositionAttachment(filename, unicodeDownloadFilename(albumName)))).build();
+	}
+
+	private static Response.ResponseBuilder noStore(Response.ResponseBuilder builder) {
+		return builder.header("Cache-Control", "no-store").header("Pragma", "no-cache").header("Expires", "0");
 	}
 
 	@DELETE

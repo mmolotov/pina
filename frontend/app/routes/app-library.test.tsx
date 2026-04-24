@@ -16,7 +16,7 @@ const apiMocks = vi.hoisted(() => ({
   deletePhoto: vi.fn(),
   createAlbum: vi.fn(),
   createAlbumShareLink: vi.fn(),
-  downloadAlbumArchive: vi.fn(),
+  createAlbumArchiveDownloadUrl: vi.fn(),
   addPhotoToAlbum: vi.fn(),
   updateAlbum: vi.fn(),
   deleteAlbum: vi.fn(),
@@ -108,9 +108,9 @@ describe("AppLibraryRoute", () => {
       },
       token: "plain-token-1",
     });
-    apiMocks.downloadAlbumArchive.mockResolvedValue({
-      blob: new Blob(["zip"], { type: "application/zip" }),
-      filename: "summer-trip.zip",
+    apiMocks.createAlbumArchiveDownloadUrl.mockResolvedValue({
+      url: "/api/v1/albums/album-1/download-by-token?token=signed-token",
+      expiresAt: "2026-04-06T12:05:00Z",
     });
     apiMocks.addPhotoToAlbum.mockResolvedValue(undefined);
     apiMocks.updateAlbum.mockResolvedValue(undefined);

@@ -469,7 +469,7 @@ public class AlbumService {
 
 	@Transactional
 	public SetCoverResult setCoverPhoto(UUID albumId, UUID photoId) {
-		Optional<Album> albumOpt = Album.findByIdOptional(albumId);
+		Optional<Album> albumOpt = findByIdForUpdate(albumId);
 		if (albumOpt.isEmpty()) {
 			return new SetCoverResult.AlbumNotFound();
 		}
@@ -485,7 +485,7 @@ public class AlbumService {
 
 	@Transactional
 	public Optional<Album> clearCoverPhoto(UUID albumId) {
-		Optional<Album> albumOpt = Album.findByIdOptional(albumId);
+		Optional<Album> albumOpt = findByIdForUpdate(albumId);
 		if (albumOpt.isEmpty()) {
 			return Optional.empty();
 		}
@@ -493,6 +493,10 @@ public class AlbumService {
 		album.coverPhoto = null;
 		em.flush();
 		return Optional.of(album);
+	}
+
+	private Optional<Album> findByIdForUpdate(UUID albumId) {
+		return Optional.ofNullable(em.find(Album.class, albumId, LockModeType.PESSIMISTIC_WRITE));
 	}
 
 	@Transactional

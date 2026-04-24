@@ -7,7 +7,7 @@ import AppAlbumPhotoDetailRoute, {
 } from "~/routes/app-album-photo-detail";
 
 const apiMocks = vi.hoisted(() => ({
-  listAlbums: vi.fn(),
+  getAlbum: vi.fn(),
   listAllAlbumPhotos: vi.fn(),
   getPhotoBlob: vi.fn(),
 }));
@@ -18,24 +18,22 @@ vi.mock("~/lib/api", () => ({
 
 describe("AppAlbumPhotoDetailRoute", () => {
   beforeEach(() => {
-    apiMocks.listAlbums.mockResolvedValue([
-      {
-        id: "album-1",
-        name: "Summer Week",
-        description: "Pier, market, and long golden evenings",
-        ownerId: "user-1",
-        personalLibraryId: "library-1",
-        spaceId: null,
-        createdAt: "2026-04-01T10:00:00Z",
-        updatedAt: "2026-04-05T18:30:00Z",
-        coverPhotoId: "photo-1",
-        coverVariants: [],
-        photoCount: 1,
-        mediaRangeStart: "2026-04-02T20:15:00Z",
-        mediaRangeEnd: "2026-04-02T20:15:00Z",
-        latestPhotoAddedAt: "2026-04-05T18:30:00Z",
-      },
-    ]);
+    apiMocks.getAlbum.mockResolvedValue({
+      id: "album-1",
+      name: "Summer Week",
+      description: "Pier, market, and long golden evenings",
+      ownerId: "user-1",
+      personalLibraryId: "library-1",
+      spaceId: null,
+      createdAt: "2026-04-01T10:00:00Z",
+      updatedAt: "2026-04-05T18:30:00Z",
+      coverPhotoId: "photo-1",
+      coverVariants: [],
+      photoCount: 1,
+      mediaRangeStart: "2026-04-02T20:15:00Z",
+      mediaRangeEnd: "2026-04-02T20:15:00Z",
+      latestPhotoAddedAt: "2026-04-05T18:30:00Z",
+    });
     apiMocks.listAllAlbumPhotos.mockResolvedValue([
       {
         id: "photo-1",
@@ -85,5 +83,6 @@ describe("AppAlbumPhotoDetailRoute", () => {
     expect(
       screen.getByRole("link", { name: /^back to albums$/i }),
     ).toHaveAttribute("href", "/app/library?view=albums");
+    expect(apiMocks.getAlbum).toHaveBeenCalledWith("album-1");
   });
 });

@@ -1,15 +1,23 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { InlineMessage } from "~/components/ui";
 import { formatDateTime } from "~/lib/format";
 import { useI18n } from "~/lib/i18n";
 import type { AlbumShareLinkDto } from "~/types/api";
 
 function buildPublicAlbumShareUrl(token: string) {
-  const path = `/api/v1/public/albums/by-token/${token}`;
+  const path = `/s/album/${encodeURIComponent(token)}`;
   if (typeof window === "undefined") {
     return path;
   }
   return new URL(path, window.location.origin).toString();
+}
+
+function isLinkExpired(link: AlbumShareLinkDto, now: number): boolean {
+  if (!link.expiresAt) {
+    return false;
+  }
+  const expiresAtMs = Date.parse(link.expiresAt);
+  return Number.isFinite(expiresAtMs) && expiresAtMs <= now;
 }
 
 export function AlbumShareDialog(props: {
@@ -30,6 +38,16 @@ export function AlbumShareDialog(props: {
   const { t } = useI18n();
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const initialFocusRef = useRef<HTMLButtonElement | null>(null);
+  const onCloseRef = useRef(props.onClose);
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    setNow(Date.now());
+  }, [props.links]);
+
+  useEffect(() => {
+    onCloseRef.current = props.onClose;
+  }, [props.onClose]);
 
   useEffect(() => {
     initialFocusRef.current?.focus();
@@ -39,7 +57,7 @@ export function AlbumShareDialog(props: {
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
         event.preventDefault();
-        props.onClose();
+        onCloseRef.current();
       }
     }
 
@@ -47,41 +65,57 @@ export function AlbumShareDialog(props: {
     return () => {
       document.removeEventListener("keydown", handleKeyDown);
     };
-  }, [props]);
+  }, []);
 
-  function trapFocus(event: React.KeyboardEvent<HTMLDivElement>) {
-    if (event.key !== "Tab" || !dialogRef.current) {
+  useEffect(() => {
+    const dialogElement = dialogRef.current;
+    if (!dialogElement) {
       return;
     }
 
-    const focusable = Array.from(
-      dialogRef.current.querySelectorAll<HTMLElement>(
-        'a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-      ),
-    );
+    function handleDialogKeyDown(event: KeyboardEvent) {
+      if (event.key !== "Tab") {
+        return;
+      }
 
-    if (focusable.length === 0) {
-      return;
+      const dialog = dialogRef.current;
+      if (!dialog) {
+        return;
+      }
+
+      const focusable = Array.from(
+        dialog.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ),
+      );
+
+      if (focusable.length === 0) {
+        return;
+      }
+
+      const first = focusable[0]!;
+      const last = focusable[focusable.length - 1]!;
+
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
     }
 
-    const first = focusable[0]!;
-    const last = focusable[focusable.length - 1]!;
-
-    if (event.shiftKey && document.activeElement === first) {
-      event.preventDefault();
-      last.focus();
-    } else if (!event.shiftKey && document.activeElement === last) {
-      event.preventDefault();
-      first.focus();
-    }
-  }
+    dialogElement.addEventListener("keydown", handleDialogKeyDown);
+    return () => {
+      dialogElement.removeEventListener("keydown", handleDialogKeyDown);
+    };
+  }, []);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 px-4 py-8">
       <div
         aria-modal="true"
         className="w-full max-w-3xl rounded-[1.75rem] border border-[var(--color-border)] bg-[var(--color-panel-strong)] p-6 shadow-[0_30px_80px_rgba(0,0,0,0.28)]"
-        onKeyDown={trapFocus}
         ref={dialogRef}
         role="dialog"
       >
@@ -187,50 +221,56 @@ export function AlbumShareDialog(props: {
               </p>
             ) : (
               <div className="mt-4 space-y-3">
-                {props.links.map((link) => (
-                  <div
-                    className="rounded-[1rem] border border-[var(--color-border)] bg-[var(--color-panel)] p-4"
-                    key={link.id}
-                  >
-                    <dl className="grid gap-2 text-sm text-[var(--color-text-muted)]">
-                      <div className="flex justify-between gap-4">
-                        <dt>{t("app.albumShare.createdAt")}</dt>
-                        <dd>{formatDateTime(link.createdAt)}</dd>
+                {props.links.map((link) => {
+                  const expired = isLinkExpired(link, now);
+                  const revoked = link.revokedAt != null;
+                  const statusLabel = revoked
+                    ? t("app.albumShare.revoked")
+                    : expired
+                      ? t("app.albumShare.expired")
+                      : t("app.albumShare.active");
+                  return (
+                    <div
+                      className="rounded-[1rem] border border-[var(--color-border)] bg-[var(--color-panel)] p-4"
+                      key={link.id}
+                    >
+                      <dl className="grid gap-2 text-sm text-[var(--color-text-muted)]">
+                        <div className="flex justify-between gap-4">
+                          <dt>{t("app.albumShare.createdAt")}</dt>
+                          <dd>{formatDateTime(link.createdAt)}</dd>
+                        </div>
+                        <div className="flex justify-between gap-4">
+                          <dt>{t("app.albumShare.expiresAt")}</dt>
+                          <dd>
+                            {link.expiresAt
+                              ? formatDateTime(link.expiresAt)
+                              : t("app.albumShare.noExpiry")}
+                          </dd>
+                        </div>
+                        <div className="flex justify-between gap-4">
+                          <dt>{t("app.albumShare.status")}</dt>
+                          <dd>{statusLabel}</dd>
+                        </div>
+                      </dl>
+                      <div className="mt-3 flex justify-end">
+                        <button
+                          className="button-secondary py-1.5 text-sm"
+                          disabled={
+                            revoked ||
+                            expired ||
+                            props.revokeBusyLinkId === link.id
+                          }
+                          onClick={() => props.onRevoke(link.id)}
+                          type="button"
+                        >
+                          {props.revokeBusyLinkId === link.id
+                            ? t("common.updating")
+                            : t("app.albumShare.revoke")}
+                        </button>
                       </div>
-                      <div className="flex justify-between gap-4">
-                        <dt>{t("app.albumShare.expiresAt")}</dt>
-                        <dd>
-                          {link.expiresAt
-                            ? formatDateTime(link.expiresAt)
-                            : t("app.albumShare.noExpiry")}
-                        </dd>
-                      </div>
-                      <div className="flex justify-between gap-4">
-                        <dt>{t("app.albumShare.status")}</dt>
-                        <dd>
-                          {link.revokedAt
-                            ? t("app.albumShare.revoked")
-                            : t("app.albumShare.active")}
-                        </dd>
-                      </div>
-                    </dl>
-                    <div className="mt-3 flex justify-end">
-                      <button
-                        className="button-secondary py-1.5 text-sm"
-                        disabled={
-                          link.revokedAt != null ||
-                          props.revokeBusyLinkId === link.id
-                        }
-                        onClick={() => props.onRevoke(link.id)}
-                        type="button"
-                      >
-                        {props.revokeBusyLinkId === link.id
-                          ? t("common.updating")
-                          : t("app.albumShare.revoke")}
-                      </button>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </section>

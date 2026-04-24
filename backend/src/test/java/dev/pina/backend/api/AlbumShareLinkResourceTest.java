@@ -112,10 +112,18 @@ class AlbumShareLinkResourceTest {
 				.then().statusCode(200).header("Cache-Control", equalTo("no-store")).body("album.id", equalTo(albumId))
 				.body("album.name", equalTo("Public album")).body("photos.items", hasSize(2)).extract()
 				.path("photos.items[0]");
+		Map<String, Object> albumPayload = given().when().get("/api/v1/public/albums/by-token/{token}", shareToken)
+				.then().statusCode(200).extract().path("album");
 
 		assertNotNull(firstPhotoPayload.get("id"));
 		assertNotNull(firstPhotoPayload.get("originalFilename"));
 		assertNotNull(firstPhotoPayload.get("variants"));
+		assertNotNull(albumPayload.get("id"));
+		assertNotNull(albumPayload.get("name"));
+		assertNotNull(albumPayload.get("coverVariants"));
+		assertFalse(albumPayload.containsKey("ownerId"));
+		assertFalse(albumPayload.containsKey("personalLibraryId"));
+		assertFalse(albumPayload.containsKey("spaceId"));
 		assertFalse(firstPhotoPayload.containsKey("uploaderId"));
 		assertFalse(firstPhotoPayload.containsKey("personalLibraryId"));
 		assertFalse(firstPhotoPayload.containsKey("exifData"));
@@ -176,7 +184,8 @@ class AlbumShareLinkResourceTest {
 		byte[] bytes = given().when()
 				.get("/api/v1/public/albums/by-token/{token}/photos/{photoId}/file?variant=COMPRESSED", shareToken,
 						photoId)
-				.then().statusCode(200).header("Cache-Control", equalTo("no-store")).extract().asByteArray();
+				.then().statusCode(200).header("Cache-Control", equalTo("no-store"))
+				.header("X-Album-Id", org.hamcrest.Matchers.nullValue()).extract().asByteArray();
 		assertTrue(bytes.length > 0, "proxy should stream non-empty bytes");
 	}
 

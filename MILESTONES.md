@@ -102,7 +102,7 @@ Legend: ✅ done · 🔲 todo
 - 🔲 S3 storage backend (full implementation)
 - 🔲 WebDAV storage backend
 - 🔲 Retention / compression policies
-- 🔲 Shared links (public read-only, no auth)
+- ✅ Shared links (public read-only, no auth)
 - 🔲 Scalable ML worker pool (multi-GPU)
 - 🔲 Additional frontend UI languages beyond English and Russian
 

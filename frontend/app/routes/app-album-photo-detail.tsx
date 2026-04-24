@@ -2,7 +2,7 @@ import type { Route } from "./+types/app-album-photo-detail";
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import { InlineMessage, PageHeader, Panel, SurfaceCard } from "~/components/ui";
-import { getPhotoBlob, listAllAlbumPhotos, listAlbums } from "~/lib/api";
+import { getAlbum, getPhotoBlob, listAllAlbumPhotos } from "~/lib/api";
 import { formatBytes, formatDateTime } from "~/lib/format";
 import { useI18n } from "~/lib/i18n";
 import type { AlbumDto, PhotoDto } from "~/types/api";
@@ -18,13 +18,13 @@ export async function clientLoader({ params }: Route.ClientLoaderArgs) {
   const albumId = params.albumId ?? "";
   const photoId = params.photoId ?? "";
 
-  const [albums, photos] = await Promise.all([
-    listAlbums(),
+  const [album, photos] = await Promise.all([
+    getAlbum(albumId).catch(() => null),
     listAllAlbumPhotos(albumId),
   ]);
 
   return {
-    album: albums.find((album) => album.id === albumId) ?? null,
+    album,
     photo: photos.find((photo) => photo.id === photoId) ?? null,
     albumId,
     photoId,

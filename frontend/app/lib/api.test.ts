@@ -38,6 +38,7 @@ vi.mock("~/lib/session", () => ({
 }));
 
 import {
+  createAlbumArchiveDownloadUrl,
   getPhotoBlob,
   listAlbums,
   listAllPhotos,
@@ -130,6 +131,38 @@ describe("api helpers", () => {
       refreshToken: "fresh-refresh-token",
       user: null,
     });
+  });
+
+  it("requests a signed album download URL without reading a blob", async () => {
+    const blobSpy = vi.fn();
+    const jsonSpy = vi.fn().mockResolvedValue({
+      url: "/api/v1/albums/album-1/download-by-token?token=signed-token",
+      expiresAt: "2026-04-06T12:05:00Z",
+    });
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Headers({ "Content-Type": "application/json" }),
+      json: jsonSpy,
+      blob: blobSpy,
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await createAlbumArchiveDownloadUrl("album-1", "ORIGINAL");
+
+    expect(result).toEqual({
+      url: "/api/v1/albums/album-1/download-by-token?token=signed-token",
+      expiresAt: "2026-04-06T12:05:00Z",
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/v1/albums/album-1/download-url?variant=ORIGINAL",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.any(Headers),
+      }),
+    );
+    expect(blobSpy).not.toHaveBeenCalled();
   });
 
   it("loads all personal photos across paginated responses", async () => {

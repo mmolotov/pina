@@ -30,7 +30,7 @@ import {
   addPhotoToAlbum,
   createAlbumShareLink,
   createAlbum,
-  downloadAlbumArchive,
+  createAlbumArchiveDownloadUrl,
   deleteAlbum,
   deletePhoto,
   getPhotoBlob,
@@ -90,18 +90,6 @@ type GeoSelectionTarget = {
   id: string;
   kind: "cluster" | "photo";
 };
-
-interface LibraryLoaderData {
-  photos: PhotoDto[];
-  albums: AlbumDto[];
-  photoFavorites: Record<string, FavoriteDto>;
-  albumFavorites: Record<string, FavoriteDto>;
-  albumSort: {
-    sort: AlbumSortField;
-    direction: AlbumSortDirection;
-  };
-  albumSortReset: boolean;
-}
 
 interface UploadProgressState {
   total: number;
@@ -272,13 +260,14 @@ function resolveAlbumSort(
   };
 }
 
-function triggerBlobDownload(blob: Blob, filename: string) {
-  const objectUrl = URL.createObjectURL(blob);
+function triggerUrlDownload(url: string) {
   const link = document.createElement("a");
-  link.href = objectUrl;
-  link.download = filename;
+  link.href = url;
+  link.rel = "noopener";
+  link.style.display = "none";
+  document.body.append(link);
   link.click();
-  URL.revokeObjectURL(objectUrl);
+  link.remove();
 }
 
 function AlbumTile(props: {
@@ -667,6 +656,7 @@ function CreateAlbumDialog(props: {
   const { t } = useI18n();
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const initialFocusRef = useRef<HTMLInputElement | null>(null);
+  const { onClose } = props;
   const isUploading = props.uploadProgress != null;
   const canClose = !props.isBusy && !isUploading;
 
@@ -681,7 +671,7 @@ function CreateAlbumDialog(props: {
       }
       if (event.key === "Escape") {
         event.preventDefault();
-        props.onClose();
+        onClose();
       }
     }
 
@@ -689,41 +679,57 @@ function CreateAlbumDialog(props: {
     return () => {
       document.removeEventListener("keydown", handleKeyDown);
     };
-  }, [canClose, props.onClose]);
+  }, [canClose, onClose]);
 
-  function trapFocus(event: React.KeyboardEvent<HTMLDivElement>) {
-    if (event.key !== "Tab" || !dialogRef.current) {
+  useEffect(() => {
+    const dialogElement = dialogRef.current;
+    if (!dialogElement) {
       return;
     }
 
-    const focusable = Array.from(
-      dialogRef.current.querySelectorAll<HTMLElement>(
-        'a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-      ),
-    );
+    function handleDialogKeyDown(event: KeyboardEvent) {
+      if (event.key !== "Tab") {
+        return;
+      }
 
-    if (focusable.length === 0) {
-      return;
+      const dialog = dialogRef.current;
+      if (!dialog) {
+        return;
+      }
+
+      const focusable = Array.from(
+        dialog.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ),
+      );
+
+      if (focusable.length === 0) {
+        return;
+      }
+
+      const first = focusable[0]!;
+      const last = focusable[focusable.length - 1]!;
+
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
     }
 
-    const first = focusable[0]!;
-    const last = focusable[focusable.length - 1]!;
-
-    if (event.shiftKey && document.activeElement === first) {
-      event.preventDefault();
-      last.focus();
-    } else if (!event.shiftKey && document.activeElement === last) {
-      event.preventDefault();
-      first.focus();
-    }
-  }
+    dialogElement.addEventListener("keydown", handleDialogKeyDown);
+    return () => {
+      dialogElement.removeEventListener("keydown", handleDialogKeyDown);
+    };
+  }, []);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 px-4 py-8">
       <div
         aria-modal="true"
         className="w-full max-w-4xl rounded-[1.75rem] border border-[var(--color-border)] bg-[var(--color-panel-strong)] p-6 shadow-[0_30px_80px_rgba(0,0,0,0.28)]"
-        onKeyDown={trapFocus}
         ref={dialogRef}
         role="dialog"
       >
@@ -2162,8 +2168,8 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
     setAlbumActionError(null);
 
     try {
-      const { blob, filename } = await downloadAlbumArchive(album.id, "ORIGINAL");
-      triggerBlobDownload(blob, filename);
+      const { url } = await createAlbumArchiveDownloadUrl(album.id, "ORIGINAL");
+      triggerUrlDownload(url);
       setAlbumActionSuccess(
         t("app.library.albumDownloadStarted", {
           albumName: album.name,
@@ -2800,6 +2806,10 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
 
         {libraryView === "albums" && (
           <div className="space-y-4">
+            {albumActionError ? (
+              <InlineMessage tone="danger">{albumActionError}</InlineMessage>
+            ) : null}
+
             {albumActionSuccess ? (
               <InlineMessage tone="success">{albumActionSuccess}</InlineMessage>
             ) : null}

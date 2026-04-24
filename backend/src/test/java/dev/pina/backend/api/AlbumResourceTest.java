@@ -8,16 +8,22 @@ import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.Matchers.nullValue;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.pina.backend.TestAuthHelper;
+import dev.pina.backend.domain.VariantType;
+import dev.pina.backend.service.AlbumArchiveDownloadTokenService;
 import io.quarkus.test.junit.QuarkusTest;
 import io.restassured.http.ContentType;
 import io.restassured.specification.RequestSpecification;
+import jakarta.inject.Inject;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.OffsetDateTime;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.UUID;
@@ -29,6 +35,9 @@ import org.junit.jupiter.api.Test;
 @QuarkusTest
 class AlbumResourceTest {
 
+	@Inject
+	AlbumArchiveDownloadTokenService albumArchiveDownloadTokenService;
+
 	private Path createJpegImage(String prefix, int width, int height, int rgb) throws IOException {
 		Path image = Files.createTempFile(prefix, ".jpg");
 		BufferedImage img = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
@@ -37,6 +46,17 @@ class AlbumResourceTest {
 		g.fillRect(0, 0, width, height);
 		g.dispose();
 		ImageIO.write(img, "jpg", image.toFile());
+		return image;
+	}
+
+	private Path createPngImage(String prefix, int width, int height, int rgb) throws IOException {
+		Path image = Files.createTempFile(prefix, ".png");
+		BufferedImage img = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
+		var g = img.createGraphics();
+		g.setColor(new java.awt.Color(rgb));
+		g.fillRect(0, 0, width, height);
+		g.dispose();
+		ImageIO.write(img, "png", image.toFile());
 		return image;
 	}
 
@@ -163,6 +183,36 @@ class AlbumResourceTest {
 	void listAlbumsReturnsPaginatedResult() {
 		TestAuthHelper.authenticated().when().get("/api/v1/albums").then().statusCode(200).body("items", notNullValue())
 				.body("page", equalTo(0)).body("size", equalTo(50)).body("hasNext", equalTo(false));
+	}
+
+	@Test
+	void getAlbumByIdReturnsSummaryDtoForOwner() throws IOException {
+		String token = registerUserToken("get-by-id");
+		String albumId = createAlbum(token, "Single album");
+		String photoId = uploadPhoto(token, "album-get-by-id", 0x225588);
+		authAs(token).when().post("/api/v1/albums/{albumId}/photos/{photoId}", albumId, photoId).then().statusCode(201);
+
+		authAs(token).when().get("/api/v1/albums/{id}", albumId).then().statusCode(200).body("id", equalTo(albumId))
+				.body("name", equalTo("Single album")).body("personalLibraryId", notNullValue())
+				.body("coverPhotoId", equalTo(photoId)).body("coverVariants", hasSize(greaterThan(0)))
+				.body("photoCount", equalTo(1)).body("mediaRangeStart", notNullValue())
+				.body("mediaRangeEnd", notNullValue()).body("latestPhotoAddedAt", notNullValue());
+	}
+
+	@Test
+	void getAlbumByIdForNonOwnerReturns404() {
+		String ownerToken = registerUserToken("get-by-id-owner");
+		String intruderToken = registerUserToken("get-by-id-intruder");
+		String albumId = createAlbum(ownerToken, "Owner only");
+
+		authAs(intruderToken).when().get("/api/v1/albums/{id}", albumId).then().statusCode(404).body("error",
+				equalTo("not_found"));
+	}
+
+	@Test
+	void getUnknownAlbumByIdReturns404() {
+		TestAuthHelper.authenticated().when().get("/api/v1/albums/00000000-0000-0000-0000-000000000000").then()
+				.statusCode(404).body("error", equalTo("not_found"));
 	}
 
 	@Test
@@ -695,7 +745,9 @@ class AlbumResourceTest {
 
 		byte[] zipBytes = authAs(token).when().get("/api/v1/albums/{id}/download", albumId).then().statusCode(200)
 				.contentType("application/zip").header("Content-Disposition", containsString("attachment"))
-				.header("Content-Disposition", containsString("download-happy.zip")).extract().asByteArray();
+				.header("Content-Disposition", containsString("download-happy.zip"))
+				.header("Cache-Control", equalTo("no-store")).header("Pragma", equalTo("no-cache"))
+				.header("Expires", equalTo("0")).extract().asByteArray();
 
 		assertEquals(Set.of("vacation.jpg", "sunset.jpg"), readZipEntryNames(zipBytes));
 	}
@@ -770,6 +822,108 @@ class AlbumResourceTest {
 	}
 
 	@Test
+	void downloadAlbumPreservesUtf8FilenameWithAsciiFallback() throws IOException {
+		String token = registerUserToken("download-unicode");
+		String albumId = authAs(token).contentType(ContentType.JSON).body("{\"name\": \"Семейные фото\"}").when()
+				.post("/api/v1/albums").then().statusCode(201).extract().path("id");
+		String photoId = uploadNamedPhoto(token, "family.jpg", 60, 0x7799aa);
+		authAs(token).when().post("/api/v1/albums/{albumId}/photos/{photoId}", albumId, photoId).then().statusCode(201);
+
+		authAs(token).when().get("/api/v1/albums/{id}/download", albumId).then().statusCode(200)
+				.header("Content-Disposition", containsString("filename=\"album.zip\""))
+				.header("Content-Disposition", containsString(
+						"filename*=UTF-8''%D0%A1%D0%B5%D0%BC%D0%B5%D0%B9%D0%BD%D1%8B%D0%B5%20%D1%84%D0%BE%D1%82%D0%BE.zip"));
+	}
+
+	@Test
+	void createDownloadUrlAndRedeemTokenStreamsArchive() throws IOException {
+		String token = registerUserToken("download-url");
+		String albumId = createAlbum(token, "Download URL happy");
+		String photoId = uploadNamedPhoto(token, "shareable.jpg", 60, 0x779955);
+		authAs(token).when().post("/api/v1/albums/{albumId}/photos/{photoId}", albumId, photoId).then().statusCode(201);
+
+		String url = authAs(token).queryParam("variant", "ORIGINAL").when()
+				.post("/api/v1/albums/{id}/download-url", albumId).then().statusCode(200)
+				.body("url", containsString("/api/v1/albums/" + albumId + "/download-by-token?token="))
+				.body("expiresAt", notNullValue()).extract().path("url");
+
+		byte[] zipBytes = given().when().get(url).then().statusCode(200).contentType("application/zip")
+				.header("Cache-Control", equalTo("no-store")).header("Pragma", equalTo("no-cache"))
+				.header("Expires", equalTo("0")).header("Content-Disposition", containsString("download-url-happy.zip"))
+				.extract().asByteArray();
+
+		assertEquals(Set.of("shareable.jpg"), readZipEntryNames(zipBytes));
+	}
+
+	@Test
+	void downloadByTokenWithExpiredTokenReturns404() {
+		String token = registerUserToken("download-token-expired");
+		String albumId = createAlbum(token, "Expired token");
+		String ownerId = authAs(token).when().get("/api/v1/albums/{id}", albumId).then().statusCode(200).extract()
+				.path("ownerId");
+		String expiredToken = albumArchiveDownloadTokenService.mint(UUID.fromString(albumId), UUID.fromString(ownerId),
+				VariantType.ORIGINAL, OffsetDateTime.now().minusMinutes(1)).token();
+
+		given().queryParam("token", expiredToken).when().get("/api/v1/albums/{id}/download-by-token", albumId).then()
+				.statusCode(404).body("error", equalTo("not_found"));
+	}
+
+	@Test
+	void downloadByTokenWithTamperedTokenReturns404() {
+		String token = registerUserToken("download-token-tamper");
+		String albumId = createAlbum(token, "Tamper");
+		String url = authAs(token).when().post("/api/v1/albums/{id}/download-url", albumId).then().statusCode(200)
+				.extract().path("url");
+		String signedToken = url.substring(url.indexOf("token=") + "token=".length());
+		String tamperedToken = signedToken.substring(0, signedToken.length() - 1)
+				+ (signedToken.endsWith("A") ? "B" : "A");
+
+		given().queryParam("token", tamperedToken).when().get("/api/v1/albums/{id}/download-by-token", albumId).then()
+				.statusCode(404).body("error", equalTo("not_found"));
+	}
+
+	@Test
+	void downloadByTokenWithMismatchedAlbumPathReturns404() {
+		String token = registerUserToken("download-token-cross-path");
+		String firstAlbumId = createAlbum(token, "Signed album");
+		String secondAlbumId = createAlbum(token, "Other album");
+		String url = authAs(token).queryParam("variant", "COMPRESSED").when()
+				.post("/api/v1/albums/{id}/download-url", firstAlbumId).then().statusCode(200).extract().path("url");
+		String signedToken = url.substring(url.indexOf("token=") + "token=".length());
+
+		given().queryParam("token", signedToken).when().get("/api/v1/albums/{id}/download-by-token", secondAlbumId)
+				.then().statusCode(404).body("error", equalTo("not_found"));
+	}
+
+	@Test
+	void downloadByTokenUsesVariantEmbeddedInToken() throws IOException {
+		String token = registerUserToken("download-token-variant");
+		String albumId = createAlbum(token, "Variant token");
+		String photoId = uploadNamedPng(token, "diagram.png", 80, 0x4488cc);
+		authAs(token).when().post("/api/v1/albums/{albumId}/photos/{photoId}", albumId, photoId).then().statusCode(201);
+
+		String originalUrl = authAs(token).queryParam("variant", "ORIGINAL").when()
+				.post("/api/v1/albums/{id}/download-url", albumId).then().statusCode(200).extract().path("url");
+		String compressedUrl = authAs(token).queryParam("variant", "COMPRESSED").when()
+				.post("/api/v1/albums/{id}/download-url", albumId).then().statusCode(200).extract().path("url");
+
+		byte[] originalEntryBytes = readFirstZipEntryBytes(
+				given().when().get(originalUrl).then().statusCode(200).extract().asByteArray());
+		byte[] compressedEntryBytes = readFirstZipEntryBytes(
+				given().when().get(compressedUrl).then().statusCode(200).extract().asByteArray());
+
+		assertTrue(originalEntryBytes.length >= 4);
+		assertTrue(compressedEntryBytes.length >= 3);
+		assertEquals((byte) 0x89, originalEntryBytes[0]);
+		assertEquals((byte) 0x50, originalEntryBytes[1]);
+		assertEquals((byte) 0x4E, originalEntryBytes[2]);
+		assertEquals((byte) 0x47, originalEntryBytes[3]);
+		assertEquals((byte) 0xFF, compressedEntryBytes[0]);
+		assertEquals((byte) 0xD8, compressedEntryBytes[1]);
+		assertEquals((byte) 0xFF, compressedEntryBytes[2]);
+	}
+
+	@Test
 	void downloadEmptyAlbumReturnsEmptyZip() throws IOException {
 		String token = registerUserToken("download-empty");
 		String albumId = createAlbum(token, "Empty download");
@@ -792,10 +946,25 @@ class AlbumResourceTest {
 		return names;
 	}
 
+	private byte[] readFirstZipEntryBytes(byte[] zipBytes) throws IOException {
+		try (ZipInputStream zip = new ZipInputStream(new ByteArrayInputStream(zipBytes))) {
+			ZipEntry entry = zip.getNextEntry();
+			assertNotNull(entry);
+			return zip.readAllBytes();
+		}
+	}
+
 	private String uploadNamedPhoto(String token, String filename, int size, int rgb) throws IOException {
 		String nonce = UUID.randomUUID().toString().substring(0, 6);
 		Path image = createJpegImage("download-" + nonce, size, size, rgb);
 		return authAs(token).multiPart("file", filename, Files.readAllBytes(image), "image/jpeg").when()
+				.post("/api/v1/photos").then().statusCode(201).extract().path("id");
+	}
+
+	private String uploadNamedPng(String token, String filename, int size, int rgb) throws IOException {
+		String nonce = UUID.randomUUID().toString().substring(0, 6);
+		Path image = createPngImage("download-png-" + nonce, size, size, rgb);
+		return authAs(token).multiPart("file", filename, Files.readAllBytes(image), "image/png").when()
 				.post("/api/v1/photos").then().statusCode(201).extract().path("id");
 	}
 

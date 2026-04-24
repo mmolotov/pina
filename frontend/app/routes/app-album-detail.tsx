@@ -1,5 +1,5 @@
 import type { Route } from "./+types/app-album-detail";
-import { startTransition, useEffect, useMemo, useState } from "react";
+import { startTransition, useCallback, useEffect, useMemo, useState } from "react";
 import {
   Form,
   Link,
@@ -21,15 +21,15 @@ import {
   addFavorite,
   addPhotoToAlbum,
   clearAlbumCover,
+  createAlbumArchiveDownloadUrl,
   createAlbumShareLink,
   deleteAlbum,
-  downloadAlbumArchive,
+  getAlbum,
   getPhotoBlob,
   listAllAlbumPhotos,
   listAlbumShareLinks,
-  listAllPhotos,
-  listAlbums,
   listFavorites,
+  listPhotos,
   removeFavorite,
   revokeAlbumShareLink,
   setAlbumCover,
@@ -62,6 +62,7 @@ interface AlbumDetailLoaderData {
   album: AlbumDto | null;
   photos: PhotoDto[];
   libraryPhotos: PhotoDto[];
+  libraryPhotosHasNext: boolean;
   favorite: FavoriteDto | null;
   albumId: string;
 }
@@ -92,20 +93,23 @@ interface RelativeCountForms {
   other: string;
 }
 
+const ALBUM_DETAIL_LIBRARY_PICKER_PAGE_SIZE = 100;
+
 async function loadAlbumDetailData(
   albumId: string,
 ): Promise<AlbumDetailLoaderData> {
-  const [albums, photos, libraryPhotos, favorites] = await Promise.all([
-    listAlbums(),
+  const [album, photos, libraryPhotosPage, favorites] = await Promise.all([
+    getAlbum(albumId).catch(() => null),
     listAllAlbumPhotos(albumId),
-    listAllPhotos(),
+    listPhotos(0, ALBUM_DETAIL_LIBRARY_PICKER_PAGE_SIZE),
     listFavorites("ALBUM"),
   ]);
 
   return {
-    album: albums.find((album) => album.id === albumId) ?? null,
+    album,
     photos,
-    libraryPhotos,
+    libraryPhotos: libraryPhotosPage.items,
+    libraryPhotosHasNext: libraryPhotosPage.hasNext,
     favorite: favorites.find((favorite) => favorite.targetId === albumId) ?? null,
     albumId,
   };
@@ -195,13 +199,14 @@ function formatUploadSummary(
   });
 }
 
-function triggerBlobDownload(blob: Blob, filename: string) {
-  const objectUrl = URL.createObjectURL(blob);
+function triggerUrlDownload(url: string) {
   const link = document.createElement("a");
-  link.href = objectUrl;
-  link.download = filename;
+  link.href = url;
+  link.rel = "noopener";
+  link.style.display = "none";
+  document.body.append(link);
   link.click();
-  URL.revokeObjectURL(objectUrl);
+  link.remove();
 }
 
 function AlbumPhotoTile(props: {
@@ -329,6 +334,9 @@ export default function AppAlbumDetailRoute({
   const [album, setAlbum] = useState(loaderData.album);
   const [photos, setPhotos] = useState(loaderData.photos);
   const [libraryPhotos, setLibraryPhotos] = useState(loaderData.libraryPhotos);
+  const [libraryPhotosHasNext, setLibraryPhotosHasNext] = useState(
+    loaderData.libraryPhotosHasNext,
+  );
   const [favorite, setFavorite] = useState(loaderData.favorite);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -389,7 +397,7 @@ export default function AppAlbumDetailRoute({
   const coverPhotoId = album?.coverPhotoId ?? photos[0]?.id ?? null;
   const [coverUrl, setCoverUrl] = useState<string | null>(null);
 
-  async function refreshAlbumDetail() {
+  const refreshAlbumDetail = useCallback(async () => {
     if (!loaderData.albumId) {
       return;
     }
@@ -400,6 +408,7 @@ export default function AppAlbumDetailRoute({
         setAlbum(nextData.album);
         setPhotos(nextData.photos);
         setLibraryPhotos(nextData.libraryPhotos);
+        setLibraryPhotosHasNext(nextData.libraryPhotosHasNext);
         setFavorite(nextData.favorite);
         setEditDraft({
           name: nextData.album?.name ?? "",
@@ -411,12 +420,13 @@ export default function AppAlbumDetailRoute({
         error instanceof Error ? error.message : t("app.albumDetail.loadFailed"),
       );
     }
-  }
+  }, [loaderData.albumId, t]);
 
   useEffect(() => {
     setAlbum(loaderData.album);
     setPhotos(loaderData.photos);
     setLibraryPhotos(loaderData.libraryPhotos);
+    setLibraryPhotosHasNext(loaderData.libraryPhotosHasNext);
     setFavorite(loaderData.favorite);
     setEditDraft({
       name: loaderData.album?.name ?? "",
@@ -475,7 +485,7 @@ export default function AppAlbumDetailRoute({
     }
 
     setErrorMessage(actionData.errorMessage);
-  }, [actionData, navigate]);
+  }, [actionData, navigate, refreshAlbumDetail]);
 
   async function handleFavoriteToggle() {
     if (!loaderData.albumId) {
@@ -625,11 +635,11 @@ export default function AppAlbumDetailRoute({
     setErrorMessage(null);
 
     try {
-      const { blob, filename } = await downloadAlbumArchive(
+      const { url } = await createAlbumArchiveDownloadUrl(
         loaderData.albumId,
         "ORIGINAL",
       );
-      triggerBlobDownload(blob, filename);
+      triggerUrlDownload(url);
       setUploadSuccessMessage(
         t("app.albumDetail.downloadStarted", { albumName: album.name }),
       );
@@ -1081,7 +1091,20 @@ export default function AppAlbumDetailRoute({
                   ))}
                 </select>
                 {availableLibraryPhotos.length === 0 ? (
-                  <EmptyHint>{t("app.albumDetail.noAvailablePhotos")}</EmptyHint>
+                  <EmptyHint>
+                    {libraryPhotosHasNext
+                      ? t("app.albumDetail.noAvailablePhotosWithinLimit", {
+                          count: String(ALBUM_DETAIL_LIBRARY_PICKER_PAGE_SIZE),
+                        })
+                      : t("app.albumDetail.noAvailablePhotos")}
+                  </EmptyHint>
+                ) : null}
+                {libraryPhotosHasNext ? (
+                  <p className="text-xs leading-5 text-[var(--color-text-muted)]">
+                    {t("app.albumDetail.libraryPickerLimitNotice", {
+                      count: String(ALBUM_DETAIL_LIBRARY_PICKER_PAGE_SIZE),
+                    })}
+                  </p>
                 ) : null}
                 <button
                   className="button-primary"

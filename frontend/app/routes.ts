@@ -5,6 +5,7 @@ export default [
   route("login", "routes/login.tsx"),
   route("register", "routes/register.tsx"),
   route("join/:code", "routes/join-invite.tsx"),
+  route("s/album/:token", "routes/public-album.tsx"),
   route("app", "routes/app-layout.tsx", [
     index("routes/app-index.tsx"),
     route("overview", "routes/app-home.tsx"),

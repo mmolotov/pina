@@ -1315,16 +1315,17 @@ Browser session notes:
 | `PUT` | `/api/v1/search/faces/{clusterId}` | Name / merge face cluster
 |===
 
-=== Sharing [Future]
+=== Album Sharing [Implemented]
 
 [cols="1,2,3"]
 |===
 | Method | Path | Description
 
-| `POST` | `/api/v1/shares` | Create shared link
-| `GET` | `/api/v1/shares` | List user's shared links
-| `DELETE` | `/api/v1/shares/{id}` | Revoke shared link
-| `GET` | `/api/v1/s/{code}` | Access shared content (public, no auth)
+| `POST` | `/api/v1/albums/{id}/share-links` | Create a token-based public album share link
+| `GET` | `/api/v1/albums/{id}/share-links` | List issued share links for one personal album
+| `DELETE` | `/api/v1/albums/{id}/share-links/{linkId}` | Revoke a previously issued album share link
+| `GET` | `/api/v1/public/albums/by-token/{token}` | Read shared album metadata and paginated photos without authentication
+| `GET` | `/api/v1/public/albums/by-token/{token}/photos/{photoId}/file?variant=` | Stream a shared album photo variant without authentication
 |===
 
 === Videos [Future]
