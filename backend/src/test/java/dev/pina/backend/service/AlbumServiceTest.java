@@ -16,6 +16,7 @@ import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
 import jakarta.persistence.EntityManager;
 import jakarta.transaction.Transactional;
+import jakarta.transaction.UserTransaction;
 import java.awt.Color;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
@@ -25,6 +26,11 @@ import java.sql.Timestamp;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import javax.imageio.ImageIO;
 import org.junit.jupiter.api.Test;
 
@@ -39,6 +45,12 @@ class AlbumServiceTest {
 
 	@Inject
 	EntityManager em;
+
+	@Inject
+	AlbumLockingTestHelper lockingTestHelper;
+
+	@Inject
+	UserTransaction tx;
 
 	@Test
 	void listPhotosRejectsNegativePage() {
@@ -183,6 +195,89 @@ class AlbumServiceTest {
 		var result = albumService.removeFetchedPhotoReference(album.id, photo.id, albumPhoto, user, true);
 
 		assertEquals(AlbumService.RemovePhotoResult.NOT_FOUND, result);
+	}
+
+	@Test
+	void setCoverPhotoWaitsForAlbumWriteLock() throws Exception {
+		var setup = createAlbumWithPhotoForLockTest("album-cover-lock", "Locked cover", "locked-cover.jpg",
+				Color.ORANGE);
+
+		CountDownLatch locked = new CountDownLatch(1);
+		CountDownLatch release = new CountDownLatch(1);
+		ExecutorService executor = Executors.newFixedThreadPool(2);
+		try {
+			var lockFuture = executor
+					.submit(() -> lockingTestHelper.holdAlbumWriteLock(setup.albumId(), locked, release));
+			assertTrue(locked.await(5, TimeUnit.SECONDS), "expected helper to acquire the album lock");
+
+			var resultFuture = CompletableFuture
+					.supplyAsync(() -> albumService.setCoverPhoto(setup.albumId(), setup.photoId()), executor);
+
+			Thread.sleep(200);
+			assertFalse(resultFuture.isDone(), "setCoverPhoto should wait for the existing album write lock");
+
+			release.countDown();
+			var result = resultFuture.get(5, TimeUnit.SECONDS);
+			assertTrue(result instanceof AlbumService.SetCoverResult.Set);
+			assertEquals(setup.photoId(), ((AlbumService.SetCoverResult.Set) result).album().coverPhoto.id);
+			lockFuture.get(5, TimeUnit.SECONDS);
+		} finally {
+			release.countDown();
+			executor.shutdownNow();
+		}
+	}
+
+	@Test
+	void clearCoverPhotoWaitsForAlbumWriteLock() throws Exception {
+		var setup = createAlbumWithPhotoForLockTest("album-clear-lock", "Locked clear", "locked-clear.jpg", Color.BLUE);
+		var setResult = albumService.setCoverPhoto(setup.albumId(), setup.photoId());
+		assertTrue(setResult instanceof AlbumService.SetCoverResult.Set);
+		assertEquals(setup.photoId(), ((AlbumService.SetCoverResult.Set) setResult).album().coverPhoto.id);
+
+		CountDownLatch locked = new CountDownLatch(1);
+		CountDownLatch release = new CountDownLatch(1);
+		ExecutorService executor = Executors.newFixedThreadPool(2);
+		try {
+			var lockFuture = executor
+					.submit(() -> lockingTestHelper.holdAlbumWriteLock(setup.albumId(), locked, release));
+			assertTrue(locked.await(5, TimeUnit.SECONDS), "expected helper to acquire the album lock");
+
+			var resultFuture = CompletableFuture.supplyAsync(() -> albumService.clearCoverPhoto(setup.albumId()),
+					executor);
+
+			Thread.sleep(200);
+			assertFalse(resultFuture.isDone(), "clearCoverPhoto should wait for the existing album write lock");
+
+			release.countDown();
+			var result = resultFuture.get(5, TimeUnit.SECONDS);
+			assertTrue(result.isPresent());
+			assertNull(result.orElseThrow().coverPhoto);
+			lockFuture.get(5, TimeUnit.SECONDS);
+		} finally {
+			release.countDown();
+			executor.shutdownNow();
+		}
+	}
+
+	private record AlbumCoverLockSetup(UUID albumId, UUID photoId) {
+	}
+
+	private AlbumCoverLockSetup createAlbumWithPhotoForLockTest(String username, String albumName, String filename,
+			Color color) throws Exception {
+		tx.begin();
+		try {
+			User user = TestUserHelper.createUser(username);
+			Album album = albumService.create(albumName, null, user);
+			Photo photo = uploadPhoto(filename, user, color);
+			assertEquals(AlbumService.AddPhotoResult.CREATED, albumService.addPhoto(album.id, photo.id, user));
+			tx.commit();
+			return new AlbumCoverLockSetup(album.id, photo.id);
+		} catch (Exception e) {
+			if (tx.getStatus() == jakarta.transaction.Status.STATUS_ACTIVE) {
+				tx.rollback();
+			}
+			throw e;
+		}
 	}
 
 	private Photo uploadPhoto(String filename, User user, Color color) throws IOException {

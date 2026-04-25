@@ -337,15 +337,24 @@ Photo geo search notes:
 
 ### Albums
 
-| Method   | Path                                                 | Description                                     |
-|----------|------------------------------------------------------|-------------------------------------------------|
-| `POST`   | `/api/v1/albums`                                     | Create album in current user's Personal Library |
-| `GET`    | `/api/v1/albums?page=&size=&needsTotal=`             | List current user's albums (paginated)          |
-| `PUT`    | `/api/v1/albums/{id}`                                | Rename/update description                       |
-| `DELETE` | `/api/v1/albums/{id}`                                | Delete album and its references                 |
-| `GET`    | `/api/v1/albums/{id}/photos?page=&size=&needsTotal=` | List referenced photos with paged response      |
-| `POST`   | `/api/v1/albums/{id}/photos/{photoId}`               | Add existing photo reference                    |
-| `DELETE` | `/api/v1/albums/{id}/photos/{photoId}`               | Remove photo reference                          |
+| Method   | Path                                                      | Description                                     |
+|----------|-----------------------------------------------------------|-------------------------------------------------|
+| `POST`   | `/api/v1/albums`                                          | Create album in current user's Personal Library |
+| `GET`    | `/api/v1/albums?page=&size=&needsTotal=&sort=&direction=` | List current user's albums (paginated + sortable) |
+| `GET`    | `/api/v1/albums/{id}`                                     | Get one album summary                           |
+| `PUT`    | `/api/v1/albums/{id}`                                     | Rename/update description                       |
+| `DELETE` | `/api/v1/albums/{id}`                                     | Delete album and its references                 |
+| `PUT`    | `/api/v1/albums/{id}/cover`                               | Set an explicit cover photo                     |
+| `DELETE` | `/api/v1/albums/{id}/cover`                               | Return to automatic cover selection             |
+| `GET`    | `/api/v1/albums/{id}/download?variant=`                   | Download the album as a ZIP archive             |
+| `POST`   | `/api/v1/albums/{id}/download-url?variant=`               | Mint a short-lived signed URL for ZIP download  |
+| `GET`    | `/api/v1/albums/{id}/download-by-token?token=`            | Redeem a short-lived signed ZIP download URL    |
+| `POST`   | `/api/v1/albums/{id}/share-links`                         | Create a token-based public share link          |
+| `GET`    | `/api/v1/albums/{id}/share-links`                         | List issued share links for the album           |
+| `DELETE` | `/api/v1/albums/{id}/share-links/{linkId}`                | Revoke a share link                             |
+| `GET`    | `/api/v1/albums/{id}/photos?page=&size=&needsTotal=`      | List referenced photos with paged response      |
+| `POST`   | `/api/v1/albums/{id}/photos/{photoId}`                    | Add existing photo reference                    |
+| `DELETE` | `/api/v1/albums/{id}/photos/{photoId}`                    | Remove photo reference                          |
 
 All paginated list endpoints return the same response envelope:
 
@@ -369,6 +378,22 @@ Notes:
 - `needsTotal=false` by default; in that mode `totalItems` and `totalPages` are omitted.
 - The server caps requested `size` to `100`.
 - `hasNext` is computed without a full count query; totals are populated only when`needsTotal=true`.
+- Album list sorting supports `name`, `itemCount`, `createdAt`, `updatedAt`, and `newestPhoto` with `direction=asc|desc`.
+- Album archive downloads accept `variant=ORIGINAL|COMPRESSED`; ZIP entry names are sanitized to safe flat filenames before generation.
+- Short-lived signed album download URLs are HMAC-protected with `pina.albums.download-token.signing-key`. Set a unique high-entropy value per installation via `PINA_ALBUM_DOWNLOAD_TOKEN_SIGNING_KEY` in production.
+
+### Public Album Shares
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/public/albums/by-token/{token}?page=&size=&needsTotal=` | Read anonymous public album metadata and photos |
+| `GET` | `/api/v1/public/albums/by-token/{token}/photos/{photoId}/file?variant=` | Stream an album photo variant through the public share token |
+
+Public-share notes:
+
+- Public album responses are token-gated and return `Cache-Control: no-store`.
+- Public album metadata is trimmed for anonymous consumers and excludes private/internal photo and album identifiers.
+- Public file variants accept `ORIGINAL`, `COMPRESSED`, and thumbnail variants already present on the photo.
 
 ### Spaces
 
@@ -560,7 +585,8 @@ Key properties from `src/main/resources/application.properties`:
 | `pina.photo.compression.format`         | `jpeg`                    | compressed output format                  |
 | `pina.photo.compression.quality`        | `82`                      | quality for compressed variant            |
 | `pina.photo.compression.max-resolution` | `2560`                    | max longest side                          |
-| `pina.photo.thumbnails.sm-size`         | `256`                     | square small thumbnail                    |
+| `pina.photo.thumbnails.xs-size`         | `256`                     | square extra-small thumbnail              |
+| `pina.photo.thumbnails.sm-size`         | `512`                     | square small thumbnail                    |
 | `pina.photo.thumbnails.md-width`        | `1280`                    | medium thumbnail width                    |
 | `pina.photo.thumbnails.lg-width`        | `1920`                    | large thumbnail width                     |
 

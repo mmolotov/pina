@@ -38,6 +38,7 @@ public class PhotoVariantGenerator {
 				storeOriginal(photo, tempFile, contentHash, prefix);
 			}
 			storeCompressed(photo, image, prefix);
+			storeThumbnail(photo, VariantType.THUMB_XS, imageProcessor.thumbnailXs(image), prefix);
 			storeThumbnail(photo, VariantType.THUMB_SM, imageProcessor.thumbnailSm(image), prefix);
 			storeThumbnail(photo, VariantType.THUMB_MD, imageProcessor.thumbnailMd(image), prefix);
 			storeThumbnail(photo, VariantType.THUMB_LG, imageProcessor.thumbnailLg(image), prefix);

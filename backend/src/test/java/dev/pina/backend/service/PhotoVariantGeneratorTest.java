@@ -30,16 +30,17 @@ class PhotoVariantGeneratorTest {
 
 	@Test
 	@Transactional
-	void generateAllCreatesAllFiveVariants() throws IOException {
+	void generateAllCreatesAllSixVariants() throws IOException {
 		User user = TestUserHelper.createUser("variant-gen");
 		Photo photo = photoService.upload(jpegStream(Color.CYAN, 200, 150), "gen-all.jpg", "image/jpeg", user);
 
-		// storeOriginal is true by default, so we expect 5 variants
-		assertEquals(5, photo.variants.size());
+		// storeOriginal is true by default, so we expect 6 variants
+		assertEquals(6, photo.variants.size());
 
 		Set<VariantType> types = photo.variants.stream().map(v -> v.variantType).collect(Collectors.toSet());
 		assertTrue(types.contains(VariantType.ORIGINAL));
 		assertTrue(types.contains(VariantType.COMPRESSED));
+		assertTrue(types.contains(VariantType.THUMB_XS));
 		assertTrue(types.contains(VariantType.THUMB_SM));
 		assertTrue(types.contains(VariantType.THUMB_MD));
 		assertTrue(types.contains(VariantType.THUMB_LG));
@@ -72,11 +73,17 @@ class PhotoVariantGeneratorTest {
 			assertNotNull(variant.format);
 		}
 
-		// THUMB_SM should be 256x256 (square crop)
+		// THUMB_XS should be 256x256 (square crop)
+		var thumbXs = photo.variants.stream().filter(v -> v.variantType == VariantType.THUMB_XS).findFirst()
+				.orElseThrow();
+		assertEquals(256, thumbXs.width);
+		assertEquals(256, thumbXs.height);
+
+		// THUMB_SM should be 512x512 (square crop)
 		var thumbSm = photo.variants.stream().filter(v -> v.variantType == VariantType.THUMB_SM).findFirst()
 				.orElseThrow();
-		assertEquals(256, thumbSm.width);
-		assertEquals(256, thumbSm.height);
+		assertEquals(512, thumbSm.width);
+		assertEquals(512, thumbSm.height);
 
 		// COMPRESSED should be downscaled (max resolution 2560)
 		var compressed = photo.variants.stream().filter(v -> v.variantType == VariantType.COMPRESSED).findFirst()

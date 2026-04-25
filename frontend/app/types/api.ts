@@ -91,6 +91,71 @@ export interface AlbumDto {
   spaceId: string | null;
   createdAt: string;
   updatedAt: string;
+  coverPhotoId: string | null;
+  coverVariants: PhotoVariantDto[];
+  photoCount: number;
+  mediaRangeStart: string | null;
+  mediaRangeEnd: string | null;
+  latestPhotoAddedAt: string | null;
+}
+
+export interface AlbumDownloadUrlDto {
+  url: string;
+  expiresAt: string;
+}
+
+export type AlbumSortField =
+  | "name"
+  | "itemCount"
+  | "createdAt"
+  | "updatedAt"
+  | "newestPhoto";
+
+export type AlbumSortDirection = "asc" | "desc";
+
+export interface PublicAlbumDto {
+  id: string;
+  name: string;
+  description: string | null;
+  createdAt: string;
+  updatedAt: string;
+  coverPhotoId: string | null;
+  coverVariants: PhotoVariantDto[];
+  photoCount: number;
+  mediaRangeStart: string | null;
+  mediaRangeEnd: string | null;
+  latestPhotoAddedAt: string | null;
+}
+
+export interface PublicPhotoDto {
+  id: string;
+  originalFilename: string;
+  mimeType: string;
+  width: number | null;
+  height: number | null;
+  sizeBytes: number;
+  takenAt: string | null;
+  createdAt: string;
+  variants: PhotoVariantDto[];
+}
+
+export interface PublicAlbumResponseDto {
+  album: PublicAlbumDto;
+  photos: PageResponse<PublicPhotoDto>;
+}
+
+export interface AlbumShareLinkDto {
+  id: string;
+  albumId: string;
+  createdById: string | null;
+  createdAt: string;
+  expiresAt: string | null;
+  revokedAt: string | null;
+}
+
+export interface AlbumShareLinkCreatedDto {
+  link: AlbumShareLinkDto;
+  token: string;
 }
 
 export interface SpaceDto {

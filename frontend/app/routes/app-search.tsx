@@ -524,7 +524,7 @@ export default function AppSearchRoute({ loaderData }: Route.ComponentProps) {
       {normalizedQuery.length === 0 ? (
         <EmptyState
           action={
-            <Link className="button-secondary" to="/app/library?view=timeline">
+            <Link className="button-secondary" to="/app/library?view=photos">
               {t("app.search.openTimelineInstead")}
             </Link>
           }

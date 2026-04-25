@@ -28,6 +28,9 @@ public interface PhotoConfig {
 	interface Thumbnails {
 
 		@WithDefault("256")
+		int xsSize();
+
+		@WithDefault("512")
 		int smSize();
 
 		@WithDefault("1280")

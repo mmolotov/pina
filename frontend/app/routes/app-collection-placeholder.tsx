@@ -14,7 +14,7 @@ const routeCopy = {
     title: "app.collection.recent.title",
     description: "app.collection.recent.description",
     actionLabel: "app.collection.recent.action",
-    actionTo: "/app/library?view=timeline",
+    actionTo: "/app/library?view=photos",
     secondaryActionLabel: "app.collection.recent.secondary",
     secondaryActionTo: "/app/library",
     status: "app.collection.recent.status",
@@ -27,7 +27,7 @@ const routeCopy = {
     actionLabel: "app.collection.videos.action",
     actionTo: "/app/library",
     secondaryActionLabel: "app.collection.videos.secondary",
-    secondaryActionTo: "/app/library?view=timeline",
+    secondaryActionTo: "/app/library?view=photos",
     status: "app.collection.videos.status",
     currentUse: "app.collection.videos.currentUse",
   },
@@ -118,7 +118,7 @@ export function CollectionPlaceholder(props: { kind: keyof typeof routeCopy }) {
             </Link>
             <Link
               className="button-secondary w-full"
-              to="/app/library?view=timeline"
+              to="/app/library?view=photos"
             >
               {t("app.collection.browseTimeline")}
             </Link>

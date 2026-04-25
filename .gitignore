@@ -80,3 +80,5 @@ logs/
 # agents
 .claude/
 .mcp.json
+
+design/
