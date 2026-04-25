@@ -13,16 +13,32 @@ import {
   useNavigate,
   useNavigation,
 } from "react-router";
+import {
+  ChevronLeft,
+  Download,
+  Edit3,
+  Plus,
+  Share2,
+  Star,
+  Trash2,
+} from "lucide-react";
 import { ProportionalTimelineRail } from "~/components/proportional-timeline-rail";
 import {
   EmptyHint,
   EmptyState,
   InlineMessage,
-  PageHeader,
   Panel,
   SurfaceCard,
 } from "~/components/ui";
 import { AlbumShareDialog } from "~/components/album-share-dialog";
+import {
+  ALBUM_HERO_STYLES,
+  ALBUM_PHOTO_PALETTE_COUNT,
+  albumPhotoSwatchClass,
+  getAlbumPaletteIndex,
+  useAlbumViewPrefs,
+  type AlbumHeroStyle,
+} from "~/lib/album-view-prefs";
 import {
   addFavorite,
   addPhotoToAlbum,
@@ -401,6 +417,11 @@ export default function AppAlbumDetailRoute({
     many: t("unit.photo.many"),
     other: t("unit.photo.other"),
   };
+  const {
+    prefs: albumViewPrefs,
+    setHeroStyle: setAlbumHeroStyle,
+    setPhotoColumns: setAlbumPhotoColumns,
+  } = useAlbumViewPrefs();
   const timelineGroups = useMemo(() => buildTimelineGroups(photos), [photos]);
   const timelineMarkers = useMemo(
     () => buildProportionalTimeline(timelineGroups, locale),
@@ -814,85 +835,105 @@ export default function AppAlbumDetailRoute({
     );
   }
 
+  const dateRangeLabel = formatDateRange(
+    album.mediaRangeStart,
+    album.mediaRangeEnd,
+    locale,
+  );
+  const createdLabel = formatDateTime(album.createdAt);
+  const paletteIdx = getAlbumPaletteIndex(album.id);
+  const heroStyle = albumViewPrefs.heroStyle;
+
+  const renderActionBar = (variant: "split" | "banner") => {
+    const cls = variant === "banner" ? "btn-glass" : "button-secondary btn-sm";
+    const dangerCls =
+      variant === "banner"
+        ? "btn-glass danger"
+        : "button-secondary btn-sm danger";
+    return (
+      <div className="flex flex-wrap gap-2">
+        <button
+          className="button-primary btn-sm"
+          onClick={() => setIsEditOpen((value) => !value)}
+          type="button"
+        >
+          <Edit3 size={14} /> {t("app.albumDetail.editAlbum")}
+        </button>
+        <button
+          className={cls}
+          onClick={() => setIsAddPhotosOpen((value) => !value)}
+          type="button"
+        >
+          <Plus size={14} /> {t("app.albumDetail.addPhotos")}
+        </button>
+        <button
+          className={cls}
+          onClick={() => {
+            void openShareDialog();
+          }}
+          type="button"
+        >
+          <Share2 size={14} /> {t("app.albumDetail.shareAlbum")}
+        </button>
+        <button
+          className={cls}
+          disabled={isDownloadingAlbum}
+          onClick={() => {
+            void handleDownloadAlbum();
+          }}
+          type="button"
+        >
+          <Download size={14} />{" "}
+          {isDownloadingAlbum
+            ? t("common.loading")
+            : t("app.albumDetail.downloadAlbum")}
+        </button>
+        <Form method="post">
+          <input name="intent" type="hidden" value="delete-album" />
+          <button
+            className={dangerCls}
+            disabled={pendingIntent === "delete-album"}
+            type="submit"
+          >
+            <Trash2 size={14} />{" "}
+            {pendingIntent === "delete-album"
+              ? t("common.deleting")
+              : t("common.delete")}
+          </button>
+        </Form>
+      </div>
+    );
+  };
+
   return (
-    <div className="space-y-8">
-      <PageHeader
-        actions={
-          <>
-            <Link className="button-secondary" to="/app/library?view=albums">
-              {t("app.albumDetail.backToAlbums")}
-            </Link>
+    <div className="flex flex-col gap-6 pb-10">
+      {/* Top bar: back + hero style switcher */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <Link
+          className="button-secondary btn-sm inline-flex items-center gap-1.5"
+          to="/app/library?view=albums"
+        >
+          <ChevronLeft size={16} /> {t("app.albumDetail.backToAlbums")}
+        </Link>
+        <div
+          aria-label={t("app.library.heroStyleLabel")}
+          className="scope-tabs"
+          role="tablist"
+        >
+          {ALBUM_HERO_STYLES.map((mode) => (
             <button
-              className="button-secondary"
-              onClick={() => {
-                setIsAddPhotosOpen((current) => !current);
-              }}
+              aria-selected={heroStyle === mode}
+              className={`scope-tab ${heroStyle === mode ? "scope-tab-active" : ""}`}
+              key={mode}
+              onClick={() => setAlbumHeroStyle(mode as AlbumHeroStyle)}
+              role="tab"
               type="button"
             >
-              {t("app.albumDetail.addPhotos")}
+              {t(`app.library.heroStyle.${mode}` as const)}
             </button>
-            <button
-              className="button-secondary"
-              onClick={() => {
-                setIsEditOpen((current) => !current);
-              }}
-              type="button"
-            >
-              {t("app.albumDetail.editAlbum")}
-            </button>
-            <button
-              className="button-secondary"
-              disabled={isDownloadingAlbum}
-              onClick={() => {
-                void handleDownloadAlbum();
-              }}
-              type="button"
-            >
-              {isDownloadingAlbum
-                ? t("common.loading")
-                : t("app.albumDetail.downloadAlbum")}
-            </button>
-            <button
-              className="button-secondary"
-              onClick={() => {
-                void openShareDialog();
-              }}
-              type="button"
-            >
-              {t("app.albumDetail.shareAlbum")}
-            </button>
-            <button
-              className="button-secondary"
-              disabled={isFavoriteBusy}
-              onClick={() => {
-                void handleFavoriteToggle();
-              }}
-              type="button"
-            >
-              {isFavoriteBusy
-                ? t("common.updating")
-                : favorite
-                  ? t("common.unfavorite")
-                  : t("common.favorite")}
-            </button>
-            <Form method="post">
-              <input name="intent" type="hidden" value="delete-album" />
-              <button
-                className="button-secondary"
-                disabled={pendingIntent === "delete-album"}
-                type="submit"
-              >
-                {pendingIntent === "delete-album"
-                  ? t("common.deleting")
-                  : t("common.delete")}
-              </button>
-            </Form>
-          </>
-        }
-        description={t("app.albumDetail.description")}
-        eyebrow={t("app.albumDetail.eyebrow")}
-        title={album.name}
-      />
+          ))}
+        </div>
+      </div>
 
       {errorMessage ? (
         <InlineMessage tone="danger">{errorMessage}</InlineMessage>
@@ -904,90 +945,222 @@ export default function AppAlbumDetailRoute({
         <InlineMessage tone="success">{uploadSuccessMessage}</InlineMessage>
       ) : null}
 
-      <section className="grid gap-4 xl:grid-cols-[0.85fr_1.15fr]">
-        <Panel className="overflow-hidden p-0">
-          <div className="grid gap-0 lg:grid-cols-[0.72fr_1fr]">
-            <div className="preview-frame min-h-[16rem] border-r-0 p-4 lg:min-h-full">
-              {coverUrl ? (
-                <img
-                  alt={t("app.albumDetail.coverAlt", { albumName: album.name })}
-                  className="h-full min-h-[14rem] w-full rounded-[1.4rem] object-cover"
-                  src={coverUrl}
-                />
-              ) : (
-                <div className="preview-placeholder flex h-full min-h-[14rem] items-center justify-center rounded-[1.4rem] px-6 text-center text-sm">
-                  {t("app.albumDetail.noCover")}
-                </div>
-              )}
+      {heroStyle === "split" ? (
+        <div className="panel overflow-hidden p-0">
+          <div className="grid lg:grid-cols-[0.44fr_0.56fr]">
+            <div
+              className="border-b border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-4 lg:border-r lg:border-b-0"
+              style={{ minHeight: "18rem" }}
+            >
+              <div
+                className={`relative h-full overflow-hidden rounded-[1.25rem] album-palette-${paletteIdx}`}
+                style={{ minHeight: "15rem" }}
+              >
+                {coverUrl ? (
+                  <img
+                    alt={t("app.albumDetail.coverAlt", {
+                      albumName: album.name,
+                    })}
+                    className="absolute inset-0 h-full w-full object-cover"
+                    src={coverUrl}
+                  />
+                ) : (
+                  <div
+                    aria-hidden
+                    className="absolute right-4 bottom-4 flex gap-1 opacity-50"
+                  >
+                    {Array.from({ length: 5 }, (_, index) => (
+                      <div
+                        className={albumPhotoSwatchClass(index)}
+                        key={index}
+                        style={{
+                          width: "24px",
+                          height: "24px",
+                          borderRadius: "5px",
+                        }}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
-            <div className="space-y-4 p-5">
+            <div className="flex flex-col gap-5 p-7">
               <div>
-                <p className="eyebrow">{t("app.albumDetail.summaryEyebrow")}</p>
-                <h2 className="mt-2 text-2xl font-semibold tracking-tight">
+                <p className="eyebrow">{t("app.albumDetail.eyebrow")}</p>
+                <h1
+                  className="mt-1.5 text-3xl font-bold tracking-tight"
+                  style={{ lineHeight: 1.15 }}
+                >
                   {album.name}
-                </h2>
-                <p className="mt-2 text-sm leading-6 text-[var(--color-text-muted)]">
-                  {album.description || t("app.albumDetail.noDescription")}
+                </h1>
+                <p className="mt-2.5 max-w-2xl text-[0.9375rem] leading-relaxed text-[var(--color-text-muted)]">
+                  {album.description ?? (
+                    <span className="nil">
+                      {t("app.albumDetail.noDescription")}
+                    </span>
+                  )}
                 </p>
               </div>
-
-              <dl className="grid gap-3 text-sm text-[var(--color-text-muted)] sm:grid-cols-2">
+              <dl className="grid grid-cols-2 gap-3.5">
                 <div>
                   <dt className="eyebrow">{t("app.albumDetail.itemCount")}</dt>
-                  <dd className="mt-1 text-base font-medium text-[var(--color-text)]">
+                  <dd className="mt-1 text-[0.9375rem] font-medium">
                     {formatRelativeCount(album.photoCount, photoForms)}
                   </dd>
                 </div>
                 <div>
                   <dt className="eyebrow">{t("app.albumDetail.dateRange")}</dt>
-                  <dd className="mt-1 text-base font-medium text-[var(--color-text)]">
-                    {formatDateRange(
-                      album.mediaRangeStart,
-                      album.mediaRangeEnd,
-                      locale,
-                    )}
+                  <dd className="mt-1 text-[0.9375rem] font-medium">
+                    {dateRangeLabel}
                   </dd>
                 </div>
                 <div>
                   <dt className="eyebrow">{t("app.albumDetail.created")}</dt>
-                  <dd className="mt-1 text-base font-medium text-[var(--color-text)]">
-                    {formatDateTime(album.createdAt)}
+                  <dd className="mt-1 text-[0.9375rem] font-medium">
+                    {createdLabel}
                   </dd>
                 </div>
                 <div>
-                  <dt className="eyebrow">{t("app.albumDetail.updated")}</dt>
-                  <dd className="mt-1 text-base font-medium text-[var(--color-text)]">
-                    {formatDateTime(album.updatedAt)}
+                  <dt className="eyebrow">
+                    {t("app.albumDetail.favoriteStat")}
+                  </dt>
+                  <dd className="mt-1 text-[0.9375rem] font-medium">
+                    <button
+                      className="inline-flex items-center gap-1.5 hover:text-[var(--color-accent-strong)]"
+                      disabled={isFavoriteBusy}
+                      onClick={() => {
+                        void handleFavoriteToggle();
+                      }}
+                      type="button"
+                    >
+                      <Star
+                        fill={favorite ? "currentColor" : "none"}
+                        size={14}
+                      />
+                      {isFavoriteBusy
+                        ? t("common.updating")
+                        : favorite
+                          ? t("app.albumDetail.favoriteSaved")
+                          : t("app.albumDetail.favoriteIdle")}
+                    </button>
                   </dd>
                 </div>
               </dl>
+              <div className="mt-auto">{renderActionBar("split")}</div>
             </div>
           </div>
-        </Panel>
-
-        <div className="grid gap-4 md:grid-cols-3">
-          <Panel className="p-4">
-            <p className="eyebrow">{t("app.albumDetail.photosStat")}</p>
-            <p className="mt-2 text-2xl font-semibold tracking-tight">
-              {album.photoCount}
-            </p>
-          </Panel>
-          <Panel className="p-4">
-            <p className="eyebrow">{t("app.albumDetail.daysStat")}</p>
-            <p className="mt-2 text-2xl font-semibold tracking-tight">
-              {timelineGroups.length}
-            </p>
-          </Panel>
-          <Panel className="p-4">
-            <p className="eyebrow">{t("app.albumDetail.favoriteStat")}</p>
-            <p className="mt-2 text-2xl font-semibold tracking-tight">
-              {favorite
-                ? t("app.albumDetail.favoriteSaved")
-                : t("app.albumDetail.favoriteIdle")}
-            </p>
-          </Panel>
         </div>
-      </section>
+      ) : (
+        <div
+          className={`relative shrink-0 overflow-hidden rounded-[1.5rem] album-palette-${paletteIdx}`}
+          style={{ height: "22rem" }}
+        >
+          {coverUrl ? (
+            <img
+              alt={t("app.albumDetail.coverAlt", { albumName: album.name })}
+              className="absolute inset-0 h-full w-full object-cover"
+              src={coverUrl}
+            />
+          ) : null}
+          <div aria-hidden className="hero-banner-overlay absolute inset-0" />
+          <div className="absolute top-4 left-4 z-10 flex flex-wrap gap-2">
+            {renderActionBar("banner")}
+            <button
+              aria-pressed={Boolean(favorite)}
+              className={`btn-glass ${favorite ? "hero-banner-favorite-active" : ""}`}
+              disabled={isFavoriteBusy}
+              onClick={() => {
+                void handleFavoriteToggle();
+              }}
+              type="button"
+            >
+              <Star fill={favorite ? "currentColor" : "none"} size={14} />
+              <span className="text-[0.8125rem] font-semibold">
+                {isFavoriteBusy
+                  ? t("common.updating")
+                  : favorite
+                    ? t("app.albumDetail.favoriteSaved")
+                    : t("app.albumDetail.favoriteIdle")}
+              </span>
+            </button>
+          </div>
+          {!coverUrl ? (
+            <div
+              aria-hidden
+              className="absolute right-6 top-5 flex gap-1 opacity-30"
+            >
+              {Array.from({ length: ALBUM_PHOTO_PALETTE_COUNT }, (_, index) => (
+                <div
+                  className={albumPhotoSwatchClass(index)}
+                  key={index}
+                  style={{
+                    width: "38px",
+                    height: "38px",
+                    borderRadius: "8px",
+                  }}
+                />
+              ))}
+            </div>
+          ) : null}
+          <div className="absolute right-0 bottom-0 left-0 px-7 py-7">
+            <p className="eyebrow hero-banner-eyebrow">
+              {t("app.albumDetail.eyebrow")}
+            </p>
+            <h1
+              className="hero-text-on-image mt-1.5 text-4xl font-extrabold tracking-tight"
+              style={{ lineHeight: 1.05 }}
+            >
+              {album.name}
+            </h1>
+            {album.description ? (
+              <p className="hero-text-muted-on-image mt-2 max-w-3xl text-base">
+                {album.description}
+              </p>
+            ) : null}
+            <div className="mt-3.5 flex flex-wrap items-center gap-6">
+              <div>
+                <span className="hero-banner-stat-label text-[0.625rem] font-bold uppercase tracking-wider">
+                  {t("app.albumDetail.itemCount")}
+                </span>
+                <p className="hero-text-on-image mt-0.5 text-base font-semibold">
+                  {formatRelativeCount(album.photoCount, photoForms)}
+                </p>
+              </div>
+              <div>
+                <span className="hero-banner-stat-label text-[0.625rem] font-bold uppercase tracking-wider">
+                  {t("app.albumDetail.dateRange")}
+                </span>
+                <p className="hero-text-on-image mt-0.5 text-base font-semibold">
+                  {dateRangeLabel}
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Photo columns control */}
+      <div className="flex flex-wrap items-center justify-end gap-3">
+        <label className="flex items-center gap-2 text-xs text-[var(--color-text-muted)]">
+          <span>{t("app.library.photoColumnsLabel")}</span>
+          <input
+            aria-label={t("app.library.photoColumnsLabel")}
+            className="accent-[var(--color-accent-strong)]"
+            max={4}
+            min={2}
+            onChange={(event) =>
+              setAlbumPhotoColumns(Number(event.target.value))
+            }
+            step={1}
+            style={{ width: "5rem" }}
+            type="range"
+            value={albumViewPrefs.photoColumns}
+          />
+          <span className="font-semibold text-[var(--color-text)]">
+            {albumViewPrefs.photoColumns}
+          </span>
+        </label>
+      </div>
 
       {isEditOpen ? (
         <Panel className="p-5">
@@ -1208,7 +1381,12 @@ export default function AppAlbumDetailRoute({
                   </span>
                 </div>
 
-                <div className="grid gap-4 sm:grid-cols-2 2xl:grid-cols-3">
+                <div
+                  className="grid gap-2.5"
+                  style={{
+                    gridTemplateColumns: `repeat(${albumViewPrefs.photoColumns}, minmax(0, 1fr))`,
+                  }}
+                >
                   {group.photos.map((photo) => (
                     <AlbumPhotoTile
                       albumId={loaderData.albumId}

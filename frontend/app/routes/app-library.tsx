@@ -18,7 +18,10 @@ import {
 } from "react-router";
 import { EmptyHint, EmptyState, InlineMessage, Panel } from "~/components/ui";
 import { AlbumShareDialog } from "~/components/album-share-dialog";
+import { AlbumTile } from "~/components/album-tile";
 import { ProportionalTimelineRail } from "~/components/proportional-timeline-rail";
+import { useAlbumViewPrefs, type AlbumTileStyle } from "~/lib/album-view-prefs";
+import { Grid2x2, LayoutGrid, Rows3, Search } from "lucide-react";
 import {
   ApiError,
   addFavorite,
@@ -39,11 +42,8 @@ import {
   updateAlbum,
   uploadPhoto,
 } from "~/lib/api";
-import { formatDateRange, formatRelativeCount } from "~/lib/format";
-import {
-  selectAlbumTilePreviewVariant,
-  selectLibraryTilePreviewVariant,
-} from "~/lib/photo-preview";
+import { formatRelativeCount } from "~/lib/format";
+import { selectLibraryTilePreviewVariant } from "~/lib/photo-preview";
 import {
   applyGeoViewportToSearchParams,
   buildGeoClusters,
@@ -276,232 +276,6 @@ function triggerUrlDownload(url: string) {
   document.body.append(link);
   link.click();
   link.remove();
-}
-
-function AlbumTile(props: {
-  album: AlbumDto;
-  locale: Locale;
-  photoForms: {
-    one: string;
-    few: string;
-    many: string;
-    other: string;
-  };
-  isFavorite: boolean;
-  isFavoriteBusy: boolean;
-  isShareBusy: boolean;
-  isDownloadBusy: boolean;
-  isDeleteBusy: boolean;
-  onFavoriteToggle: () => void;
-  onEdit: () => void;
-  onShare: () => void;
-  onDownload: () => void;
-  onDelete: () => void;
-}) {
-  const { t } = useI18n();
-  const [coverUrl, setCoverUrl] = useState<string | null>(null);
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const previewVariant = selectAlbumTilePreviewVariant(
-    props.album.coverVariants,
-  );
-
-  useEffect(() => {
-    if (!props.album.coverPhotoId) {
-      setCoverUrl(null);
-      return;
-    }
-
-    let cancelled = false;
-    let objectUrl: string | null = null;
-
-    getPhotoBlob(props.album.coverPhotoId, previewVariant)
-      .then((blob) => {
-        if (cancelled) {
-          return;
-        }
-
-        objectUrl = URL.createObjectURL(blob);
-        setCoverUrl(objectUrl);
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setCoverUrl(null);
-        }
-      });
-
-    return () => {
-      cancelled = true;
-      if (objectUrl) {
-        URL.revokeObjectURL(objectUrl);
-      }
-    };
-  }, [props.album.coverPhotoId, previewVariant]);
-
-  const hasPhotos = props.album.photoCount > 0;
-  const dateRangeLabel = hasPhotos
-    ? formatDateRange(
-        props.album.mediaRangeStart,
-        props.album.mediaRangeEnd,
-        props.locale,
-      )
-    : t("app.library.albumDateRangeEmpty");
-
-  return (
-    <article className="surface-card group relative overflow-visible rounded-[1.5rem]">
-      <div className="absolute top-3 right-3 z-10">
-        <button
-          aria-expanded={isMenuOpen}
-          aria-haspopup="menu"
-          aria-label={t("app.library.albumMenuButtonAria", {
-            albumName: props.album.name,
-          })}
-          className="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 bg-black/55 text-lg font-medium text-white shadow-lg backdrop-blur transition hover:bg-black/70"
-          onClick={() => {
-            setIsMenuOpen((current) => !current);
-          }}
-          type="button"
-        >
-          <span aria-hidden>⋯</span>
-        </button>
-
-        {isMenuOpen ? (
-          <div
-            aria-label={t("app.library.albumMenuAria", {
-              albumName: props.album.name,
-            })}
-            className="absolute top-12 right-0 flex w-56 flex-col rounded-[1.25rem] border border-[var(--color-border)] bg-[var(--color-panel-strong)] p-2 shadow-[0_18px_40px_rgba(0,0,0,0.18)]"
-            role="menu"
-          >
-            <button
-              className="rounded-xl px-3 py-2 text-left text-sm font-medium transition hover:bg-[var(--color-surface-strong)] disabled:cursor-not-allowed disabled:opacity-60"
-              disabled={props.isFavoriteBusy}
-              onClick={() => {
-                setIsMenuOpen(false);
-                props.onFavoriteToggle();
-              }}
-              type="button"
-            >
-              {props.isFavoriteBusy
-                ? t("common.updating")
-                : props.isFavorite
-                  ? t("common.unfavorite")
-                  : t("common.favorite")}
-            </button>
-            <button
-              className="rounded-xl px-3 py-2 text-left text-sm font-medium transition hover:bg-[var(--color-surface-strong)]"
-              onClick={() => {
-                setIsMenuOpen(false);
-                props.onEdit();
-              }}
-              type="button"
-            >
-              {t("app.library.editAlbumMenu")}
-            </button>
-            <button
-              className="rounded-xl px-3 py-2 text-left text-sm font-medium transition hover:bg-[var(--color-surface-strong)] disabled:cursor-not-allowed disabled:opacity-60"
-              disabled={props.isShareBusy}
-              onClick={() => {
-                setIsMenuOpen(false);
-                props.onShare();
-              }}
-              type="button"
-            >
-              {props.isShareBusy
-                ? t("common.updating")
-                : t("app.library.shareAlbumMenu")}
-            </button>
-            <button
-              className="rounded-xl px-3 py-2 text-left text-sm font-medium transition hover:bg-[var(--color-surface-strong)] disabled:cursor-not-allowed disabled:opacity-60"
-              disabled={props.isDownloadBusy}
-              onClick={() => {
-                setIsMenuOpen(false);
-                props.onDownload();
-              }}
-              type="button"
-            >
-              {props.isDownloadBusy
-                ? t("common.loading")
-                : t("app.library.downloadAlbumMenu")}
-            </button>
-            <button
-              className="rounded-xl px-3 py-2 text-left text-sm font-medium text-[var(--color-danger)] transition hover:bg-[var(--color-surface-strong)] disabled:cursor-not-allowed disabled:opacity-60"
-              disabled={props.isDeleteBusy}
-              onClick={() => {
-                setIsMenuOpen(false);
-                props.onDelete();
-              }}
-              type="button"
-            >
-              {props.isDeleteBusy ? t("common.deleting") : t("common.delete")}
-            </button>
-          </div>
-        ) : null}
-      </div>
-
-      <Link
-        aria-label={t("app.library.openAlbumAria", {
-          albumName: props.album.name,
-        })}
-        className="block"
-        to={buildAlbumDetailPath(props.album.id)}
-      >
-        <div className="album-tile-placeholder relative aspect-[4/3] overflow-hidden rounded-t-[1.5rem]">
-          {coverUrl ? (
-            <img
-              alt={t("app.library.albumCoverAlt", {
-                albumName: props.album.name,
-              })}
-              className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-[1.03]"
-              src={coverUrl}
-            />
-          ) : (
-            <div className="flex h-full flex-col justify-between p-5 text-[var(--color-text)]">
-              <span className="eyebrow">
-                {t("app.library.albumPlaceholderEyebrow")}
-              </span>
-              <div className="space-y-2">
-                <div className="h-2.5 w-18 rounded-full bg-black/10" />
-                <div className="h-2.5 w-26 rounded-full bg-black/10" />
-                <p className="max-w-[12rem] text-sm text-[var(--color-text-muted)]">
-                  {t("app.library.albumPlaceholderDescription")}
-                </p>
-              </div>
-            </div>
-          )}
-        </div>
-
-        <div className="space-y-3 px-4 py-4">
-          <div className="min-w-0">
-            <h3
-              className="truncate text-base font-semibold tracking-tight"
-              title={props.album.name}
-            >
-              {props.album.name}
-            </h3>
-            <p className="mt-1 line-clamp-2 min-h-[2.5rem] text-sm leading-5 text-[var(--color-text-muted)]">
-              {props.album.description ||
-                t("app.library.albumDescriptionFallback")}
-            </p>
-          </div>
-
-          <dl className="grid gap-3 text-sm sm:grid-cols-2">
-            <div>
-              <dt className="eyebrow">
-                {t("app.library.albumDateRangeLabel")}
-              </dt>
-              <dd className="mt-1 font-medium">{dateRangeLabel}</dd>
-            </div>
-            <div>
-              <dt className="eyebrow">{t("app.library.albumItemsLabel")}</dt>
-              <dd className="mt-1 font-medium">
-                {formatRelativeCount(props.album.photoCount, props.photoForms)}
-              </dd>
-            </div>
-          </dl>
-        </div>
-      </Link>
-    </article>
-  );
 }
 
 function AlbumEditDialog(props: {
@@ -1419,6 +1193,15 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
     () => resolveAlbumScope(searchParams.get("scope")),
     [searchParams],
   );
+  const {
+    prefs: albumViewPrefs,
+    setTileStyle: setAlbumTileStyle,
+    setColumns: setAlbumColumns,
+  } = useAlbumViewPrefs();
+  const totalAlbumPhotos = useMemo(
+    () => albums.reduce((sum, album) => sum + album.photoCount, 0),
+    [albums],
+  );
   const geoViewport = useMemo(
     () => parseGeoViewportFromSearchParams(searchParams),
     [searchParams],
@@ -2306,73 +2089,183 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
     setSearchParams(nextParams, { replace: true });
   }
 
+  const tileStyleOptions: ReadonlyArray<{
+    value: AlbumTileStyle;
+    icon: typeof LayoutGrid;
+    labelKey:
+      | "app.library.tileStyle.card"
+      | "app.library.tileStyle.compact"
+      | "app.library.tileStyle.list";
+  }> = [
+    {
+      value: "card",
+      icon: LayoutGrid,
+      labelKey: "app.library.tileStyle.card",
+    },
+    {
+      value: "compact",
+      icon: Grid2x2,
+      labelKey: "app.library.tileStyle.compact",
+    },
+    { value: "list", icon: Rows3, labelKey: "app.library.tileStyle.list" },
+  ];
+
   return (
-    <div className="space-y-4">
-      <div className="sticky top-0 z-10 -mx-4 -mt-4 border-b border-[var(--color-border)] bg-[var(--color-bg)] px-4 py-3 sm:-mx-6 sm:-mt-6 sm:px-6">
-        <div className="flex flex-wrap items-center gap-3">
-          <h1 className="text-xl font-semibold tracking-tight text-[var(--color-text)]">
-            {t(`app.library.view.${libraryView}` as const)}
-          </h1>
-          {libraryView === "albums" ? (
-            <input
-              aria-label={t("app.library.searchAlbumsLabel")}
-              className="field w-48 py-1.5 text-sm lg:w-80"
-              onChange={(event) => updateLibraryFilter(event.target.value)}
-              placeholder={t("app.library.searchAlbumsPlaceholder")}
-              type="search"
-              value={libraryFilter}
-            />
-          ) : null}
-          {libraryView === "albums" ? (
+    <div className="space-y-6">
+      {libraryView === "albums" ? (
+        <>
+          {/* Page title + action */}
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <h1 className="text-3xl font-bold tracking-tight">
+                {t("app.library.view.albums")}
+              </h1>
+              <p className="mt-1.5 text-sm text-[var(--color-text-muted)]">
+                {formatRelativeCount(albums.length, {
+                  one: t("unit.album.one"),
+                  few: t("unit.album.few"),
+                  many: t("unit.album.many"),
+                  other: t("unit.album.other"),
+                })}
+                {" · "}
+                {formatRelativeCount(totalAlbumPhotos, photoForms)}
+              </p>
+            </div>
+            <button
+              className="button-primary"
+              onClick={openCreateAlbumDialog}
+              ref={createAlbumTriggerRef}
+              type="button"
+            >
+              <span aria-hidden>+</span>{" "}
+              {t("app.library.createModalOpenButton")}
+            </button>
+          </div>
+
+          {/* Toolbar */}
+          <div className="flex flex-wrap items-center gap-3">
             <div
               aria-label={t("app.library.albumScopeLabel")}
-              className="flex gap-1 text-sm"
-              role="group"
+              className="scope-tabs"
+              role="tablist"
             >
               {ALBUM_SCOPES.map((scope) => (
                 <button
-                  aria-pressed={albumScope === scope}
-                  className={`rounded-md px-3 py-1.5 font-medium transition-colors ${
-                    albumScope === scope
-                      ? "bg-[var(--nav-active-bg)] text-[var(--nav-active-text)]"
-                      : "text-[var(--color-text-muted)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text)]"
+                  aria-selected={albumScope === scope}
+                  className={`scope-tab ${
+                    albumScope === scope ? "scope-tab-active" : ""
                   }`}
                   key={scope}
                   onClick={() => updateAlbumScope(scope)}
+                  role="tab"
                   type="button"
                 >
                   {t(`app.library.albumScope.${scope}` as const)}
                 </button>
               ))}
             </div>
-          ) : null}
-          <div className="ml-auto flex items-center gap-2">
-            {libraryView === "albums" ? (
-              <select
-                aria-label={t("app.library.albumSortLabel")}
-                className="field py-1.5 text-sm"
-                onChange={(event) => updateAlbumSort(event.target.value)}
-                value={buildAlbumSortOptionValue(
-                  albumSortSelection.sort,
-                  albumSortSelection.direction,
-                )}
+            <select
+              aria-label={t("app.library.albumSortLabel")}
+              className="field"
+              onChange={(event) => updateAlbumSort(event.target.value)}
+              style={{
+                width: "auto",
+                padding: "0.3rem 0.625rem",
+                fontSize: "0.8125rem",
+              }}
+              value={buildAlbumSortOptionValue(
+                albumSortSelection.sort,
+                albumSortSelection.direction,
+              )}
+            >
+              {ALBUM_SORT_OPTIONS.map((option) => (
+                <option
+                  key={buildAlbumSortOptionValue(option.sort, option.direction)}
+                  value={buildAlbumSortOptionValue(
+                    option.sort,
+                    option.direction,
+                  )}
+                >
+                  {t(option.labelKey as Parameters<typeof t>[0])}
+                </option>
+              ))}
+            </select>
+            <div className="relative min-w-[10rem] max-w-[20rem] flex-1">
+              <span
+                className="pointer-events-none absolute top-1/2 -translate-y-1/2 text-[var(--color-text-muted)]"
+                style={{ left: "0.625rem" }}
               >
-                {ALBUM_SORT_OPTIONS.map((option) => (
-                  <option
-                    key={buildAlbumSortOptionValue(
-                      option.sort,
-                      option.direction,
-                    )}
-                    value={buildAlbumSortOptionValue(
-                      option.sort,
-                      option.direction,
-                    )}
+                <Search size={14} />
+              </span>
+              <input
+                aria-label={t("app.library.searchAlbumsLabel")}
+                className="field"
+                onChange={(event) => updateLibraryFilter(event.target.value)}
+                placeholder={t("app.library.searchAlbumsPlaceholder")}
+                style={{
+                  paddingLeft: "2rem",
+                  paddingTop: "0.3rem",
+                  paddingBottom: "0.3rem",
+                  fontSize: "0.8125rem",
+                }}
+                type="search"
+                value={libraryFilter}
+              />
+            </div>
+            <div
+              aria-label={t("app.library.tileStyleLabel")}
+              className="scope-tabs ml-auto"
+              role="tablist"
+            >
+              {tileStyleOptions.map((option) => {
+                const Icon = option.icon;
+                const isActive = albumViewPrefs.tileStyle === option.value;
+                return (
+                  <button
+                    aria-label={t(option.labelKey)}
+                    aria-selected={isActive}
+                    className={`scope-tab ${isActive ? "scope-tab-active" : ""}`}
+                    key={option.value}
+                    onClick={() => setAlbumTileStyle(option.value)}
+                    role="tab"
+                    style={{ padding: "0.3rem 0.5rem" }}
+                    type="button"
                   >
-                    {t(option.labelKey as Parameters<typeof t>[0])}
-                  </option>
-                ))}
-              </select>
-            ) : (
+                    <Icon size={14} />
+                  </button>
+                );
+              })}
+            </div>
+            {albumViewPrefs.tileStyle !== "list" ? (
+              <label className="ml-2 flex items-center gap-2 text-xs text-[var(--color-text-muted)]">
+                <span>{t("app.library.columnsLabel")}</span>
+                <input
+                  aria-label={t("app.library.columnsLabel")}
+                  className="accent-[var(--color-accent-strong)]"
+                  max={4}
+                  min={2}
+                  onChange={(event) =>
+                    setAlbumColumns(Number(event.target.value))
+                  }
+                  step={1}
+                  style={{ width: "5rem" }}
+                  type="range"
+                  value={albumViewPrefs.columns}
+                />
+                <span className="font-semibold text-[var(--color-text)]">
+                  {albumViewPrefs.columns}
+                </span>
+              </label>
+            ) : null}
+          </div>
+        </>
+      ) : (
+        <div className="sticky top-0 z-10 -mx-4 -mt-4 border-b border-[var(--color-border)] bg-[var(--color-bg)] px-4 py-3 sm:-mx-6 sm:-mt-6 sm:px-6">
+          <div className="flex flex-wrap items-center gap-3">
+            <h1 className="text-xl font-semibold tracking-tight text-[var(--color-text)]">
+              {t(`app.library.view.${libraryView}` as const)}
+            </h1>
+            <div className="ml-auto flex items-center gap-2">
               <input
                 aria-label={t("app.library.filterLabel")}
                 className="field w-48 py-1.5 text-sm lg:w-64"
@@ -2381,35 +2274,26 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
                 type="search"
                 value={libraryFilter}
               />
-            )}
-            {libraryView === "albums" ? (
-              <button
-                className="button-primary py-1.5 text-sm"
-                onClick={openCreateAlbumDialog}
-                ref={createAlbumTriggerRef}
-                type="button"
-              >
-                {t("app.library.createModalOpenButton")}
-              </button>
-            ) : libraryView !== "map" ? (
-              <label className="button-primary cursor-pointer py-1.5 text-sm">
-                <input
-                  accept="image/jpeg,image/png"
-                  aria-label={t("app.library.uploadPhotos")}
-                  className="hidden"
-                  disabled={uploadingPhoto}
-                  multiple
-                  onChange={handlePhotoUpload}
-                  type="file"
-                />
-                {uploadingPhoto
-                  ? t("app.library.uploadingPhotos")
-                  : t("app.library.uploadPhotos")}
-              </label>
-            ) : null}
+              {libraryView !== "map" ? (
+                <label className="button-primary cursor-pointer py-1.5 text-sm">
+                  <input
+                    accept="image/jpeg,image/png"
+                    aria-label={t("app.library.uploadPhotos")}
+                    className="hidden"
+                    disabled={uploadingPhoto}
+                    multiple
+                    onChange={handlePhotoUpload}
+                    type="file"
+                  />
+                  {uploadingPhoto
+                    ? t("app.library.uploadingPhotos")
+                    : t("app.library.uploadPhotos")}
+                </label>
+              ) : null}
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       {errorMessage ? (
         <Panel className="p-4">
@@ -2902,15 +2786,51 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
             ) : null}
 
             {albums.length === 0 ? (
-              <EmptyHint className="px-5 py-6 leading-7">
-                {t("app.library.noAlbums")}
-              </EmptyHint>
+              <div className="panel p-12 text-center">
+                <p className="text-lg font-semibold">
+                  {t("app.library.noAlbums")}
+                </p>
+                <button
+                  className="button-primary mt-5 inline-flex items-center gap-1.5"
+                  onClick={openCreateAlbumDialog}
+                  type="button"
+                >
+                  <span aria-hidden>+</span>{" "}
+                  {t("app.library.createModalOpenButton")}
+                </button>
+              </div>
             ) : filteredAlbums.length === 0 ? (
-              <EmptyHint className="px-5 py-6 leading-7">
-                {t("app.library.noAlbumsMatch")}
-              </EmptyHint>
+              <div className="panel p-12 text-center">
+                <p className="text-lg font-semibold">
+                  {t("app.library.noAlbumsMatch")}
+                </p>
+                <p className="mt-2 text-sm text-[var(--color-text-muted)]">
+                  {t("app.library.noAlbumsMatchHint")}
+                </p>
+                <button
+                  className="button-primary mt-5 inline-flex items-center gap-1.5"
+                  onClick={openCreateAlbumDialog}
+                  type="button"
+                >
+                  <span aria-hidden>+</span>{" "}
+                  {t("app.library.createModalOpenButton")}
+                </button>
+              </div>
             ) : (
-              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+              <div
+                className={
+                  albumViewPrefs.tileStyle === "list"
+                    ? "flex flex-col gap-2"
+                    : "grid gap-4"
+                }
+                style={
+                  albumViewPrefs.tileStyle === "list"
+                    ? undefined
+                    : {
+                        gridTemplateColumns: `repeat(${albumViewPrefs.columns}, minmax(0, 1fr))`,
+                      }
+                }
+              >
                 {filteredAlbums.map((album) => (
                   <AlbumTile
                     album={album}
@@ -2942,6 +2862,7 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
                       void handleAlbumDownload(album);
                     }}
                     photoForms={photoForms}
+                    style={albumViewPrefs.tileStyle}
                   />
                 ))}
               </div>

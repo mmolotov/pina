@@ -52,6 +52,18 @@ vi.mock("~/lib/api", () => ({
 describe("AppLibraryRoute", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Force the legacy "card" tile style so existing tile assertions still
+    // resolve. The redesigned default is "compact"; that variant is covered by
+    // dedicated specs.
+    window.localStorage.setItem(
+      "pina-album-view-prefs",
+      JSON.stringify({
+        tileStyle: "card",
+        columns: 4,
+        heroStyle: "banner",
+        photoColumns: 4,
+      }),
+    );
     vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
     clipboardWriteText.mockReset();
     clipboardWriteText.mockResolvedValue(undefined);
@@ -196,13 +208,16 @@ describe("AppLibraryRoute", () => {
     renderRoute("/app/library?view=albums");
 
     expect(
-      await screen.findByRole("button", {
-        name: /create album|создать альбом/i,
-      }),
+      (
+        await screen.findAllByRole("button", {
+          name: /create album|создать альбом/i,
+        })
+      )[0],
     ).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: /^all$|^все$/i }),
-    ).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("tab", { name: /^all$|^все$/i })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
     expect(
       screen.getByText(/no personal albums yet|пока нет личных альбомов/i),
     ).toBeInTheDocument();
@@ -246,9 +261,11 @@ describe("AppLibraryRoute", () => {
   it("opens the create album modal, closes on escape, and returns focus to the trigger", async () => {
     renderRoute("/app/library?view=albums");
 
-    const trigger = await screen.findByRole("button", {
-      name: /create album|создать альбом/i,
-    });
+    const trigger = (
+      await screen.findAllByRole("button", {
+        name: /create album|создать альбом/i,
+      })
+    )[0];
     fireEvent.click(trigger);
 
     expect(
@@ -273,9 +290,11 @@ describe("AppLibraryRoute", () => {
     renderRoute("/app/library?view=albums");
 
     fireEvent.click(
-      await screen.findByRole("button", {
-        name: /create album|создать альбом/i,
-      }),
+      (
+        await screen.findAllByRole("button", {
+          name: /create album|создать альбом/i,
+        })
+      )[0],
     );
     fireEvent.click(
       screen.getByRole("button", {
@@ -322,9 +341,11 @@ describe("AppLibraryRoute", () => {
     renderRoute("/app/library?view=albums");
 
     fireEvent.click(
-      await screen.findByRole("button", {
-        name: /create album|создать альбом/i,
-      }),
+      (
+        await screen.findAllByRole("button", {
+          name: /create album|создать альбом/i,
+        })
+      )[0],
     );
 
     const dialog = screen.getByRole("dialog");
@@ -395,9 +416,11 @@ describe("AppLibraryRoute", () => {
     renderRoute("/app/library?view=albums");
 
     fireEvent.click(
-      await screen.findByRole("button", {
-        name: /create album|создать альбом/i,
-      }),
+      (
+        await screen.findAllByRole("button", {
+          name: /create album|создать альбом/i,
+        })
+      )[0],
     );
 
     const dialog = screen.getByRole("dialog");
@@ -472,9 +495,11 @@ describe("AppLibraryRoute", () => {
     renderRoute("/app/library?view=albums");
 
     fireEvent.click(
-      await screen.findByRole("button", {
-        name: /create album|создать альбом/i,
-      }),
+      (
+        await screen.findAllByRole("button", {
+          name: /create album|создать альбом/i,
+        })
+      )[0],
     );
 
     const dialog = screen.getByRole("dialog");
@@ -533,7 +558,7 @@ describe("AppLibraryRoute", () => {
     expect(
       screen.getByText(/sea, wind, and long evenings/i),
     ).toBeInTheDocument();
-    expect(screen.getByText(/3 photos|3 фото/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/3 photos|3 фото/i).length).toBeGreaterThan(0);
 
     fireEvent.click(
       screen.getByRole("link", {
@@ -560,11 +585,11 @@ describe("AppLibraryRoute", () => {
 
     expect(
       within(menu)
-        .getAllByRole("button")
-        .map((button) => button.textContent?.trim()),
+        .getAllByRole("menuitem")
+        .map((item) => item.textContent?.trim()),
     ).toEqual(["Favorite", "Edit", "Share", "Download", "Delete"]);
 
-    fireEvent.click(within(menu).getByRole("button", { name: "Share" }));
+    fireEvent.click(within(menu).getByRole("menuitem", { name: "Share" }));
 
     await waitFor(() => {
       expect(apiMocks.listAlbumShareLinks).toHaveBeenCalledWith("album-1");
@@ -584,7 +609,7 @@ describe("AppLibraryRoute", () => {
         name: /open menu for summer trip|открыть меню для summer trip/i,
       }),
     );
-    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Edit" }));
 
     const editDialog = await screen.findByRole("heading", {
       name: /update album details/i,
@@ -624,7 +649,7 @@ describe("AppLibraryRoute", () => {
         name: /open menu for summer trip|открыть меню для summer trip/i,
       }),
     );
-    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Delete" }));
 
     const deleteDialog = await screen.findByRole("heading", {
       name: /delete "summer trip"\?/i,
@@ -1151,7 +1176,7 @@ describe("AppLibraryRoute", () => {
         /no photos yet\. add the first image from the album detail route/i,
       ),
     ).toBeInTheDocument();
-    expect(screen.getByText(/0 photos/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/0 photos/i).length).toBeGreaterThan(0);
     expect(
       screen.queryByLabelText(/photo for album weekend picks/i),
     ).not.toBeInTheDocument();

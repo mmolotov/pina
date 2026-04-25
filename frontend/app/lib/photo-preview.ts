@@ -97,6 +97,18 @@ export function selectAlbumTilePreviewVariant(
   );
 }
 
+export function selectAlbumListThumbPreviewVariant(
+  variants: PhotoVariantDto[],
+  devicePixelRatio = getDevicePixelRatio(),
+): PhotoPreviewVariant {
+  // List-view tile thumb is ~72×54 CSS px; with up to 2x DPR we need at most
+  // ~144 px. THUMB_XS (256) covers it with headroom.
+  return selectPhotoPreviewVariant(
+    variants,
+    72 * Math.max(1, Math.min(devicePixelRatio, 2)),
+  );
+}
+
 export function selectAlbumHeroPreviewVariant(
   variants: PhotoVariantDto[],
   viewportWidth = getViewportWidth(),
