@@ -64,6 +64,7 @@ describe("AppAlbumDetailRoute", () => {
       mediaRangeStart: "2026-04-01T09:00:00Z",
       mediaRangeEnd: "2026-04-02T20:15:00Z",
       latestPhotoAddedAt: "2026-04-05T18:30:00Z",
+      previewPhotos: [],
     });
     apiMocks.listAllAlbumPhotos.mockResolvedValue([
       {
@@ -164,6 +165,7 @@ describe("AppAlbumDetailRoute", () => {
       mediaRangeStart: "2026-04-01T09:00:00Z",
       mediaRangeEnd: "2026-04-02T20:15:00Z",
       latestPhotoAddedAt: "2026-04-05T18:30:00Z",
+      previewPhotos: [],
     });
     apiMocks.createAlbumShareLink.mockResolvedValue({
       link: {
@@ -198,6 +200,7 @@ describe("AppAlbumDetailRoute", () => {
       mediaRangeStart: "2026-04-01T09:00:00Z",
       mediaRangeEnd: "2026-04-02T20:15:00Z",
       latestPhotoAddedAt: "2026-04-05T18:30:00Z",
+      previewPhotos: [],
     });
     apiMocks.uploadPhoto.mockResolvedValue(undefined);
   });
@@ -270,6 +273,7 @@ describe("AppAlbumDetailRoute", () => {
       mediaRangeStart: null,
       mediaRangeEnd: null,
       latestPhotoAddedAt: null,
+      previewPhotos: [],
     });
 
     renderRoute();

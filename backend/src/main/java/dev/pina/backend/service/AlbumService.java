@@ -39,6 +39,7 @@ import java.util.zip.ZipOutputStream;
 public class AlbumService {
 
 	private static final int MAX_PAGE_SIZE = 100;
+	public static final int MAX_PREVIEW_PHOTOS = 4;
 	private static final String FAVORITE_TARGET_LOCK_NAMESPACE = "favorite-target-album";
 	private static final String SPACE_CONTENT_LOCK_NAMESPACE = "space-content";
 
@@ -270,16 +271,18 @@ public class AlbumService {
 		}
 
 		Map<UUID, UUID> coverPhotoByAlbum = new HashMap<>();
-		Set<UUID> coverPhotoIds = new HashSet<>();
+		Set<UUID> referencedPhotoIds = new HashSet<>();
 		List<UUID> autoResolveAlbumIds = new ArrayList<>();
+		List<UUID> nonEmptyAlbumIds = new ArrayList<>();
 		for (Album album : albums) {
 			Aggregate agg = aggregatesByAlbum.get(album.id);
 			if (agg == null || agg.photoCount() == 0) {
 				continue;
 			}
+			nonEmptyAlbumIds.add(album.id);
 			if (album.coverPhoto != null) {
 				coverPhotoByAlbum.put(album.id, album.coverPhoto.id);
-				coverPhotoIds.add(album.coverPhoto.id);
+				referencedPhotoIds.add(album.coverPhoto.id);
 			} else {
 				autoResolveAlbumIds.add(album.id);
 			}
@@ -296,17 +299,35 @@ public class AlbumService {
 				UUID albumId = (UUID) row[0];
 				UUID photoId = (UUID) row[1];
 				coverPhotoByAlbum.put(albumId, photoId);
-				coverPhotoIds.add(photoId);
+				referencedPhotoIds.add(photoId);
 			}
 		}
 
-		Map<UUID, Photo> coverPhotosById = new HashMap<>();
-		if (!coverPhotoIds.isEmpty()) {
+		Map<UUID, List<UUID>> previewPhotoIdsByAlbum = new HashMap<>(nonEmptyAlbumIds.size() * 2);
+		if (!nonEmptyAlbumIds.isEmpty()) {
+			@SuppressWarnings("unchecked")
+			List<Object[]> previewRows = em
+					.createNativeQuery("SELECT album_id, photo_id FROM (SELECT ap.album_id, ap.photo_id, "
+							+ "ROW_NUMBER() OVER (PARTITION BY ap.album_id "
+							+ "ORDER BY COALESCE(p.taken_at, p.created_at) DESC, ap.added_at DESC, ap.photo_id) AS rn "
+							+ "FROM album_photos ap JOIN photos p ON p.id = ap.photo_id "
+							+ "WHERE ap.album_id IN (:ids)) ranked WHERE rn <= :limit ORDER BY album_id, rn")
+					.setParameter("ids", nonEmptyAlbumIds).setParameter("limit", MAX_PREVIEW_PHOTOS).getResultList();
+			for (Object[] row : previewRows) {
+				UUID albumId = (UUID) row[0];
+				UUID photoId = (UUID) row[1];
+				previewPhotoIdsByAlbum.computeIfAbsent(albumId, k -> new ArrayList<>(MAX_PREVIEW_PHOTOS)).add(photoId);
+				referencedPhotoIds.add(photoId);
+			}
+		}
+
+		Map<UUID, Photo> photosById = new HashMap<>();
+		if (!referencedPhotoIds.isEmpty()) {
 			List<Photo> photos = em.createQuery(
 					"SELECT DISTINCT p FROM Photo p LEFT JOIN FETCH p.variants LEFT JOIN FETCH p.uploader LEFT JOIN FETCH p.personalLibrary WHERE p.id IN :ids",
-					Photo.class).setParameter("ids", coverPhotoIds).getResultList();
+					Photo.class).setParameter("ids", referencedPhotoIds).getResultList();
 			for (Photo photo : photos) {
-				coverPhotosById.put(photo.id, photo);
+				photosById.put(photo.id, photo);
 			}
 		}
 
@@ -318,9 +339,11 @@ public class AlbumService {
 				continue;
 			}
 			UUID coverId = coverPhotoByAlbum.get(album.id);
-			Photo cover = coverId == null ? null : coverPhotosById.get(coverId);
+			Photo cover = coverId == null ? null : photosById.get(coverId);
+			List<UUID> previewIds = previewPhotoIdsByAlbum.getOrDefault(album.id, List.of());
+			List<Photo> previews = previewIds.stream().map(photosById::get).filter(Objects::nonNull).toList();
 			summaries.add(new AlbumSummary(album, agg.photoCount(), agg.mediaRangeStart(), agg.mediaRangeEnd(),
-					agg.latestPhotoAddedAt(), cover));
+					agg.latestPhotoAddedAt(), cover, previews));
 		}
 		return summaries;
 	}

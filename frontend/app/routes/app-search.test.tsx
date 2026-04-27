@@ -148,6 +148,7 @@ describe("AppSearchRoute", () => {
               mediaRangeStart: "2026-04-02T10:05:00Z",
               mediaRangeEnd: "2026-04-02T10:05:00Z",
               latestPhotoAddedAt: "2026-04-02T10:05:00Z",
+              previewPhotos: [],
             },
             spaceId: "space-1",
             spaceName: "Family Space",

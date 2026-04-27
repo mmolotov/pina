@@ -25,6 +25,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.OffsetDateTime;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import java.util.zip.ZipEntry;
@@ -98,7 +99,44 @@ class AlbumResourceTest {
 				.body("items[0].id", equalTo(albumId)).body("items[0].coverPhotoId", equalTo(photoId))
 				.body("items[0].coverVariants", hasSize(greaterThan(0))).body("items[0].photoCount", equalTo(1))
 				.body("items[0].mediaRangeStart", notNullValue()).body("items[0].mediaRangeEnd", notNullValue())
-				.body("items[0].latestPhotoAddedAt", notNullValue());
+				.body("items[0].latestPhotoAddedAt", notNullValue()).body("items[0].previewPhotos", hasSize(1))
+				.body("items[0].previewPhotos[0].id", equalTo(photoId))
+				.body("items[0].previewPhotos[0].variants", hasSize(greaterThan(0)));
+	}
+
+	@Test
+	void listAlbumPreviewPhotosCappedAtFourAndOrderedNewestFirst() throws IOException {
+		String token = registerUserToken("preview-cap");
+
+		String albumId = authAs(token).contentType(ContentType.JSON).body("{\"name\": \"Preview cap\"}").when()
+				.post("/api/v1/albums").then().statusCode(201).extract().path("id");
+
+		List<String> photoIds = new java.util.ArrayList<>();
+		for (int i = 0; i < 6; i++) {
+			Path image = createJpegImage("preview-cap-" + i, 100, 100, 0x100000 + i * 0x111111);
+			String photoId = authAs(token).multiPart("file", image.toFile(), "image/jpeg").when().post("/api/v1/photos")
+					.then().statusCode(201).extract().path("id");
+			photoIds.add(photoId);
+			authAs(token).when().post("/api/v1/albums/{albumId}/photos/{photoId}", albumId, photoId).then()
+					.statusCode(201);
+		}
+
+		// Photos uploaded last become "most recent" via createdAt ordering.
+		List<String> expectedTopFour = List.of(photoIds.get(5), photoIds.get(4), photoIds.get(3), photoIds.get(2));
+
+		authAs(token).when().get("/api/v1/albums").then().statusCode(200).body("items", hasSize(1))
+				.body("items[0].previewPhotos", hasSize(4)).body("items[0].previewPhotos.id", equalTo(expectedTopFour));
+	}
+
+	@Test
+	void emptyAlbumExposesEmptyPreviewPhotos() {
+		String token = registerUserToken("preview-empty");
+
+		authAs(token).contentType(ContentType.JSON).body("{\"name\": \"Empty preview\"}").when().post("/api/v1/albums")
+				.then().statusCode(201);
+
+		authAs(token).when().get("/api/v1/albums").then().statusCode(200).body("items", hasSize(1))
+				.body("items[0].photoCount", equalTo(0)).body("items[0].previewPhotos", hasSize(0));
 	}
 
 	@Test

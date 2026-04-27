@@ -33,6 +33,7 @@ describe("AppAlbumPhotoDetailRoute", () => {
       mediaRangeStart: "2026-04-02T20:15:00Z",
       mediaRangeEnd: "2026-04-02T20:15:00Z",
       latestPhotoAddedAt: "2026-04-05T18:30:00Z",
+      previewPhotos: [],
     });
     apiMocks.listAllAlbumPhotos.mockResolvedValue([
       {

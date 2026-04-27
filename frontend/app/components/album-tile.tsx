@@ -8,7 +8,7 @@ import {
   Star,
   Trash2,
 } from "lucide-react";
-import { getPhotoBlob, listAlbumPhotos } from "~/lib/api";
+import { getPhotoBlob } from "~/lib/api";
 import { formatDateRange, formatRelativeCount } from "~/lib/format";
 import { useI18n, type Locale } from "~/lib/i18n";
 import {
@@ -90,17 +90,14 @@ function useAlbumCoverUrl(
   return coverUrl;
 }
 
-const COMPACT_PREVIEW_COUNT = 4;
 const COMPACT_PREVIEW_TARGET_WIDTH = 96;
 
-function useAlbumPreviewThumbs(
-  album: AlbumDto,
-  count = COMPACT_PREVIEW_COUNT,
-): string[] {
+function useAlbumPreviewThumbs(album: AlbumDto): string[] {
   const [thumbs, setThumbs] = useState<string[]>([]);
+  const previews = album.previewPhotos;
 
   useEffect(() => {
-    if (album.photoCount <= 0) {
+    if (!previews || previews.length === 0) {
       setThumbs([]);
       return;
     }
@@ -109,44 +106,37 @@ function useAlbumPreviewThumbs(
     const objectUrls: string[] = [];
 
     (async () => {
-      try {
-        const page = await listAlbumPhotos(album.id, 0, count);
-        if (cancelled) return;
+      const blobs = await Promise.all(
+        previews.map(async (photo) => {
+          const variant = selectPhotoPreviewVariant(
+            photo.variants,
+            COMPACT_PREVIEW_TARGET_WIDTH,
+          );
+          try {
+            return await getPhotoBlob(photo.id, variant);
+          } catch {
+            return null;
+          }
+        }),
+      );
 
-        const blobs = await Promise.all(
-          page.items.map(async (photo) => {
-            const variant = selectPhotoPreviewVariant(
-              photo.variants,
-              COMPACT_PREVIEW_TARGET_WIDTH,
-            );
-            try {
-              return await getPhotoBlob(photo.id, variant);
-            } catch {
-              return null;
-            }
-          }),
-        );
+      if (cancelled) return;
 
-        if (cancelled) return;
-
-        const resolved: string[] = [];
-        for (const blob of blobs) {
-          if (!blob) continue;
-          const url = URL.createObjectURL(blob);
-          objectUrls.push(url);
-          resolved.push(url);
-        }
-        setThumbs(resolved);
-      } catch {
-        if (!cancelled) setThumbs([]);
+      const resolved: string[] = [];
+      for (const blob of blobs) {
+        if (!blob) continue;
+        const url = URL.createObjectURL(blob);
+        objectUrls.push(url);
+        resolved.push(url);
       }
+      setThumbs(resolved);
     })();
 
     return () => {
       cancelled = true;
       for (const url of objectUrls) URL.revokeObjectURL(url);
     };
-  }, [album.id, album.photoCount, count]);
+  }, [previews]);
 
   return thumbs;
 }

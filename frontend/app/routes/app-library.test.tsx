@@ -334,6 +334,7 @@ describe("AppLibraryRoute", () => {
       mediaRangeStart: null,
       mediaRangeEnd: null,
       latestPhotoAddedAt: null,
+      previewPhotos: [],
     });
     apiMocks.uploadPhoto.mockReturnValue(uploadDeferred.promise);
     apiMocks.createAlbum.mockResolvedValue(createdAlbum);
@@ -456,6 +457,7 @@ describe("AppLibraryRoute", () => {
         mediaRangeStart: null,
         mediaRangeEnd: null,
         latestPhotoAddedAt: null,
+        previewPhotos: [],
       }),
     );
 
@@ -473,6 +475,7 @@ describe("AppLibraryRoute", () => {
       mediaRangeStart: null,
       mediaRangeEnd: null,
       latestPhotoAddedAt: null,
+      previewPhotos: [],
     });
     apiMocks.createAlbum.mockResolvedValue(createdAlbum);
     apiMocks.uploadPhoto.mockResolvedValue({
@@ -1165,6 +1168,7 @@ describe("AppLibraryRoute", () => {
         mediaRangeStart: null,
         mediaRangeEnd: null,
         latestPhotoAddedAt: null,
+        previewPhotos: [],
       }),
     ]);
 

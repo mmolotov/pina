@@ -259,6 +259,87 @@ class AlbumServiceTest {
 		}
 	}
 
+	@Test
+	@Transactional
+	void getSummaryReturnsEmptyPreviewsForEmptyAlbum() {
+		User user = TestUserHelper.createUser("album-svc");
+		Album album = albumService.create("Empty preview", null, user);
+
+		var summary = albumService.getSummary(album);
+
+		assertEquals(0L, summary.photoCount());
+		assertTrue(summary.previewPhotos().isEmpty());
+	}
+
+	@Test
+	@Transactional
+	void getSummaryCapsPreviewsAndOrdersByTakenAtDesc() throws IOException {
+		User user = TestUserHelper.createUser("album-svc");
+		Album album = albumService.create("Top previews", null, user);
+
+		Photo p1 = uploadPhoto("preview-1.jpg", user, Color.RED);
+		Photo p2 = uploadPhoto("preview-2.jpg", user, Color.GREEN);
+		Photo p3 = uploadPhoto("preview-3.jpg", user, Color.BLUE);
+		Photo p4 = uploadPhoto("preview-4.jpg", user, Color.YELLOW);
+		Photo p5 = uploadPhoto("preview-5.jpg", user, Color.CYAN);
+
+		albumService.addPhoto(album.id, p1.id, user);
+		albumService.addPhoto(album.id, p2.id, user);
+		albumService.addPhoto(album.id, p3.id, user);
+		albumService.addPhoto(album.id, p4.id, user);
+		albumService.addPhoto(album.id, p5.id, user);
+
+		// Pin takenAt so the order is independent of upload jitter.
+		setTakenAt(p1.id, "2025-01-01T00:00:00Z");
+		setTakenAt(p2.id, "2025-01-02T00:00:00Z");
+		setTakenAt(p3.id, "2025-01-03T00:00:00Z");
+		setTakenAt(p4.id, "2025-01-04T00:00:00Z");
+		setTakenAt(p5.id, "2025-01-05T00:00:00Z");
+		em.flush();
+		em.clear();
+
+		var summary = albumService.getSummary(em.find(Album.class, album.id));
+
+		List<UUID> previewIds = summary.previewPhotos().stream().map(p -> p.id).toList();
+		assertEquals(AlbumService.MAX_PREVIEW_PHOTOS, previewIds.size());
+		assertEquals(List.of(p5.id, p4.id, p3.id, p2.id), previewIds);
+	}
+
+	@Test
+	@Transactional
+	void buildSummariesPopulatesPreviewsPerAlbumIndependently() throws IOException {
+		User user = TestUserHelper.createUser("album-svc");
+		Album albumA = albumService.create("A", null, user);
+		Album albumB = albumService.create("B", null, user);
+
+		Photo a1 = uploadPhoto("multi-a-1.jpg", user, Color.RED);
+		Photo a2 = uploadPhoto("multi-a-2.jpg", user, Color.GREEN);
+		Photo b1 = uploadPhoto("multi-b-1.jpg", user, Color.BLUE);
+
+		albumService.addPhoto(albumA.id, a1.id, user);
+		albumService.addPhoto(albumA.id, a2.id, user);
+		albumService.addPhoto(albumB.id, b1.id, user);
+
+		setTakenAt(a1.id, "2025-02-01T00:00:00Z");
+		setTakenAt(a2.id, "2025-02-02T00:00:00Z");
+		setTakenAt(b1.id, "2025-03-01T00:00:00Z");
+		em.flush();
+		em.clear();
+
+		List<AlbumSummary> summaries = albumService
+				.buildSummaries(List.of(em.find(Album.class, albumA.id), em.find(Album.class, albumB.id)));
+
+		assertEquals(2, summaries.size());
+		assertEquals(List.of(a2.id, a1.id), summaries.get(0).previewPhotos().stream().map(p -> p.id).toList());
+		assertEquals(List.of(b1.id), summaries.get(1).previewPhotos().stream().map(p -> p.id).toList());
+	}
+
+	private void setTakenAt(UUID photoId, String iso) {
+		em.createNativeQuery("UPDATE photos SET taken_at = ?1 WHERE id = ?2")
+				.setParameter(1, Timestamp.from(OffsetDateTime.parse(iso).toInstant())).setParameter(2, photoId)
+				.executeUpdate();
+	}
+
 	private record AlbumCoverLockSetup(UUID albumId, UUID photoId) {
 	}
 

@@ -82,6 +82,12 @@ export interface PhotoNearbySearchParams {
   needsTotal?: boolean;
 }
 
+export interface AlbumPreviewPhotoDto {
+  id: string;
+  takenAt: string | null;
+  variants: PhotoVariantDto[];
+}
+
 export interface AlbumDto {
   id: string;
   name: string;
@@ -97,6 +103,7 @@ export interface AlbumDto {
   mediaRangeStart: string | null;
   mediaRangeEnd: string | null;
   latestPhotoAddedAt: string | null;
+  previewPhotos: AlbumPreviewPhotoDto[];
 }
 
 export interface AlbumDownloadUrlDto {
