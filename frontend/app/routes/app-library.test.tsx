@@ -1253,7 +1253,9 @@ describe("AppLibraryRoute", () => {
     ).toBe(false);
 
     for (const [index, deferred] of deferreds.entries()) {
-      deferred.resolve(makeUploadedPhoto(`active-${index}`, files[index]!.name));
+      deferred.resolve(
+        makeUploadedPhoto(`active-${index}`, files[index]!.name),
+      );
     }
 
     expect(

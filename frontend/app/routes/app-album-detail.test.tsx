@@ -567,7 +567,8 @@ describe("AppAlbumDetailRoute", () => {
   it("ignores a second album upload selection while the current batch is active", async () => {
     const files = Array.from(
       { length: 5 },
-      (_, i) => new File(["x"], `album-active-${i}.jpg`, { type: "image/jpeg" }),
+      (_, i) =>
+        new File(["x"], `album-active-${i}.jpg`, { type: "image/jpeg" }),
     );
     const deferreds = files.map(() =>
       createDeferred<ReturnType<typeof makeUploadedPhoto>>(),
