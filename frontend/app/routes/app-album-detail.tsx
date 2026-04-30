@@ -4,6 +4,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import {
@@ -70,6 +71,11 @@ import {
   selectLibraryTilePreviewVariant,
 } from "~/lib/photo-preview";
 import { getActiveLocale, translateMessage, useI18n } from "~/lib/i18n";
+import {
+  PHOTO_UPLOAD_CONCURRENCY,
+  createUploadBatchTracker,
+  runWithConcurrency,
+} from "~/lib/concurrency";
 import { resolveActionIntent, toActionErrorMessage } from "~/lib/route-actions";
 import {
   buildDaySectionId,
@@ -393,6 +399,7 @@ export default function AppAlbumDetailRoute({
     completed: number;
     currentFileName: string | null;
   } | null>(null);
+  const uploadBatchActiveRef = useRef(false);
   const [isCoverBusy, setIsCoverBusy] = useState<string | null>(null);
   const [isClearingCover, setIsClearingCover] = useState(false);
   const [isDownloadingAlbum, setIsDownloadingAlbum] = useState(false);
@@ -566,6 +573,10 @@ export default function AppAlbumDetailRoute({
   }
 
   async function handleUploadFiles(files: File[]) {
+    if (uploadBatchActiveRef.current) {
+      return;
+    }
+
     const supportedFiles = getSupportedUploadFiles(files);
     if (supportedFiles.length === 0) {
       setUploadError(t("app.albumDetail.uploadTypeError"));
@@ -573,46 +584,42 @@ export default function AppAlbumDetailRoute({
       return;
     }
 
+    uploadBatchActiveRef.current = true;
     setUploadError(null);
     setUploadSuccessMessage(null);
-    setUploadProgress({
-      total: supportedFiles.length,
-      completed: 0,
-      currentFileName: supportedFiles[0]?.name ?? null,
+
+    const tracker = createUploadBatchTracker(supportedFiles, (snapshot) => {
+      setUploadProgress(snapshot);
     });
 
-    let uploadedCount = 0;
     const failures: string[] = [];
 
     try {
-      for (const [index, file] of supportedFiles.entries()) {
-        setUploadProgress({
-          total: supportedFiles.length,
-          completed: uploadedCount,
-          currentFileName: file.name,
-        });
-
-        try {
+      const results = await runWithConcurrency(
+        supportedFiles,
+        PHOTO_UPLOAD_CONCURRENCY,
+        async (file) => {
           const photo = await uploadPhoto(file);
           await addPhotoToAlbum(loaderData.albumId, photo.id);
+          return photo;
+        },
+        tracker.hooks,
+      );
+
+      let uploadedCount = 0;
+      results.forEach((result, index) => {
+        const file = supportedFiles[index]!;
+        if (result.ok) {
           uploadedCount += 1;
-        } catch (error) {
+        } else {
+          const error = result.error;
           failures.push(
             error instanceof Error
               ? `${file.name}: ${error.message}`
               : t("app.albumDetail.uploadFileFailed", { fileName: file.name }),
           );
         }
-
-        setUploadProgress({
-          total: supportedFiles.length,
-          completed: uploadedCount,
-          currentFileName:
-            index < supportedFiles.length - 1
-              ? supportedFiles[index + 1]!.name
-              : null,
-        });
-      }
+      });
 
       if (uploadedCount > 0) {
         setUploadSuccessMessage(
@@ -624,6 +631,7 @@ export default function AppAlbumDetailRoute({
       }
       await refreshAlbumDetail();
     } finally {
+      uploadBatchActiveRef.current = false;
       setUploadProgress(null);
     }
   }
@@ -1266,6 +1274,7 @@ export default function AppAlbumDetailRoute({
                 <input
                   accept="image/jpeg,image/png"
                   className="field"
+                  disabled={uploadProgress != null}
                   multiple
                   onChange={(event) => {
                     const files = event.target.files

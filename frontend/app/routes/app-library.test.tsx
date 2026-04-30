@@ -190,6 +190,25 @@ describe("AppLibraryRoute", () => {
     return { promise, resolve, reject };
   }
 
+  function makeUploadedPhoto(id: string, fileName: string) {
+    return {
+      id,
+      uploaderId: "user-1",
+      originalFilename: fileName,
+      mimeType: "image/jpeg",
+      width: 100,
+      height: 100,
+      sizeBytes: 100,
+      personalLibraryId: "library-1",
+      exifData: null,
+      takenAt: null,
+      latitude: null,
+      longitude: null,
+      createdAt: "2026-04-02T10:00:00Z",
+      variants: [],
+    };
+  }
+
   it("adds a photo to favorites from the library grid", async () => {
     renderRoute();
 
@@ -1080,6 +1099,166 @@ describe("AppLibraryRoute", () => {
         screen.getByText(/nothing selected|ничего не выбрано/i),
       ).toBeInTheDocument();
     });
+  });
+
+  it("dispatches uploads in parallel up to the concurrency limit and reports partial failures", async () => {
+    const files = Array.from(
+      { length: 5 },
+      (_, i) => new File(["x"], `photo-${i}.jpg`, { type: "image/jpeg" }),
+    );
+    const deferreds = files.map(() =>
+      createDeferred<{
+        id: string;
+        uploaderId: string;
+        originalFilename: string;
+        mimeType: string;
+        width: number;
+        height: number;
+        sizeBytes: number;
+        personalLibraryId: string;
+        exifData: null;
+        takenAt: null;
+        latitude: null;
+        longitude: null;
+        createdAt: string;
+        variants: never[];
+      }>(),
+    );
+    apiMocks.uploadPhoto.mockImplementation((file: File) => {
+      const index = files.indexOf(file);
+      return deferreds[index]!.promise;
+    });
+
+    renderRoute();
+
+    expect(
+      await screen.findByRole("link", { name: "Open photo beach.jpg" }),
+    ).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText(/upload photos|загрузить фото/i), {
+      target: { files },
+    });
+
+    // The pool should have dispatched exactly the concurrency limit before
+    // any individual upload settles.
+    await waitFor(() => {
+      expect(apiMocks.uploadPhoto).toHaveBeenCalledTimes(3);
+    });
+    // No further uploads dispatch while the first three are still in flight.
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(apiMocks.uploadPhoto).toHaveBeenCalledTimes(3);
+
+    // Resolve the first upload — the next queued file should start.
+    deferreds[0]!.resolve({
+      id: "photo-0",
+      uploaderId: "user-1",
+      originalFilename: "photo-0.jpg",
+      mimeType: "image/jpeg",
+      width: 100,
+      height: 100,
+      sizeBytes: 100,
+      personalLibraryId: "library-1",
+      exifData: null,
+      takenAt: null,
+      latitude: null,
+      longitude: null,
+      createdAt: "2026-04-02T10:00:00Z",
+      variants: [],
+    });
+    await waitFor(() => {
+      expect(apiMocks.uploadPhoto).toHaveBeenCalledTimes(4);
+    });
+
+    // Fail one of the in-flight uploads; the batch must continue.
+    deferreds[1]!.reject(new Error("network down"));
+    await waitFor(() => {
+      expect(apiMocks.uploadPhoto).toHaveBeenCalledTimes(5);
+    });
+
+    // Resolve the rest.
+    for (let i = 2; i < deferreds.length; i += 1) {
+      deferreds[i]!.resolve({
+        id: `photo-${i}`,
+        uploaderId: "user-1",
+        originalFilename: `photo-${i}.jpg`,
+        mimeType: "image/jpeg",
+        width: 100,
+        height: 100,
+        sizeBytes: 100,
+        personalLibraryId: "library-1",
+        exifData: null,
+        takenAt: null,
+        latitude: null,
+        longitude: null,
+        createdAt: "2026-04-02T10:00:00Z",
+        variants: [],
+      });
+    }
+
+    expect(
+      await screen.findByText(/uploaded 4 of 5 photos|загружено 4 из 5 фото/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /photo-1\.jpg: (photo upload failed|ошибка загрузки фото|network down)/i,
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("ignores a library drop upload while another batch is active", async () => {
+    const files = Array.from(
+      { length: 5 },
+      (_, i) => new File(["x"], `active-${i}.jpg`, { type: "image/jpeg" }),
+    );
+    const deferreds = files.map(() =>
+      createDeferred<ReturnType<typeof makeUploadedPhoto>>(),
+    );
+    const ignoredFile = new File(["ignored"], "ignored.jpg", {
+      type: "image/jpeg",
+    });
+    apiMocks.uploadPhoto.mockImplementation((file: File) => {
+      const index = files.indexOf(file);
+      if (index === -1) {
+        throw new Error(`unexpected upload: ${file.name}`);
+      }
+      return deferreds[index]!.promise;
+    });
+
+    renderRoute();
+
+    expect(
+      await screen.findByRole("link", { name: "Open photo beach.jpg" }),
+    ).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText(/upload photos|загрузить фото/i), {
+      target: { files },
+    });
+
+    await waitFor(() => {
+      expect(apiMocks.uploadPhoto).toHaveBeenCalledTimes(3);
+    });
+
+    fireEvent.drop(screen.getByText("active-2.jpg"), {
+      dataTransfer: {
+        files: [ignoredFile],
+      },
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(apiMocks.uploadPhoto).toHaveBeenCalledTimes(3);
+    expect(
+      apiMocks.uploadPhoto.mock.calls.some(([file]) => file === ignoredFile),
+    ).toBe(false);
+
+    for (const [index, deferred] of deferreds.entries()) {
+      deferred.resolve(makeUploadedPhoto(`active-${index}`, files[index]!.name));
+    }
+
+    expect(
+      await screen.findByText(/uploaded 5 photos|загружено 5 фото/i),
+    ).toBeInTheDocument();
   });
 
   it("uploads multiple photos through the batch input", async () => {

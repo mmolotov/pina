@@ -59,64 +59,59 @@ class ImageProcessorTest {
 	}
 
 	@Test
-	void thumbnailXsIsSquareConstrained() throws IOException {
-		BufferedImage source = createTestBufferedImage(800, 600);
-		try (ProcessedImage thumb = imageProcessor.thumbnailXs(source)) {
-			assertNotNull(thumb);
-			assertEquals(256, thumb.width());
-			assertEquals(256, thumb.height());
-			assertTrue(thumb.sizeBytes() > 0);
-		}
-	}
-
-	@Test
-	void thumbnailSmIsSquareConstrained() throws IOException {
-		BufferedImage source = createTestBufferedImage(800, 600);
-		try (ProcessedImage thumb = imageProcessor.thumbnailSm(source)) {
-			assertNotNull(thumb);
-			assertEquals(512, thumb.width());
-			assertEquals(512, thumb.height());
-			assertTrue(thumb.sizeBytes() > 0);
-		}
-	}
-
-	@Test
-	void thumbnailMdRespectsMaxWidth() throws IOException {
+	void thumbnailPyramidProducesSquareXsAndSmAndConstrainedMdLgForLandscape() throws IOException {
 		BufferedImage source = createTestBufferedImage(3000, 2000);
-		try (ProcessedImage thumb = imageProcessor.thumbnailMd(source)) {
-			assertNotNull(thumb);
-			assertTrue(thumb.width() <= 1280);
-			assertTrue(thumb.sizeBytes() > 0);
+		ImageProcessor.ThumbnailPyramid pyramid = imageProcessor.thumbnailPyramid(source);
+		try (ProcessedImage xs = pyramid.xs();
+				ProcessedImage sm = pyramid.sm();
+				ProcessedImage md = pyramid.md();
+				ProcessedImage lg = pyramid.lg()) {
+			assertEquals(256, xs.width());
+			assertEquals(256, xs.height());
+			assertEquals(512, sm.width());
+			assertEquals(512, sm.height());
+			assertTrue(md.width() <= 1280);
+			assertTrue(lg.width() <= 1920);
+			assertTrue(xs.sizeBytes() > 0);
+			assertTrue(sm.sizeBytes() > 0);
+			assertTrue(md.sizeBytes() > 0);
+			assertTrue(lg.sizeBytes() > 0);
 		}
 	}
 
 	@Test
-	void thumbnailLgRespectsMaxWidth() throws IOException {
-		BufferedImage source = createTestBufferedImage(3000, 2000);
-		try (ProcessedImage thumb = imageProcessor.thumbnailLg(source)) {
-			assertNotNull(thumb);
-			assertTrue(thumb.width() <= 1920);
-			assertTrue(thumb.sizeBytes() > 0);
+	void thumbnailPyramidProducesConstrainedMdLgForPortrait() throws IOException {
+		BufferedImage source = createTestBufferedImage(2000, 3000);
+		ImageProcessor.ThumbnailPyramid pyramid = imageProcessor.thumbnailPyramid(source);
+		try (ProcessedImage xs = pyramid.xs();
+				ProcessedImage sm = pyramid.sm();
+				ProcessedImage md = pyramid.md();
+				ProcessedImage lg = pyramid.lg()) {
+			assertEquals(256, xs.width());
+			assertEquals(256, xs.height());
+			assertEquals(512, sm.width());
+			assertEquals(512, sm.height());
+			// Aspect-preserving thumbnails fit within the configured max dimension on
+			// both axes; for portrait sources the height is the constrained dimension.
+			assertTrue(md.height() <= 1280);
+			assertTrue(lg.height() <= 1920);
 		}
 	}
 
 	@Test
-	void thumbnailXsSmallImageStaysWithinBounds() throws IOException {
+	void thumbnailPyramidStaysWithinBoundsForSmallSource() throws IOException {
 		BufferedImage source = createTestBufferedImage(100, 80);
-		try (ProcessedImage thumb = imageProcessor.thumbnailXs(source)) {
-			assertEquals(256, thumb.width());
-			assertEquals(256, thumb.height());
-			assertTrue(thumb.sizeBytes() > 0);
-		}
-	}
-
-	@Test
-	void thumbnailSmSmallImageStaysWithinBounds() throws IOException {
-		BufferedImage source = createTestBufferedImage(100, 80);
-		try (ProcessedImage thumb = imageProcessor.thumbnailSm(source)) {
-			assertEquals(512, thumb.width());
-			assertEquals(512, thumb.height());
-			assertTrue(thumb.sizeBytes() > 0);
+		ImageProcessor.ThumbnailPyramid pyramid = imageProcessor.thumbnailPyramid(source);
+		try (ProcessedImage xs = pyramid.xs();
+				ProcessedImage sm = pyramid.sm();
+				ProcessedImage md = pyramid.md();
+				ProcessedImage lg = pyramid.lg()) {
+			assertEquals(256, xs.width());
+			assertEquals(256, xs.height());
+			assertEquals(512, sm.width());
+			assertEquals(512, sm.height());
+			assertTrue(md.width() <= 1280);
+			assertTrue(lg.width() <= 1920);
 		}
 	}
 

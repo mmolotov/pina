@@ -322,7 +322,7 @@ const enMessages = {
   "app.library.dropzoneTitle":
     "Drop JPEG or PNG files here to upload them in a batch.",
   "app.library.dropzoneDescription":
-    "The current frontend uploads files sequentially against the Phase 2 photo endpoint and refreshes the library once the queue finishes.",
+    "The app uploads several files at a time and refreshes the library once the batch finishes.",
   "app.library.uploadProgress": "Uploading {current} of {total}{fileSuffix}",
   "app.library.noPhotosTitle": "No photos uploaded",
   "app.library.noPhotosDescription":
@@ -1140,7 +1140,7 @@ const ruMessages: Partial<MessageCatalog> = {
   "app.library.dropzoneTitle":
     "Перетащите сюда JPEG или PNG, чтобы загрузить их пакетом.",
   "app.library.dropzoneDescription":
-    "Текущий фронтенд загружает файлы последовательно через photo endpoint из Phase 2 и обновляет библиотеку после завершения очереди.",
+    "Приложение загружает несколько файлов одновременно и обновляет библиотеку после завершения пакета.",
   "app.library.uploadProgress": "Загрузка {current} из {total}{fileSuffix}",
   "app.library.noPhotosTitle": "Пока нет загруженных фото",
   "app.library.noPhotosDescription":

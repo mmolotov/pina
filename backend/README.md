@@ -231,14 +231,20 @@ Main services:
 
 1. Stream multipart upload into a temp file.
 2. Compute SHA-256 content hash.
-3. Reuse existing asset on duplicate hash for the same uploader; allow separate `Photo` rows for
-   different uploaders even when the file content is identical.
-4. Decode image and extract EXIF.
-5. Persist `Photo` in the uploader's Personal Library, including typed `takenAt`, `latitude`, and
-   `longitude` when present.
-6. Generate original/compressed/thumbnail variants; stored file paths are keyed by `photo.id`, not
-   by the content hash.
-7. Store variant metadata in `photo_variants`.
+3. Run the same-uploader dedup lookup before image decode/EXIF. A duplicate returns the existing
+   `Photo`; different uploaders still get separate rows for identical bytes.
+4. Acquire the image-heavy admission slot. This backpressures decode + variant storage so concurrent
+   requests cannot retain unbounded full-resolution images in memory.
+5. Decode image and extract EXIF.
+6. Pre-generate `photo.id`, then store original/compressed/thumbnail variants outside any database
+   transaction. Stored file paths are keyed by `photo.id`, not by the content hash.
+7. Persist `Photo` and all `photo_variants` rows together in one short transaction, including typed
+   `takenAt`, `latitude`, and `longitude` when present.
+
+Dedup readers never observe a visible `Photo` row until its variants are ready. Concurrent uploads
+of the same file by the same uploader are still arbitrated by the `(uploader_id, content_hash)`
+unique index during the final persist; the losing request removes its already-stored files and
+returns the winning `Photo`.
 
 Supported input formats today:
 
@@ -589,6 +595,16 @@ Key properties from `src/main/resources/application.properties`:
 | `pina.photo.thumbnails.sm-size`         | `512`                     | square small thumbnail                    |
 | `pina.photo.thumbnails.md-width`        | `1280`                    | medium thumbnail width                    |
 | `pina.photo.thumbnails.lg-width`        | `1920`                    | large thumbnail width                     |
+| `pina.photo.variant-generation.parallelism` | `0`                   | shared variant worker pool (`0` = auto)  |
+| `pina.photo.heavy-phase.max-concurrent` | `0`                       | concurrent image-heavy uploads (`0` = auto) |
+
+Photo upload resource controls:
+
+- `pina.photo.variant-generation.parallelism=0` resolves to `max(1, availableProcessors() / 2)`.
+  This caps CPU-bound variant scaling work across all uploads through one shared executor.
+- `pina.photo.heavy-phase.max-concurrent=0` resolves to `availableProcessors()`. This caps how many
+  uploads may simultaneously hold a decoded source image while generating and storing variants; cheap
+  dedup hits do not consume a slot.
 
 ## Testing
 

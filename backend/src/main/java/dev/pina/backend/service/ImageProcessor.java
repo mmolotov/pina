@@ -12,6 +12,8 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Set;
 import javax.imageio.ImageIO;
 import net.coobird.thumbnailator.Thumbnails;
@@ -21,9 +23,13 @@ import net.coobird.thumbnailator.Thumbnails;
 public class ImageProcessor {
 
 	private static final Set<String> SUPPORTED_FORMATS = Set.of("jpeg", "jpg", "png");
+	private static final double THUMBNAIL_QUALITY = 0.8;
 
 	@Inject
 	PhotoConfig config;
+
+	public record ThumbnailPyramid(ProcessedImage lg, ProcessedImage md, ProcessedImage sm, ProcessedImage xs) {
+	}
 
 	void validate(@Observes StartupEvent event) {
 		String format = config.compression().format();
@@ -50,62 +56,79 @@ public class ImageProcessor {
 		int targetH = (int) (source.getHeight() * scale);
 
 		Path tempFile = createTempFile(format);
-		try (OutputStream out = Files.newOutputStream(tempFile)) {
-			Thumbnails.of(source).size(targetW, targetH).outputFormat(format)
-					.outputQuality((double) config.compression().quality() / 100).toOutputStream(out);
+		try {
+			try (OutputStream out = Files.newOutputStream(tempFile)) {
+				Thumbnails.of(source).size(targetW, targetH).outputFormat(format)
+						.outputQuality((double) config.compression().quality() / 100).toOutputStream(out);
+			}
+			return new ProcessedImage(tempFile, targetW, targetH, format, Files.size(tempFile));
+		} catch (IOException | RuntimeException e) {
+			deleteQuietly(tempFile, e);
+			throw e;
 		}
-		return new ProcessedImage(tempFile, targetW, targetH, format, Files.size(tempFile));
 	}
 
-	public ProcessedImage thumbnailXs(BufferedImage source) throws IOException {
-		int targetSize = config.thumbnails().xsSize();
-		BufferedImage square = centerCropSquare(source);
+	public ThumbnailPyramid thumbnailPyramid(BufferedImage source) throws IOException {
 		String format = outputFormat();
+		List<ProcessedImage> built = new ArrayList<>(4);
+		try {
+			BufferedImage lg = Thumbnails.of(source).size(config.thumbnails().lgWidth(), config.thumbnails().lgWidth())
+					.asBufferedImage();
+			ProcessedImage lgImage = writeBuffered(lg, format);
+			built.add(lgImage);
+
+			BufferedImage md = Thumbnails.of(lg).size(config.thumbnails().mdWidth(), config.thumbnails().mdWidth())
+					.asBufferedImage();
+			ProcessedImage mdImage = writeBuffered(md, format);
+			built.add(mdImage);
+
+			BufferedImage lgSquare = centerCropSquare(lg);
+			int smSize = config.thumbnails().smSize();
+			BufferedImage sm = Thumbnails.of(lgSquare).forceSize(smSize, smSize).asBufferedImage();
+			ProcessedImage smImage = writeBuffered(sm, format);
+			built.add(smImage);
+
+			int xsSize = config.thumbnails().xsSize();
+			BufferedImage xs = Thumbnails.of(sm).forceSize(xsSize, xsSize).asBufferedImage();
+			ProcessedImage xsImage = writeBuffered(xs, format);
+			built.add(xsImage);
+
+			return new ThumbnailPyramid(lgImage, mdImage, smImage, xsImage);
+		} catch (IOException | RuntimeException e) {
+			// Mid-pyramid failure: close every successfully-built ProcessedImage so
+			// its temp file is removed. The caller never received the pyramid record
+			// and therefore would have no way to close them itself.
+			for (ProcessedImage built_ : built) {
+				try {
+					built_.close();
+				} catch (RuntimeException closeEx) {
+					e.addSuppressed(closeEx);
+				}
+			}
+			throw e;
+		}
+	}
+
+	ProcessedImage writeBuffered(BufferedImage image, String format) throws IOException {
 		Path tempFile = createTempFile(format);
-		try (OutputStream out = Files.newOutputStream(tempFile)) {
-			Thumbnails.of(square).forceSize(targetSize, targetSize).outputFormat(format).outputQuality(0.8)
-					.toOutputStream(out);
+		try {
+			try (OutputStream out = Files.newOutputStream(tempFile)) {
+				Thumbnails.of(image).scale(1.0).outputFormat(format).outputQuality(THUMBNAIL_QUALITY)
+						.toOutputStream(out);
+			}
+			return new ProcessedImage(tempFile, image.getWidth(), image.getHeight(), format, Files.size(tempFile));
+		} catch (IOException | RuntimeException e) {
+			deleteQuietly(tempFile, e);
+			throw e;
 		}
-		return new ProcessedImage(tempFile, targetSize, targetSize, format, Files.size(tempFile));
 	}
 
-	public ProcessedImage thumbnailSm(BufferedImage source) throws IOException {
-		int targetSize = config.thumbnails().smSize();
-		BufferedImage square = centerCropSquare(source);
-		String format = outputFormat();
-		Path tempFile = createTempFile(format);
-		try (OutputStream out = Files.newOutputStream(tempFile)) {
-			Thumbnails.of(square).forceSize(targetSize, targetSize).outputFormat(format).outputQuality(0.8)
-					.toOutputStream(out);
+	private static void deleteQuietly(Path tempFile, Throwable cause) {
+		try {
+			Files.deleteIfExists(tempFile);
+		} catch (IOException deleteEx) {
+			cause.addSuppressed(deleteEx);
 		}
-		return new ProcessedImage(tempFile, targetSize, targetSize, format, Files.size(tempFile));
-	}
-
-	public ProcessedImage thumbnailMd(BufferedImage source) throws IOException {
-		int targetW = config.thumbnails().mdWidth();
-		double scale = computeScale(source.getWidth(), source.getHeight(), targetW);
-		int targetH = (int) (source.getHeight() * scale);
-		return thumbnail(source, targetW, targetH);
-	}
-
-	public ProcessedImage thumbnailLg(BufferedImage source) throws IOException {
-		int targetW = config.thumbnails().lgWidth();
-		double scale = computeScale(source.getWidth(), source.getHeight(), targetW);
-		int targetH = (int) (source.getHeight() * scale);
-		return thumbnail(source, targetW, targetH);
-	}
-
-	private ProcessedImage thumbnail(BufferedImage source, int maxW, int maxH) throws IOException {
-		String format = outputFormat();
-		Path tempFile = createTempFile(format);
-		try (OutputStream out = Files.newOutputStream(tempFile)) {
-			Thumbnails.of(source).size(maxW, maxH).outputFormat(format).outputQuality(0.8).toOutputStream(out);
-		}
-		var thumb = ImageIO.read(tempFile.toFile());
-		if (thumb == null) {
-			throw new IOException("Failed to read back generated thumbnail");
-		}
-		return new ProcessedImage(tempFile, thumb.getWidth(), thumb.getHeight(), format, Files.size(tempFile));
 	}
 
 	private String outputFormat() {

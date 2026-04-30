@@ -5,8 +5,6 @@ import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
@@ -25,8 +23,12 @@ import org.hibernate.type.SqlTypes;
 @Table(name = "photos")
 public class Photo extends PanacheEntityBase {
 
+	// id is assigned manually by PhotoService.upload before persist so that
+	// storage paths and the persisted row share the same UUID. Hibernate's
+	// `@GeneratedValue` would treat a pre-set id as a detached-entity marker
+	// and reject persist; with no generator annotation, a new in-memory Photo
+	// is treated as transient regardless of whether its id field is filled.
 	@Id
-	@GeneratedValue(strategy = GenerationType.UUID)
 	public UUID id;
 
 	@ManyToOne(fetch = FetchType.LAZY)

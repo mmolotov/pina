@@ -10,6 +10,7 @@ import dev.pina.backend.pagination.PageRequest;
 import dev.pina.backend.pagination.PageResult;
 import dev.pina.backend.storage.StoragePath;
 import dev.pina.backend.storage.StorageProvider;
+import io.quarkus.narayana.jta.QuarkusTransaction;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.persistence.EntityManager;
@@ -76,6 +77,9 @@ public class PhotoService {
 	PhotoVariantGenerator variantGenerator;
 
 	@Inject
+	PhotoUploadAdmission uploadAdmission;
+
+	@Inject
 	PersonalLibraryService personalLibraryService;
 
 	@Inject
@@ -100,44 +104,112 @@ public class PhotoService {
 		DELETED, NOT_FOUND, HAS_REFERENCES
 	}
 
-	@Transactional
 	public Photo upload(InputStream inputStream, String originalFilename, String mimeType, User uploader)
 			throws IOException {
+		// Ordering matters: hash → cheap dedup → admission slot → expensive
+		// decode/EXIF → storage → persist. The dedup lookup runs before
+		// analyzeImage so a duplicate upload exits without paying the decode +
+		// EXIF cost. The admission semaphore caps how many uploads may hold a
+		// full-resolution BufferedImage in memory simultaneously, so heap scales
+		// with the cap rather than with HTTP request count. The race between two
+		// concurrent non-duplicate uploads is still arbitrated at persist time by
+		// the (uploader_id, content_hash) unique index.
 		var ingested = ingestToTempFile(inputStream);
 		try {
-			Optional<Photo> existing = Photo.findByContentHashAndUploaderWithRelations(ingested.contentHash(),
-					uploader.id);
+			Optional<Photo> existing = QuarkusTransaction.requiringNew()
+					.call(() -> Photo.findByContentHashAndUploaderWithRelations(ingested.contentHash(), uploader.id));
 			if (existing.isPresent()) {
 				return existing.get();
 			}
 
-			var analyzed = analyzeImage(ingested.tempFile(), mimeType);
-			PersonalLibrary personalLibrary = personalLibraryService.getOrCreate(uploader);
-			Photo photo;
-			try {
-				photo = createPhotoEntity(ingested, analyzed, originalFilename, mimeType, uploader, personalLibrary);
-			} catch (PersistenceException _) {
-				// Concurrent upload by the same user with the same content_hash — unique
-				// constraint caught the race.
-				Photo.getEntityManager().clear();
-				Photo concurrent = Photo.findByContentHashAndUploaderWithRelations(ingested.contentHash(), uploader.id)
-						.orElseThrow(() -> new IllegalStateException("Duplicate hash conflict but photo not found"));
-				return concurrent;
+			try (PhotoUploadAdmission.Slot _ = uploadAdmission.acquire()) {
+				return runHeavyPhase(ingested, originalFilename, mimeType, uploader);
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+				throw new IOException("Upload interrupted while waiting for admission slot", e);
 			}
-			try {
-				variantGenerator.generateAll(photo, analyzed.image(), ingested.tempFile(), ingested.contentHash(),
-						storagePrefixFor());
-			} catch (Exception e) {
-				// Variant generation failed — remove the orphaned Photo entity to keep DB
-				// clean.
-				photo.delete();
-				em.flush();
-				throw e;
-			}
-			return photo;
 		} finally {
 			Files.deleteIfExists(ingested.tempFile());
 		}
+	}
+
+	private Photo runHeavyPhase(IngestedFile ingested, String originalFilename, String mimeType, User uploader)
+			throws IOException {
+		var analyzed = analyzeImage(ingested.tempFile(), mimeType);
+
+		// Pre-generate the photo id so storage paths are stable before the row is
+		// persisted. The persist transaction at the end of the pipeline assigns
+		// this same id to the inserted row.
+		UUID photoId = UUID.randomUUID();
+		Photo storageHandle = new Photo();
+		storageHandle.id = photoId;
+		storageHandle.mimeType = mimeType;
+		storageHandle.width = analyzed.image().getWidth();
+		storageHandle.height = analyzed.image().getHeight();
+
+		List<PhotoVariantGenerator.VariantSpec> specs = variantGenerator.storeAll(storageHandle, analyzed.image(),
+				ingested.tempFile(), ingested.contentHash(), storagePrefixFor());
+
+		try {
+			return QuarkusTransaction.requiringNew().call(() -> persistPhotoWithVariants(photoId, ingested, analyzed,
+					originalFilename, mimeType, uploader, specs));
+		} catch (PersistenceException persistFailure) {
+			// A same-uploader duplicate race is the common PersistenceException here,
+			// but not the only possible one. Clean up our stored files first, then
+			// return a winner only if a fresh read confirms that one exists.
+			variantGenerator.deleteStoredFiles(specs);
+			try {
+				Optional<Photo> winner = QuarkusTransaction.requiringNew().call(
+						() -> Photo.findByContentHashAndUploaderWithRelations(ingested.contentHash(), uploader.id));
+				if (winner.isPresent()) {
+					return winner.get();
+				}
+			} catch (RuntimeException lookupFailure) {
+				persistFailure.addSuppressed(lookupFailure);
+			}
+			throw persistFailure;
+		} catch (RuntimeException e) {
+			variantGenerator.deleteStoredFiles(specs);
+			throw e;
+		}
+	}
+
+	private Photo persistPhotoWithVariants(UUID photoId, IngestedFile ingested, AnalyzedImage analyzed,
+			String originalFilename, String mimeType, User uploader, List<PhotoVariantGenerator.VariantSpec> specs) {
+		PersonalLibrary personalLibrary = personalLibraryService.getOrCreate(uploader);
+		Photo photo = new Photo();
+		photo.id = photoId;
+		photo.uploader = uploader;
+		photo.personalLibrary = personalLibrary;
+		photo.contentHash = ingested.contentHash();
+		photo.originalFilename = originalFilename;
+		photo.mimeType = mimeType;
+		photo.width = analyzed.image().getWidth();
+		photo.height = analyzed.image().getHeight();
+		photo.sizeBytes = ingested.size();
+		photo.exifData = analyzed.exif().json();
+		photo.takenAt = analyzed.exif().takenAt();
+		photo.latitude = analyzed.exif().latitude();
+		photo.longitude = analyzed.exif().longitude();
+		// persistAndFlush forces the INSERT immediately so a unique-constraint race
+		// surfaces here (PersistenceException) rather than at commit time.
+		photo.persistAndFlush();
+
+		for (PhotoVariantGenerator.VariantSpec spec : specs) {
+			PhotoVariant variant = new PhotoVariant();
+			variant.photo = photo;
+			variant.variantType = spec.type();
+			variant.storagePath = spec.path().path();
+			variant.format = spec.format();
+			variant.quality = spec.quality();
+			variant.width = spec.width();
+			variant.height = spec.height();
+			variant.sizeBytes = spec.sizeBytes();
+			variant.persist();
+			photo.variants.add(variant);
+		}
+
+		return photo;
 	}
 
 	public Optional<Photo> findById(UUID id) {
@@ -306,25 +378,6 @@ public class PhotoService {
 		ExifExtractor.ExifResult exif = exifExtractor.extract(tempFile);
 
 		return new AnalyzedImage(image, exif);
-	}
-
-	private Photo createPhotoEntity(IngestedFile ingested, AnalyzedImage analyzed, String originalFilename,
-			String mimeType, User uploader, PersonalLibrary personalLibrary) {
-		Photo photo = new Photo();
-		photo.uploader = uploader;
-		photo.personalLibrary = personalLibrary;
-		photo.contentHash = ingested.contentHash();
-		photo.originalFilename = originalFilename;
-		photo.mimeType = mimeType;
-		photo.width = analyzed.image().getWidth();
-		photo.height = analyzed.image().getHeight();
-		photo.sizeBytes = ingested.size();
-		photo.exifData = analyzed.exif().json();
-		photo.takenAt = analyzed.exif().takenAt();
-		photo.latitude = analyzed.exif().latitude();
-		photo.longitude = analyzed.exif().longitude();
-		photo.persistAndFlush();
-		return photo;
 	}
 
 	private String storagePrefixFor() {

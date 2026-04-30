@@ -59,6 +59,11 @@ import {
   useI18n,
   type Locale,
 } from "~/lib/i18n";
+import {
+  PHOTO_UPLOAD_CONCURRENCY,
+  createUploadBatchTracker,
+  runWithConcurrency,
+} from "~/lib/concurrency";
 import { resolveActionIntent, toActionErrorMessage } from "~/lib/route-actions";
 import { useSession } from "~/lib/session";
 import {
@@ -188,6 +193,15 @@ function getSupportedUploadFiles(files: Iterable<File>) {
   return Array.from(files).filter(
     (file) => file.type === "image/jpeg" || file.type === "image/png",
   );
+}
+
+type TranslateFn = ReturnType<typeof useI18n>["t"];
+
+function formatUploadFailure(file: File, error: unknown, t: TranslateFn) {
+  if (error instanceof ApiError) {
+    return `${file.name}: ${error.message}`;
+  }
+  return t("app.library.uploadFileFailed", { fileName: file.name });
 }
 
 function formatUploadSummary(
@@ -622,10 +636,10 @@ function CreateAlbumDialog(props: {
                 }}
                 onDrop={(event) => {
                   event.preventDefault();
-                  if (props.isBusy) {
+                  props.onUploadTargetActiveChange(false);
+                  if (props.isBusy || isUploading) {
                     return;
                   }
-                  props.onUploadTargetActiveChange(false);
                   props.onUploadFiles(Array.from(event.dataTransfer.files));
                 }}
               >
@@ -1091,6 +1105,8 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
   const session = useSession();
   const currentUserId = session?.user.id ?? null;
   const createAlbumTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const uploadBatchActiveRef = useRef(false);
+  const createUploadBatchActiveRef = useRef(false);
   const photosRef = useRef(loaderData.photos);
   const createSelectedPhotoIdsRef = useRef<string[]>([]);
   const [photos, setPhotos] = useState<PhotoDto[]>(loaderData.photos);
@@ -1548,6 +1564,10 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
   }
 
   async function uploadSelectedFiles(files: File[]) {
+    if (uploadBatchActiveRef.current) {
+      return;
+    }
+
     const supportedFiles = getSupportedUploadFiles(files);
     if (supportedFiles.length === 0) {
       setUploadError(t("app.library.uploadTypeError"));
@@ -1555,48 +1575,34 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
       return;
     }
 
+    uploadBatchActiveRef.current = true;
     setUploadingPhoto(true);
     setUploadError(null);
     setUploadSuccessMessage(null);
-    setUploadProgress({
-      total: supportedFiles.length,
-      completed: 0,
-      currentFileName: supportedFiles[0]?.name ?? null,
+
+    const tracker = createUploadBatchTracker(supportedFiles, (snapshot) => {
+      setUploadProgress(snapshot);
     });
 
-    let uploadedCount = 0;
     const failedUploads: string[] = [];
 
     try {
-      for (const [index, file] of supportedFiles.entries()) {
-        setUploadProgress({
-          total: supportedFiles.length,
-          completed: uploadedCount,
-          currentFileName: file.name,
-        });
+      const results = await runWithConcurrency(
+        supportedFiles,
+        PHOTO_UPLOAD_CONCURRENCY,
+        async (file) => uploadPhoto(file),
+        tracker.hooks,
+      );
 
-        try {
-          await uploadPhoto(file);
+      let uploadedCount = 0;
+      results.forEach((result, index) => {
+        const file = supportedFiles[index]!;
+        if (result.ok) {
           uploadedCount += 1;
-        } catch (error) {
-          failedUploads.push(
-            error instanceof ApiError
-              ? `${file.name}: ${error.message}`
-              : t("app.library.uploadFileFailed", {
-                  fileName: file.name,
-                }),
-          );
+        } else {
+          failedUploads.push(formatUploadFailure(file, result.error, t));
         }
-
-        setUploadProgress({
-          total: supportedFiles.length,
-          completed: uploadedCount,
-          currentFileName:
-            index < supportedFiles.length - 1
-              ? supportedFiles[index + 1]!.name
-              : null,
-        });
-      }
+      });
 
       if (uploadedCount > 0) {
         await reloadLibrary();
@@ -1615,6 +1621,7 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
         setUploadError(t("app.library.uploadFailed"));
       }
     } finally {
+      uploadBatchActiveRef.current = false;
       setUploadingPhoto(false);
       setUploadProgress(null);
     }
@@ -1631,6 +1638,7 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
     setCreateUploadProgress(null);
     setCreateBatchProgress(null);
     setIsCreateUploadTargetActive(false);
+    createUploadBatchActiveRef.current = false;
     setCreateAlbumError(null);
     setCreateAlbumUploadError(null);
     setCreateAlbumFailures([]);
@@ -1644,7 +1652,11 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
   }
 
   function closeCreateAlbumDialog() {
-    if (isCreatingAlbum || createUploadProgress != null) {
+    if (
+      isCreatingAlbum ||
+      createUploadProgress != null ||
+      createUploadBatchActiveRef.current
+    ) {
       return;
     }
     setIsCreateAlbumOpen(false);
@@ -1675,55 +1687,43 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
   }
 
   async function handleCreateAlbumUploads(files: File[]) {
+    if (createUploadBatchActiveRef.current) {
+      return;
+    }
+
     const supportedFiles = getSupportedUploadFiles(files);
     if (supportedFiles.length === 0) {
       setCreateAlbumUploadError(t("app.library.uploadTypeError"));
       return;
     }
 
+    createUploadBatchActiveRef.current = true;
     setCreateAlbumUploadError(null);
     setCreateAlbumFailures([]);
-    setCreateUploadProgress({
-      total: supportedFiles.length,
-      completed: 0,
-      currentFileName: supportedFiles[0]?.name ?? null,
+
+    const tracker = createUploadBatchTracker(supportedFiles, (snapshot) => {
+      setCreateUploadProgress(snapshot);
     });
 
     const uploadFailures: string[] = [];
     const uploadedPhotos: PhotoDto[] = [];
-    let uploadedCount = 0;
 
     try {
-      for (const [index, file] of supportedFiles.entries()) {
-        setCreateUploadProgress({
-          total: supportedFiles.length,
-          completed: uploadedCount,
-          currentFileName: file.name,
-        });
+      const results = await runWithConcurrency(
+        supportedFiles,
+        PHOTO_UPLOAD_CONCURRENCY,
+        async (file) => uploadPhoto(file),
+        tracker.hooks,
+      );
 
-        try {
-          const photo = await uploadPhoto(file);
-          uploadedPhotos.push(photo);
-          uploadedCount += 1;
-        } catch (error) {
-          uploadFailures.push(
-            error instanceof ApiError
-              ? `${file.name}: ${error.message}`
-              : t("app.library.uploadFileFailed", {
-                  fileName: file.name,
-                }),
-          );
+      results.forEach((result, index) => {
+        const file = supportedFiles[index]!;
+        if (result.ok) {
+          uploadedPhotos.push(result.value);
+        } else {
+          uploadFailures.push(formatUploadFailure(file, result.error, t));
         }
-
-        setCreateUploadProgress({
-          total: supportedFiles.length,
-          completed: uploadedCount,
-          currentFileName:
-            index < supportedFiles.length - 1
-              ? supportedFiles[index + 1]!.name
-              : null,
-        });
-      }
+      });
 
       if (uploadedPhotos.length > 0) {
         const mergedSelectedPhotoIds = [
@@ -1746,12 +1746,13 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
         setCreateAlbumUploadError(uploadFailures.join(" "));
       }
     } finally {
+      createUploadBatchActiveRef.current = false;
       setCreateUploadProgress(null);
     }
   }
 
   async function handleCreateAlbumSubmit() {
-    if (createUploadProgress != null) {
+    if (createUploadProgress != null || createUploadBatchActiveRef.current) {
       setCreateAlbumError(t("app.library.createModalWaitForUploads"));
       return;
     }
@@ -2653,6 +2654,9 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
                   onDrop={(event) => {
                     event.preventDefault();
                     setIsUploadTargetActive(false);
+                    if (uploadBatchActiveRef.current) {
+                      return;
+                    }
                     void uploadSelectedFiles(
                       Array.from(event.dataTransfer.files),
                     );
