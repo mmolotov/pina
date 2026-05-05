@@ -16,6 +16,7 @@ import dev.pina.backend.api.error.ApiErrors;
 import dev.pina.backend.domain.SpaceRole;
 import dev.pina.backend.domain.VariantType;
 import dev.pina.backend.pagination.PageRequest;
+import dev.pina.backend.pagination.PageResult;
 import dev.pina.backend.service.AlbumService;
 import dev.pina.backend.service.InviteLinkService;
 import dev.pina.backend.service.MimeTypes;
@@ -210,7 +211,8 @@ public class SpaceResource {
 		var user = userResolver.currentUser();
 		return requireRole(id, user.id, SpaceRole.MEMBER).flatMap(role -> spaceService.findById(id)).map(space -> {
 			var album = albumService.createSpaceAlbum(request.name(), request.description(), space, user);
-			return Response.status(Response.Status.CREATED).entity(AlbumDto.from(album)).build();
+			return Response.status(Response.Status.CREATED).entity(AlbumDto.fromSummary(albumService.getSummary(album)))
+					.build();
 		}).orElse(ApiErrors.notFound("Space not found"));
 	}
 
@@ -218,11 +220,24 @@ public class SpaceResource {
 	@Path("/{id}/albums")
 	public Response listAlbums(@PathParam("id") UUID id, @QueryParam("page") @DefaultValue("0") @Min(0) int page,
 			@QueryParam("size") @DefaultValue("50") @Positive int size,
-			@QueryParam("needsTotal") @DefaultValue("false") boolean needsTotal) {
+			@QueryParam("needsTotal") @DefaultValue("false") boolean needsTotal, @QueryParam("sort") String sort,
+			@QueryParam("direction") String direction) {
+		AlbumService.SortField sortField;
+		AlbumService.SortDirection sortDirection;
+		try {
+			sortField = AlbumService.SortField.parse(sort);
+			sortDirection = AlbumService.SortDirection.parse(direction, sortField.defaultDirection());
+		} catch (IllegalArgumentException e) {
+			return ApiErrors.badRequest(e.getMessage());
+		}
 		var user = userResolver.currentUser();
 		return requireRole(id, user.id, SpaceRole.VIEWER).map(role -> {
-			var albums = albumService.listBySpace(id, new PageRequest(page, size, needsTotal));
-			return Response.ok(PageResponse.from(albums, AlbumDto::from)).build();
+			var albums = albumService.listBySpace(id, new PageRequest(page, size, needsTotal), sortField,
+					sortDirection);
+			var summaries = albumService.buildSummaries(albums.items());
+			var summaryPage = new PageResult<>(summaries, albums.page(), albums.size(), albums.hasNext(),
+					albums.totalItems(), albums.totalPages());
+			return Response.ok(PageResponse.from(summaryPage, AlbumDto::fromSummary)).build();
 		}).orElse(ApiErrors.notFound("Space not found"));
 	}
 
@@ -235,7 +250,7 @@ public class SpaceResource {
 				.map(role -> albumService.findById(albumId).filter(a -> a.space != null && a.space.id.equals(id))
 						.filter(a -> a.owner.id.equals(user.id) || role.isAtLeast(SpaceRole.ADMIN))
 						.flatMap(a -> albumService.update(albumId, request.name(), request.description()))
-						.map(updated -> Response.ok(AlbumDto.from(updated)).build())
+						.map(updated -> Response.ok(AlbumDto.fromSummary(albumService.getSummary(updated))).build())
 						.orElse(ApiErrors.notFound("Album not found")))
 				.orElse(ApiErrors.notFound("Space not found"));
 	}

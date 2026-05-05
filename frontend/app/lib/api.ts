@@ -5,6 +5,11 @@ import {
 } from "~/lib/session";
 import type {
   AlbumDto,
+  AlbumDownloadUrlDto,
+  AlbumShareLinkCreatedDto,
+  AlbumShareLinkDto,
+  AlbumSortDirection,
+  AlbumSortField,
   AdminInviteLinkDto,
   AdminHealthDto,
   AdminSettingsDto,
@@ -26,6 +31,8 @@ import type {
   PhotoGeoSearchParams,
   PhotoNearbySearchParams,
   PhotoDto,
+  PublicAlbumResponseDto,
+  PublicPhotoDto,
   RegistrationMode,
   SearchHitDto,
   SearchMediaParams,
@@ -80,7 +87,11 @@ export function isBackendUnavailableError(error: unknown) {
 let refreshPromise: Promise<AuthResponse | null> | null = null;
 
 async function parseJson<T>(response: Response) {
-  return (await response.json()) as T;
+  const text = await response.text();
+  if (!text) {
+    return undefined as T;
+  }
+  return JSON.parse(text) as T;
 }
 
 function isFiniteOrNull(value: unknown) {
@@ -595,16 +606,133 @@ export async function getSpaceAlbumPhotoBlob(
   );
 }
 
-function listAlbumsPage(page = 0, size = 100) {
-  return request<PageResponse<AlbumDto>>(
-    `/albums?page=${page}&size=${size}&needsTotal=true`,
-    { auth: true },
+function listAlbumsPage(
+  page = 0,
+  size = 100,
+  options: {
+    sort?: AlbumSortField;
+    direction?: AlbumSortDirection;
+  } = {},
+) {
+  const query = buildQuery({
+    page,
+    size,
+    needsTotal: true,
+    sort: options.sort,
+    direction: options.direction,
+  });
+
+  return request<PageResponse<AlbumDto>>(`/albums?${query}`, { auth: true });
+}
+
+export function listAlbums(
+  options: {
+    size?: number;
+    sort?: AlbumSortField;
+    direction?: AlbumSortDirection;
+  } = {},
+) {
+  const { size = 100, sort, direction } = options;
+  return listAllPages(
+    (page, pageSize) => listAlbumsPage(page, pageSize, { sort, direction }),
+    size,
   );
 }
 
-export function listAlbums(size = 100) {
-  return listAllPages(listAlbumsPage, size);
+export function getAlbum(albumId: string) {
+  return request<AlbumDto>(`/albums/${albumId}`, { auth: true });
 }
+
+export function createAlbumArchiveDownloadUrl(
+  albumId: string,
+  variant = "ORIGINAL",
+) {
+  return request<AlbumDownloadUrlDto>(
+    `/albums/${albumId}/download-url?variant=${variant}`,
+    {
+      auth: true,
+      method: "POST",
+    },
+  );
+}
+
+export function setAlbumCover(albumId: string, photoId: string) {
+  return request<AlbumDto>(`/albums/${albumId}/cover`, {
+    auth: true,
+    method: "PUT",
+    body: { photoId },
+  });
+}
+
+export function clearAlbumCover(albumId: string) {
+  return request<AlbumDto>(`/albums/${albumId}/cover`, {
+    auth: true,
+    method: "DELETE",
+  });
+}
+
+export function listAlbumShareLinks(albumId: string) {
+  return request<AlbumShareLinkDto[]>(`/albums/${albumId}/share-links`, {
+    auth: true,
+  });
+}
+
+export function createAlbumShareLink(
+  albumId: string,
+  expiresAt?: string | null,
+) {
+  return request<AlbumShareLinkCreatedDto>(`/albums/${albumId}/share-links`, {
+    auth: true,
+    method: "POST",
+    body: expiresAt ? { expiresAt } : {},
+  });
+}
+
+export function revokeAlbumShareLink(albumId: string, linkId: string) {
+  return request<void>(`/albums/${albumId}/share-links/${linkId}`, {
+    auth: true,
+    method: "DELETE",
+  });
+}
+
+export function fetchPublicAlbumByToken(
+  token: string,
+  params: { page?: number; size?: number; needsTotal?: boolean } = {},
+) {
+  const search = new URLSearchParams();
+  if (params.page != null) {
+    search.set("page", String(params.page));
+  }
+  if (params.size != null) {
+    search.set("size", String(params.size));
+  }
+  if (params.needsTotal) {
+    search.set("needsTotal", "true");
+  }
+  const query = search.toString();
+  const suffix = query ? `?${query}` : "";
+  return request<PublicAlbumResponseDto>(
+    `/public/albums/by-token/${encodeURIComponent(token)}${suffix}`,
+  );
+}
+
+export type PublicAlbumPhotoVariant =
+  | "ORIGINAL"
+  | "COMPRESSED"
+  | "THUMB_XS"
+  | "THUMB_SM"
+  | "THUMB_MD"
+  | "THUMB_LG";
+
+export function buildPublicAlbumPhotoFileUrl(
+  token: string,
+  photoId: string,
+  variant: PublicAlbumPhotoVariant = "COMPRESSED",
+) {
+  return `/api/v1/public/albums/by-token/${encodeURIComponent(token)}/photos/${encodeURIComponent(photoId)}/file?variant=${variant}`;
+}
+
+export type { PublicPhotoDto };
 
 export function listSpaces() {
   return request<SpaceDto[]>("/spaces", { auth: true });

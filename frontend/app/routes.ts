@@ -5,6 +5,7 @@ export default [
   route("login", "routes/login.tsx"),
   route("register", "routes/register.tsx"),
   route("join/:code", "routes/join-invite.tsx"),
+  route("s/album/:token", "routes/public-album.tsx"),
   route("app", "routes/app-layout.tsx", [
     index("routes/app-index.tsx"),
     route("overview", "routes/app-home.tsx"),
@@ -18,6 +19,11 @@ export default [
       route("settings", "routes/app-admin-settings.tsx"),
     ]),
     route("library", "routes/app-library.tsx"),
+    route("library/albums/:albumId", "routes/app-album-detail.tsx"),
+    route(
+      "library/albums/:albumId/photos/:photoId",
+      "routes/app-album-photo-detail.tsx",
+    ),
     route("library/photos/:photoId", "routes/app-photo-detail.tsx"),
     route("search", "routes/app-search.tsx"),
     route("favorites", "routes/app-favorites.tsx"),

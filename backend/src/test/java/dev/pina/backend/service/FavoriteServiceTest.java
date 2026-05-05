@@ -295,6 +295,7 @@ class FavoriteServiceTest {
 	private Photo createPhoto(User user) {
 		PersonalLibrary lib = PersonalLibrary.find("owner.id", user.id).firstResult();
 		Photo photo = new Photo();
+		photo.id = UUID.randomUUID();
 		photo.uploader = user;
 		photo.personalLibrary = lib;
 		photo.contentHash = UUID.randomUUID().toString().replace("-", "")

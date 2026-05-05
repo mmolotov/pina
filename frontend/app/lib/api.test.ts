@@ -38,6 +38,7 @@ vi.mock("~/lib/session", () => ({
 }));
 
 import {
+  createAlbumArchiveDownloadUrl,
   getPhotoBlob,
   listAlbums,
   listAllPhotos,
@@ -130,6 +131,40 @@ describe("api helpers", () => {
       refreshToken: "fresh-refresh-token",
       user: null,
     });
+  });
+
+  it("requests a signed album download URL without reading a blob", async () => {
+    const blobSpy = vi.fn();
+    const textSpy = vi.fn().mockResolvedValue(
+      JSON.stringify({
+        url: "/api/v1/albums/album-1/download-by-token?token=signed-token",
+        expiresAt: "2026-04-06T12:05:00Z",
+      }),
+    );
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Headers({ "Content-Type": "application/json" }),
+      text: textSpy,
+      blob: blobSpy,
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await createAlbumArchiveDownloadUrl("album-1", "ORIGINAL");
+
+    expect(result).toEqual({
+      url: "/api/v1/albums/album-1/download-by-token?token=signed-token",
+      expiresAt: "2026-04-06T12:05:00Z",
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/v1/albums/album-1/download-url?variant=ORIGINAL",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.any(Headers),
+      }),
+    );
+    expect(blobSpy).not.toHaveBeenCalled();
   });
 
   it("loads all personal photos across paginated responses", async () => {
@@ -284,7 +319,7 @@ describe("api helpers", () => {
 
     vi.stubGlobal("fetch", fetchMock);
 
-    const albums = await listAlbums(1);
+    const albums = await listAlbums({ size: 1 });
 
     expect(albums.map((album) => album.id)).toEqual(["album-1", "album-2"]);
     expect(fetchMock).toHaveBeenNthCalledWith(
@@ -295,6 +330,34 @@ describe("api helpers", () => {
     expect(fetchMock).toHaveBeenNthCalledWith(
       2,
       "/api/v1/albums?page=1&size=1&needsTotal=true",
+      expect.any(Object),
+    );
+  });
+
+  it("sends album sort and direction query params when requested", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          items: [{ id: "album-1" }],
+          page: 0,
+          size: 1,
+          hasNext: false,
+          totalItems: 1,
+          totalPages: 1,
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    await listAlbums({ size: 1, sort: "updatedAt", direction: "asc" });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/v1/albums?page=0&size=1&needsTotal=true&sort=updatedAt&direction=asc",
       expect.any(Object),
     );
   });

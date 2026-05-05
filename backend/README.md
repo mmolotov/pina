@@ -231,14 +231,20 @@ Main services:
 
 1. Stream multipart upload into a temp file.
 2. Compute SHA-256 content hash.
-3. Reuse existing asset on duplicate hash for the same uploader; allow separate `Photo` rows for
-   different uploaders even when the file content is identical.
-4. Decode image and extract EXIF.
-5. Persist `Photo` in the uploader's Personal Library, including typed `takenAt`, `latitude`, and
-   `longitude` when present.
-6. Generate original/compressed/thumbnail variants; stored file paths are keyed by `photo.id`, not
-   by the content hash.
-7. Store variant metadata in `photo_variants`.
+3. Run the same-uploader dedup lookup before image decode/EXIF. A duplicate returns the existing
+   `Photo`; different uploaders still get separate rows for identical bytes.
+4. Acquire the image-heavy admission slot. This backpressures decode + variant storage so concurrent
+   requests cannot retain unbounded full-resolution images in memory.
+5. Decode image and extract EXIF.
+6. Pre-generate `photo.id`, then store original/compressed/thumbnail variants outside any database
+   transaction. Stored file paths are keyed by `photo.id`, not by the content hash.
+7. Persist `Photo` and all `photo_variants` rows together in one short transaction, including typed
+   `takenAt`, `latitude`, and `longitude` when present.
+
+Dedup readers never observe a visible `Photo` row until its variants are ready. Concurrent uploads
+of the same file by the same uploader are still arbitrated by the `(uploader_id, content_hash)`
+unique index during the final persist; the losing request removes its already-stored files and
+returns the winning `Photo`.
 
 Supported input formats today:
 
@@ -337,15 +343,24 @@ Photo geo search notes:
 
 ### Albums
 
-| Method   | Path                                                 | Description                                     |
-|----------|------------------------------------------------------|-------------------------------------------------|
-| `POST`   | `/api/v1/albums`                                     | Create album in current user's Personal Library |
-| `GET`    | `/api/v1/albums?page=&size=&needsTotal=`             | List current user's albums (paginated)          |
-| `PUT`    | `/api/v1/albums/{id}`                                | Rename/update description                       |
-| `DELETE` | `/api/v1/albums/{id}`                                | Delete album and its references                 |
-| `GET`    | `/api/v1/albums/{id}/photos?page=&size=&needsTotal=` | List referenced photos with paged response      |
-| `POST`   | `/api/v1/albums/{id}/photos/{photoId}`               | Add existing photo reference                    |
-| `DELETE` | `/api/v1/albums/{id}/photos/{photoId}`               | Remove photo reference                          |
+| Method   | Path                                                      | Description                                     |
+|----------|-----------------------------------------------------------|-------------------------------------------------|
+| `POST`   | `/api/v1/albums`                                          | Create album in current user's Personal Library |
+| `GET`    | `/api/v1/albums?page=&size=&needsTotal=&sort=&direction=` | List current user's albums (paginated + sortable) |
+| `GET`    | `/api/v1/albums/{id}`                                     | Get one album summary                           |
+| `PUT`    | `/api/v1/albums/{id}`                                     | Rename/update description                       |
+| `DELETE` | `/api/v1/albums/{id}`                                     | Delete album and its references                 |
+| `PUT`    | `/api/v1/albums/{id}/cover`                               | Set an explicit cover photo                     |
+| `DELETE` | `/api/v1/albums/{id}/cover`                               | Return to automatic cover selection             |
+| `GET`    | `/api/v1/albums/{id}/download?variant=`                   | Download the album as a ZIP archive             |
+| `POST`   | `/api/v1/albums/{id}/download-url?variant=`               | Mint a short-lived signed URL for ZIP download  |
+| `GET`    | `/api/v1/albums/{id}/download-by-token?token=`            | Redeem a short-lived signed ZIP download URL    |
+| `POST`   | `/api/v1/albums/{id}/share-links`                         | Create a token-based public share link          |
+| `GET`    | `/api/v1/albums/{id}/share-links`                         | List issued share links for the album           |
+| `DELETE` | `/api/v1/albums/{id}/share-links/{linkId}`                | Revoke a share link                             |
+| `GET`    | `/api/v1/albums/{id}/photos?page=&size=&needsTotal=`      | List referenced photos with paged response      |
+| `POST`   | `/api/v1/albums/{id}/photos/{photoId}`                    | Add existing photo reference                    |
+| `DELETE` | `/api/v1/albums/{id}/photos/{photoId}`                    | Remove photo reference                          |
 
 All paginated list endpoints return the same response envelope:
 
@@ -369,6 +384,22 @@ Notes:
 - `needsTotal=false` by default; in that mode `totalItems` and `totalPages` are omitted.
 - The server caps requested `size` to `100`.
 - `hasNext` is computed without a full count query; totals are populated only when`needsTotal=true`.
+- Album list sorting supports `name`, `itemCount`, `createdAt`, `updatedAt`, and `newestPhoto` with `direction=asc|desc`.
+- Album archive downloads accept `variant=ORIGINAL|COMPRESSED`; ZIP entry names are sanitized to safe flat filenames before generation.
+- Short-lived signed album download URLs are HMAC-protected with `pina.albums.download-token.signing-key`. Set a unique high-entropy value per installation via `PINA_ALBUM_DOWNLOAD_TOKEN_SIGNING_KEY` in production.
+
+### Public Album Shares
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/public/albums/by-token/{token}?page=&size=&needsTotal=` | Read anonymous public album metadata and photos |
+| `GET` | `/api/v1/public/albums/by-token/{token}/photos/{photoId}/file?variant=` | Stream an album photo variant through the public share token |
+
+Public-share notes:
+
+- Public album responses are token-gated and return `Cache-Control: no-store`.
+- Public album metadata is trimmed for anonymous consumers and excludes private/internal photo and album identifiers.
+- Public file variants accept `ORIGINAL`, `COMPRESSED`, and thumbnail variants already present on the photo.
 
 ### Spaces
 
@@ -560,9 +591,20 @@ Key properties from `src/main/resources/application.properties`:
 | `pina.photo.compression.format`         | `jpeg`                    | compressed output format                  |
 | `pina.photo.compression.quality`        | `82`                      | quality for compressed variant            |
 | `pina.photo.compression.max-resolution` | `2560`                    | max longest side                          |
-| `pina.photo.thumbnails.sm-size`         | `256`                     | square small thumbnail                    |
+| `pina.photo.thumbnails.xs-size`         | `256`                     | square extra-small thumbnail              |
+| `pina.photo.thumbnails.sm-size`         | `512`                     | square small thumbnail                    |
 | `pina.photo.thumbnails.md-width`        | `1280`                    | medium thumbnail width                    |
 | `pina.photo.thumbnails.lg-width`        | `1920`                    | large thumbnail width                     |
+| `pina.photo.variant-generation.parallelism` | `0`                   | shared variant worker pool (`0` = auto)  |
+| `pina.photo.heavy-phase.max-concurrent` | `0`                       | concurrent image-heavy uploads (`0` = auto) |
+
+Photo upload resource controls:
+
+- `pina.photo.variant-generation.parallelism=0` resolves to `max(1, availableProcessors() / 2)`.
+  This caps CPU-bound variant scaling work across all uploads through one shared executor.
+- `pina.photo.heavy-phase.max-concurrent=0` resolves to `availableProcessors()`. This caps how many
+  uploads may simultaneously hold a decoded source image while generating and storing variants; cheap
+  dedup hits do not consume a slot.
 
 ## Testing
 

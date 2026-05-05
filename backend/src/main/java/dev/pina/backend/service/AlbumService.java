@@ -7,24 +7,39 @@ import dev.pina.backend.domain.PersonalLibrary;
 import dev.pina.backend.domain.Photo;
 import dev.pina.backend.domain.Space;
 import dev.pina.backend.domain.User;
+import dev.pina.backend.domain.VariantType;
 import dev.pina.backend.pagination.PageRequest;
 import dev.pina.backend.pagination.PageResult;
+import dev.pina.backend.storage.StoragePath;
+import dev.pina.backend.storage.StorageProvider;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
 import jakarta.persistence.PersistenceException;
 import jakarta.transaction.Transactional;
+import jakarta.ws.rs.core.StreamingOutput;
+import java.io.InputStream;
+import java.time.OffsetDateTime;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 
 @ApplicationScoped
 public class AlbumService {
 
 	private static final int MAX_PAGE_SIZE = 100;
+	public static final int MAX_PREVIEW_PHOTOS = 4;
 	private static final String FAVORITE_TARGET_LOCK_NAMESPACE = "favorite-target-album";
 	private static final String SPACE_CONTENT_LOCK_NAMESPACE = "space-content";
 
@@ -36,8 +51,59 @@ public class AlbumService {
 		REMOVED, NOT_FOUND, FORBIDDEN
 	}
 
+	public sealed interface SetCoverResult {
+		record Set(Album album) implements SetCoverResult {
+		}
+
+		record AlbumNotFound() implements SetCoverResult {
+		}
+
+		record PhotoNotInAlbum() implements SetCoverResult {
+		}
+	}
+
+	public enum SortField {
+		NAME, ITEM_COUNT, CREATED_AT, UPDATED_AT, NEWEST_PHOTO;
+
+		public static SortField parse(String raw) {
+			if (raw == null || raw.isBlank()) {
+				return CREATED_AT;
+			}
+			return switch (raw.strip().toLowerCase(Locale.ROOT)) {
+				case "name" -> NAME;
+				case "itemcount" -> ITEM_COUNT;
+				case "createdat" -> CREATED_AT;
+				case "updatedat" -> UPDATED_AT;
+				case "newestphoto" -> NEWEST_PHOTO;
+				default -> throw new IllegalArgumentException("Invalid sort: " + raw);
+			};
+		}
+
+		public SortDirection defaultDirection() {
+			return this == NAME ? SortDirection.ASC : SortDirection.DESC;
+		}
+	}
+
+	public enum SortDirection {
+		ASC, DESC;
+
+		public static SortDirection parse(String raw, SortDirection defaultDirection) {
+			if (raw == null || raw.isBlank()) {
+				return defaultDirection;
+			}
+			return switch (raw.strip().toLowerCase(Locale.ROOT)) {
+				case "asc" -> ASC;
+				case "desc" -> DESC;
+				default -> throw new IllegalArgumentException("Invalid direction: " + raw);
+			};
+		}
+	}
+
 	@Inject
 	EntityManager em;
+
+	@Inject
+	StorageProvider storage;
 
 	@Inject
 	PersonalLibraryService personalLibraryService;
@@ -97,30 +163,33 @@ public class AlbumService {
 		return true;
 	}
 
-	public PageResult<Album> listByOwner(UUID ownerId, PageRequest pageRequest) {
-		int effectiveSize = pageRequest.effectiveSize(MAX_PAGE_SIZE);
-		List<Album> results = em.createQuery(
-				"SELECT a FROM Album a LEFT JOIN FETCH a.owner LEFT JOIN FETCH a.personalLibrary WHERE a.personalLibrary.owner.id = :ownerId ORDER BY a.createdAt DESC",
-				Album.class).setParameter("ownerId", ownerId).setFirstResult(pageRequest.offset(MAX_PAGE_SIZE))
-				.setMaxResults(effectiveSize + 1).getResultList();
-		return toPage(results, pageRequest, effectiveSize,
-				"SELECT COUNT(a) FROM Album a WHERE a.personalLibrary.owner.id = :ownerId", "ownerId", ownerId);
+	public PageResult<Album> listByOwner(UUID ownerId, PageRequest pageRequest, SortField sort,
+			SortDirection direction) {
+		return listAlbums(pageRequest, sort, direction,
+				"SELECT a.id FROM Album a WHERE a.personalLibrary.owner.id = :ownerId",
+				"SELECT COUNT(a) FROM Album a WHERE a.personalLibrary.owner.id = :ownerId",
+				"LEFT JOIN FETCH a.owner LEFT JOIN FETCH a.personalLibrary", "ownerId", ownerId);
 	}
 
-	public PageResult<Album> listBySpace(UUID spaceId, PageRequest pageRequest) {
-		int effectiveSize = pageRequest.effectiveSize(MAX_PAGE_SIZE);
-		List<Album> results = em.createQuery(
-				"SELECT a FROM Album a LEFT JOIN FETCH a.owner LEFT JOIN FETCH a.space WHERE a.space.id = :spaceId ORDER BY a.createdAt DESC",
-				Album.class).setParameter("spaceId", spaceId).setFirstResult(pageRequest.offset(MAX_PAGE_SIZE))
-				.setMaxResults(effectiveSize + 1).getResultList();
-		return toPage(results, pageRequest, effectiveSize, "SELECT COUNT(a) FROM Album a WHERE a.space.id = :spaceId",
-				"spaceId", spaceId);
+	public PageResult<Album> listBySpace(UUID spaceId, PageRequest pageRequest, SortField sort,
+			SortDirection direction) {
+		return listAlbums(pageRequest, sort, direction, "SELECT a.id FROM Album a WHERE a.space.id = :spaceId",
+				"SELECT COUNT(a) FROM Album a WHERE a.space.id = :spaceId",
+				"LEFT JOIN FETCH a.owner LEFT JOIN FETCH a.space", "spaceId", spaceId);
 	}
 
-	private <T> PageResult<T> toPage(List<T> results, PageRequest pageRequest, int effectiveSize, String countQuery,
-			String paramName, Object paramValue) {
-		boolean hasNext = results.size() > effectiveSize;
-		List<T> items = hasNext ? results.subList(0, effectiveSize) : results;
+	private PageResult<Album> listAlbums(PageRequest pageRequest, SortField sort, SortDirection direction,
+			String idSelect, String countQuery, String fetchJoins, String paramName, Object paramValue) {
+		int effectiveSize = pageRequest.effectiveSize(MAX_PAGE_SIZE);
+		String orderBy = buildOrderByClause(sort, direction);
+		List<UUID> idsWithLookahead = em.createQuery(idSelect + " ORDER BY " + orderBy, UUID.class)
+				.setParameter(paramName, paramValue).setFirstResult(pageRequest.offset(MAX_PAGE_SIZE))
+				.setMaxResults(effectiveSize + 1).getResultList();
+		boolean hasNext = idsWithLookahead.size() > effectiveSize;
+		List<UUID> pageIds = hasNext ? idsWithLookahead.subList(0, effectiveSize) : idsWithLookahead;
+
+		List<Album> items = fetchAlbumsInOrder(pageIds, fetchJoins);
+
 		Long totalItems = null;
 		Long totalPages = null;
 		if (pageRequest.needsTotal()) {
@@ -128,6 +197,220 @@ public class AlbumService {
 			totalPages = PageResult.totalPages(totalItems, effectiveSize);
 		}
 		return new PageResult<>(items, pageRequest.page(), effectiveSize, hasNext, totalItems, totalPages);
+	}
+
+	private List<Album> fetchAlbumsInOrder(List<UUID> ids, String fetchJoins) {
+		if (ids.isEmpty()) {
+			return List.of();
+		}
+		List<Album> albums = em
+				.createQuery("SELECT DISTINCT a FROM Album a " + fetchJoins + " WHERE a.id IN :ids", Album.class)
+				.setParameter("ids", ids).getResultList();
+		Map<UUID, Album> byId = new HashMap<>(albums.size() * 2);
+		for (Album album : albums) {
+			byId.put(album.id, album);
+		}
+		return ids.stream().map(byId::get).filter(Objects::nonNull).toList();
+	}
+
+	private String buildOrderByClause(SortField sort, SortDirection direction) {
+		String dir = direction == SortDirection.ASC ? "ASC" : "DESC";
+		String nullsClause = "";
+		String sortExpr = switch (sort) {
+			case NAME -> "a.name";
+			case ITEM_COUNT -> "(SELECT COUNT(ap) FROM AlbumPhoto ap WHERE ap.album.id = a.id)";
+			case CREATED_AT -> "a.createdAt";
+			case UPDATED_AT -> "a.updatedAt";
+			case NEWEST_PHOTO ->
+				"(SELECT MAX(COALESCE(p.takenAt, p.createdAt)) FROM AlbumPhoto ap JOIN ap.photo p WHERE ap.album.id = a.id)";
+		};
+		if (sort == SortField.NEWEST_PHOTO) {
+			nullsClause = direction == SortDirection.ASC ? " NULLS FIRST" : " NULLS LAST";
+		}
+		return sortExpr + " " + dir + nullsClause + ", a.id " + dir;
+	}
+
+	/**
+	 * Enrich a single album with photo-count, media-date range, and resolved cover
+	 * photo (explicit or auto). Issues the same bounded set of queries as
+	 * {@link #buildSummaries(List)}.
+	 */
+	public AlbumSummary getSummary(Album album) {
+		return buildSummaries(List.of(album)).get(0);
+	}
+
+	/**
+	 * Enrich a batch of albums with aggregate statistics and resolved cover photos
+	 * while preserving the input order. Regardless of the batch size this performs
+	 * a bounded number of queries: one JPQL aggregate, one native
+	 * {@code DISTINCT ON} to resolve auto-covers, and one JPQL load to fetch the
+	 * cover photos with their variants.
+	 */
+	public List<AlbumSummary> buildSummaries(List<Album> albums) {
+		if (albums.isEmpty()) {
+			return List.of();
+		}
+
+		List<UUID> albumIds = albums.stream().map(a -> a.id).toList();
+
+		record Aggregate(long photoCount, OffsetDateTime mediaRangeStart, OffsetDateTime mediaRangeEnd,
+				OffsetDateTime latestPhotoAddedAt) {
+		}
+		Map<UUID, Aggregate> aggregatesByAlbum = new HashMap<>();
+		List<Object[]> aggregateRows = em.createQuery(
+				"SELECT ap.album.id, COUNT(ap), MIN(COALESCE(p.takenAt, p.createdAt)), MAX(COALESCE(p.takenAt, p.createdAt)), MAX(ap.addedAt) "
+						+ "FROM AlbumPhoto ap JOIN ap.photo p WHERE ap.album.id IN :ids GROUP BY ap.album.id",
+				Object[].class).setParameter("ids", albumIds).getResultList();
+		for (Object[] row : aggregateRows) {
+			UUID albumId = (UUID) row[0];
+			long count = ((Number) row[1]).longValue();
+			OffsetDateTime rangeStart = (OffsetDateTime) row[2];
+			OffsetDateTime rangeEnd = (OffsetDateTime) row[3];
+			OffsetDateTime latestAddedAt = (OffsetDateTime) row[4];
+			aggregatesByAlbum.put(albumId, new Aggregate(count, rangeStart, rangeEnd, latestAddedAt));
+		}
+
+		Map<UUID, UUID> coverPhotoByAlbum = new HashMap<>();
+		Set<UUID> referencedPhotoIds = new HashSet<>();
+		List<UUID> autoResolveAlbumIds = new ArrayList<>();
+		List<UUID> nonEmptyAlbumIds = new ArrayList<>();
+		for (Album album : albums) {
+			Aggregate agg = aggregatesByAlbum.get(album.id);
+			if (agg == null || agg.photoCount() == 0) {
+				continue;
+			}
+			nonEmptyAlbumIds.add(album.id);
+			if (album.coverPhoto != null) {
+				coverPhotoByAlbum.put(album.id, album.coverPhoto.id);
+				referencedPhotoIds.add(album.coverPhoto.id);
+			} else {
+				autoResolveAlbumIds.add(album.id);
+			}
+		}
+
+		if (!autoResolveAlbumIds.isEmpty()) {
+			@SuppressWarnings("unchecked")
+			List<Object[]> autoRows = em
+					.createNativeQuery("SELECT DISTINCT ON (ap.album_id) ap.album_id, ap.photo_id FROM album_photos ap "
+							+ "JOIN photos p ON p.id = ap.photo_id WHERE ap.album_id IN (:ids) "
+							+ "ORDER BY ap.album_id, COALESCE(p.taken_at, p.created_at) DESC, ap.added_at DESC")
+					.setParameter("ids", autoResolveAlbumIds).getResultList();
+			for (Object[] row : autoRows) {
+				UUID albumId = (UUID) row[0];
+				UUID photoId = (UUID) row[1];
+				coverPhotoByAlbum.put(albumId, photoId);
+				referencedPhotoIds.add(photoId);
+			}
+		}
+
+		Map<UUID, List<UUID>> previewPhotoIdsByAlbum = new HashMap<>(nonEmptyAlbumIds.size() * 2);
+		if (!nonEmptyAlbumIds.isEmpty()) {
+			@SuppressWarnings("unchecked")
+			List<Object[]> previewRows = em
+					.createNativeQuery("SELECT album_id, photo_id FROM (SELECT ap.album_id, ap.photo_id, "
+							+ "ROW_NUMBER() OVER (PARTITION BY ap.album_id "
+							+ "ORDER BY COALESCE(p.taken_at, p.created_at) DESC, ap.added_at DESC, ap.photo_id) AS rn "
+							+ "FROM album_photos ap JOIN photos p ON p.id = ap.photo_id "
+							+ "WHERE ap.album_id IN (:ids)) ranked WHERE rn <= :limit ORDER BY album_id, rn")
+					.setParameter("ids", nonEmptyAlbumIds).setParameter("limit", MAX_PREVIEW_PHOTOS).getResultList();
+			for (Object[] row : previewRows) {
+				UUID albumId = (UUID) row[0];
+				UUID photoId = (UUID) row[1];
+				previewPhotoIdsByAlbum.computeIfAbsent(albumId, k -> new ArrayList<>(MAX_PREVIEW_PHOTOS)).add(photoId);
+				referencedPhotoIds.add(photoId);
+			}
+		}
+
+		Map<UUID, Photo> photosById = new HashMap<>();
+		if (!referencedPhotoIds.isEmpty()) {
+			List<Photo> photos = em.createQuery(
+					"SELECT DISTINCT p FROM Photo p LEFT JOIN FETCH p.variants LEFT JOIN FETCH p.uploader LEFT JOIN FETCH p.personalLibrary WHERE p.id IN :ids",
+					Photo.class).setParameter("ids", referencedPhotoIds).getResultList();
+			for (Photo photo : photos) {
+				photosById.put(photo.id, photo);
+			}
+		}
+
+		List<AlbumSummary> summaries = new ArrayList<>(albums.size());
+		for (Album album : albums) {
+			Aggregate agg = aggregatesByAlbum.get(album.id);
+			if (agg == null) {
+				summaries.add(AlbumSummary.empty(album));
+				continue;
+			}
+			UUID coverId = coverPhotoByAlbum.get(album.id);
+			Photo cover = coverId == null ? null : photosById.get(coverId);
+			List<UUID> previewIds = previewPhotoIdsByAlbum.getOrDefault(album.id, List.of());
+			List<Photo> previews = previewIds.stream().map(photosById::get).filter(Objects::nonNull).toList();
+			summaries.add(new AlbumSummary(album, agg.photoCount(), agg.mediaRangeStart(), agg.mediaRangeEnd(),
+					agg.latestPhotoAddedAt(), cover, previews));
+		}
+		return summaries;
+	}
+
+	public record ArchiveEntry(String storagePath, String originalFilename, UUID photoId) {
+	}
+
+	public List<ArchiveEntry> collectArchiveEntries(UUID albumId, VariantType variantType) {
+		List<Object[]> rows = em.createQuery(
+				"SELECT v.storagePath, p.originalFilename, p.id FROM AlbumPhoto ap JOIN ap.photo p JOIN p.variants v "
+						+ "WHERE ap.album.id = :albumId AND v.variantType = :type ORDER BY ap.addedAt ASC, p.id ASC",
+				Object[].class).setParameter("albumId", albumId).setParameter("type", variantType).getResultList();
+		List<ArchiveEntry> entries = new ArrayList<>(rows.size());
+		for (Object[] row : rows) {
+			entries.add(new ArchiveEntry((String) row[0], (String) row[1], (UUID) row[2]));
+		}
+		return entries;
+	}
+
+	public StreamingOutput streamAlbumArchive(List<ArchiveEntry> entries) {
+		return output -> {
+			try (ZipOutputStream zip = new ZipOutputStream(output)) {
+				Set<String> used = new HashSet<>();
+				for (ArchiveEntry entry : entries) {
+					String name = resolveZipEntryName(entry, used);
+					used.add(name);
+					zip.putNextEntry(new ZipEntry(name));
+					try (InputStream src = storage.retrieve(new StoragePath(entry.storagePath()))) {
+						src.transferTo(zip);
+					}
+					zip.closeEntry();
+				}
+			}
+		};
+	}
+
+	private static String resolveZipEntryName(ArchiveEntry entry, Set<String> used) {
+		String base = sanitizeArchiveFilename(entry.originalFilename(), entry.photoId());
+		if (!used.contains(base)) {
+			return base;
+		}
+		int dot = base.lastIndexOf('.');
+		String stem = dot > 0 ? base.substring(0, dot) : base;
+		String ext = dot > 0 ? base.substring(dot) : "";
+		for (int i = 1;; i++) {
+			String candidate = stem + " (" + i + ")" + ext;
+			if (!used.contains(candidate)) {
+				return candidate;
+			}
+		}
+	}
+
+	private static String sanitizeArchiveFilename(String originalFilename, UUID photoId) {
+		String fallback = "photo-" + photoId;
+		if (originalFilename == null || originalFilename.isBlank()) {
+			return fallback;
+		}
+		String sanitized = originalFilename.strip().replace('\\', '/');
+		int slash = sanitized.lastIndexOf('/');
+		if (slash >= 0) {
+			sanitized = sanitized.substring(slash + 1);
+		}
+		sanitized = sanitized.replaceAll("\\p{Cntrl}", "_").replaceAll("\\.{2,}", "_").strip();
+		if (sanitized.isBlank() || ".".equals(sanitized) || "..".equals(sanitized)) {
+			return fallback;
+		}
+		return sanitized;
 	}
 
 	public boolean hasPhoto(Album album, Photo photo) {
@@ -200,9 +483,43 @@ public class AlbumService {
 			return RemovePhotoResult.FORBIDDEN;
 		}
 
+		em.createQuery("UPDATE Album a SET a.coverPhoto = null WHERE a.id = :albumId AND a.coverPhoto.id = :photoId")
+				.setParameter("albumId", albumId).setParameter("photoId", photoId).executeUpdate();
 		return AlbumPhoto.delete("album.id = ?1 and photo.id = ?2", albumId, photoId) > 0
 				? RemovePhotoResult.REMOVED
 				: RemovePhotoResult.NOT_FOUND;
+	}
+
+	@Transactional
+	public SetCoverResult setCoverPhoto(UUID albumId, UUID photoId) {
+		Optional<Album> albumOpt = findByIdForUpdate(albumId);
+		if (albumOpt.isEmpty()) {
+			return new SetCoverResult.AlbumNotFound();
+		}
+		long membership = AlbumPhoto.find("album.id = ?1 and photo.id = ?2", albumId, photoId).count();
+		if (membership == 0) {
+			return new SetCoverResult.PhotoNotInAlbum();
+		}
+		Album album = albumOpt.get();
+		album.coverPhoto = em.getReference(Photo.class, photoId);
+		em.flush();
+		return new SetCoverResult.Set(album);
+	}
+
+	@Transactional
+	public Optional<Album> clearCoverPhoto(UUID albumId) {
+		Optional<Album> albumOpt = findByIdForUpdate(albumId);
+		if (albumOpt.isEmpty()) {
+			return Optional.empty();
+		}
+		Album album = albumOpt.get();
+		album.coverPhoto = null;
+		em.flush();
+		return Optional.of(album);
+	}
+
+	private Optional<Album> findByIdForUpdate(UUID albumId) {
+		return Optional.ofNullable(em.find(Album.class, albumId, LockModeType.PESSIMISTIC_WRITE));
 	}
 
 	@Transactional

@@ -26,7 +26,7 @@ describe("CollectionPlaceholder", () => {
     );
     expect(
       screen.getAllByRole("link", { name: "Open timeline" })[0],
-    ).toHaveAttribute("href", "/app/library?view=timeline");
+    ).toHaveAttribute("href", "/app/library?view=photos");
   });
 
   it("renders trash guidance as a limited retention route", () => {
