@@ -4,7 +4,7 @@ title: ML-EPIC-001 Deliver Phase 4 ML service (basic)
 status: To Do
 assignee: []
 created_date: '2026-04-20 13:54'
-updated_date: '2026-04-20 13:57'
+updated_date: '2026-06-11 16:16'
 labels:
   - ml
   - backend
@@ -14,7 +14,7 @@ milestone: m-3
 dependencies: []
 references:
   - >-
-    /Users/mama/dev/pina/backlog/tasks/task-049 -
+    backlog/tasks/task-049 -
     ML-PLAN-001-Define-Phase-4-ML-service-delivery-plan.md
 documentation:
   - MILESTONES.md
@@ -52,10 +52,14 @@ Deliver the first usable Phase 4 ML stack for PINA as a photo-first, local-only 
 5. `TASK-050.05` — add backend orchestration, retry-safe asynchronous invocation, persistence, and pgvector-backed storage.
 6. `TASK-050.06` — build face clustering data foundations that downstream browse APIs can consume.
 7. `TASK-050.07` — document runtime profiles, health visibility, smoke coverage, and CPU-only sizing guidance.
+
+8. `TASK-050.08` — expose tag-backed search through the existing `/api/v1/search` contract once ML outputs are persisted (covers the Phase 4 "Search by tags" milestone bullet; semantic embedding search stays follow-up work).
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
 This epic follows the delivery constraints defined in `TASK-049`: keep Phase 4 photo-first, avoid making full video execution a milestone gate before Phase 7, and treat low-end hardware support as a first-class runtime-profile concern rather than a later optimization. Existing search tasks should consume the Phase 4 data model instead of introducing a separate ML/search persistence path.
+
+Validation pass 2026-06-11: references previously pointed at stale absolute paths from the old `/Users/mama/dev/pina` checkout; replaced with repo-relative paths across the epic and subtasks. Added TASK-050.08 so the Phase 4 milestone bullet 'Search by tags' has an execution task (current TASK-034 search is filename-based only — no tag data exists yet).
 <!-- SECTION:NOTES:END -->

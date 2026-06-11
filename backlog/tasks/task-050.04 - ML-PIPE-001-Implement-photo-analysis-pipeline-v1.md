@@ -4,7 +4,7 @@ title: ML-PIPE-001 Implement photo analysis pipeline v1
 status: To Do
 assignee: []
 created_date: '2026-04-20 13:55'
-updated_date: '2026-04-20 13:56'
+updated_date: '2026-06-11 16:16'
 labels:
   - ml
   - pipeline
@@ -18,7 +18,7 @@ references:
   - 'https://github.com/mlfoundations/open_clip'
   - 'https://github.com/deepinsight/insightface'
   - >-
-    /Users/mama/dev/pina/backlog/tasks/task-049 -
+    backlog/tasks/task-049 -
     ML-PLAN-001-Define-Phase-4-ML-service-delivery-plan.md
 documentation:
   - MILESTONES.md

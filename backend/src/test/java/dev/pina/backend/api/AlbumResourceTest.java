@@ -913,8 +913,13 @@ class AlbumResourceTest {
 		String url = authAs(token).when().post("/api/v1/albums/{id}/download-url", albumId).then().statusCode(200)
 				.extract().path("url");
 		String signedToken = url.substring(url.indexOf("token=") + "token=".length());
-		String tamperedToken = signedToken.substring(0, signedToken.length() - 1)
-				+ (signedToken.endsWith("A") ? "B" : "A");
+		// The final base64url char of the 43-char signature carries only 4
+		// significant bits, so a flip there can decode to the same signature
+		// bytes (lenient decoder). Tamper a fully significant char instead.
+		int tamperIndex = signedToken.length() - 5;
+		char replacement = signedToken.charAt(tamperIndex) == 'A' ? 'B' : 'A';
+		String tamperedToken = signedToken.substring(0, tamperIndex) + replacement
+				+ signedToken.substring(tamperIndex + 1);
 
 		given().queryParam("token", tamperedToken).when().get("/api/v1/albums/{id}/download-by-token", albumId).then()
 				.statusCode(404).body("error", equalTo("not_found"));

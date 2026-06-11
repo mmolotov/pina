@@ -19,4 +19,8 @@
         <Class name="dev.pina.backend.storage.LocalStorageProvider"/>
         <Bug pattern="NP_NULL_ON_SOME_PATH_FROM_RETURN_VALUE"/>
     </Match>
+    <!-- Generated gRPC/protobuf sources from the shared proto/ contract -->
+    <Match>
+        <Package name="~dev\.pina\.ml\.v1.*"/>
+    </Match>
 </FindBugsFilter>

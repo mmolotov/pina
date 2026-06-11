@@ -4,7 +4,7 @@ title: ML-MODEL-001 Implement model registry and runtime profiles
 status: To Do
 assignee: []
 created_date: '2026-04-20 13:55'
-updated_date: '2026-04-20 13:56'
+updated_date: '2026-06-11 16:16'
 labels:
   - ml
   - models
@@ -20,7 +20,7 @@ references:
   - 'https://github.com/deepinsight/insightface'
   - 'https://github.com/mlfoundations/open_clip'
   - >-
-    /Users/mama/dev/pina/backlog/tasks/task-049 -
+    backlog/tasks/task-049 -
     ML-PLAN-001-Define-Phase-4-ML-service-delivery-plan.md
 documentation:
   - MILESTONES.md

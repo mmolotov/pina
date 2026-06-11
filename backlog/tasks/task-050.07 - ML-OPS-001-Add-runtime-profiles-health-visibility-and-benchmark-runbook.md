@@ -4,7 +4,7 @@ title: 'ML-OPS-001 Add runtime profiles, health visibility, and benchmark runboo
 status: To Do
 assignee: []
 created_date: '2026-04-20 13:56'
-updated_date: '2026-04-20 13:56'
+updated_date: '2026-06-11 16:16'
 labels:
   - ml
   - ops
@@ -21,7 +21,7 @@ references:
   - >-
     https://onnxruntime.ai/docs/performance/model-optimizations/quantization.html
   - >-
-    /Users/mama/dev/pina/backlog/tasks/task-049 -
+    backlog/tasks/task-049 -
     ML-PLAN-001-Define-Phase-4-ML-service-delivery-plan.md
 documentation:
   - README.md

@@ -4,7 +4,7 @@ title: ML-FACE-001 Implement face clustering foundation for downstream browse AP
 status: To Do
 assignee: []
 created_date: '2026-04-20 13:55'
-updated_date: '2026-04-20 13:56'
+updated_date: '2026-06-11 16:16'
 labels:
   - backend
   - ml
@@ -14,10 +14,10 @@ dependencies:
   - TASK-050.05
 references:
   - >-
-    /Users/mama/dev/pina/backlog/tasks/task-035 -
+    backlog/tasks/task-035 -
     BE-SEARCH-003-Face-cluster-browse-and-management-APIs.md
   - >-
-    /Users/mama/dev/pina/backlog/tasks/task-049 -
+    backlog/tasks/task-049 -
     ML-PLAN-001-Define-Phase-4-ML-service-delivery-plan.md
 documentation:
   - docs/product-requirements.adoc

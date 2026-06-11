@@ -1,0 +1,56 @@
+syntax = "proto3";
+
+package pina.ml.v1;
+
+option java_package = "dev.pina.ml.v1";
+option java_multiple_files = true;
+option java_outer_classname = "CommonProto";
+
+// Analysis steps a pipeline can run. Wire values are stable: extend only by
+// appending new values, never by renumbering.
+enum AnalysisStep {
+  ANALYSIS_STEP_UNSPECIFIED = 0;
+  IMAGE_EMBEDDING = 1;
+  TAGGING = 2;
+  FACE_DETECTION = 3;
+  FACE_EMBEDDING = 4;
+}
+
+// Outcome of a single analysis step. A failed or skipped step never fails the
+// whole RPC; callers inspect per-step status instead.
+enum StepStatus {
+  STEP_STATUS_UNSPECIFIED = 0;
+  COMPLETED = 1;
+  FAILED = 2;
+  // The step is disabled by the active runtime profile or by the request.
+  SKIPPED_DISABLED = 3;
+  // The model required by the step is not available (not downloaded, failed
+  // to load, or missing from the registry).
+  SKIPPED_UNAVAILABLE = 4;
+}
+
+// Provenance of the model that produced a result set.
+message ModelRef {
+  // Registry identifier, e.g. "clip-vit-b32".
+  string model_id = 1;
+  // Manifest version of the model artifact, e.g. "1.0".
+  string version = 2;
+  // Execution runtime identifier, e.g. "onnxruntime-cpu".
+  string runtime = 3;
+}
+
+message StepResult {
+  AnalysisStep step = 1;
+  StepStatus status = 2;
+  // Set when the step ran or was attempted with a resolved model.
+  ModelRef model = 3;
+  // Human-readable failure reason, set only when status == FAILED.
+  string error_message = 4;
+  uint64 duration_ms = 5;
+}
+
+// A dense vector. The dimension is implied by the length of values and is
+// fixed per (model_id, version).
+message Embedding {
+  repeated float values = 1;
+}

@@ -1,0 +1,80 @@
+file pina/ml/v1/common.proto
+enum pina.ml.v1.AnalysisStep
+  ANALYSIS_STEP_UNSPECIFIED = 0
+  IMAGE_EMBEDDING = 1
+  TAGGING = 2
+  FACE_DETECTION = 3
+  FACE_EMBEDDING = 4
+enum pina.ml.v1.StepStatus
+  STEP_STATUS_UNSPECIFIED = 0
+  COMPLETED = 1
+  FAILED = 2
+  SKIPPED_DISABLED = 3
+  SKIPPED_UNAVAILABLE = 4
+message pina.ml.v1.ModelRef
+  model_id = 1: string
+  version = 2: string
+  runtime = 3: string
+message pina.ml.v1.StepResult
+  step = 1: pina.ml.v1.AnalysisStep
+  status = 2: pina.ml.v1.StepStatus
+  model = 3: pina.ml.v1.ModelRef
+  error_message = 4: string
+  duration_ms = 5: uint64
+message pina.ml.v1.Embedding
+  values = 1: repeated float
+file pina/ml/v1/image_analysis.proto
+enum pina.ml.v1.MediaKind
+  MEDIA_KIND_UNSPECIFIED = 0
+  PHOTO = 1
+  VIDEO_KEYFRAME = 2
+message pina.ml.v1.MediaContext
+  kind = 1: pina.ml.v1.MediaKind
+  media_id = 2: string
+  frame_index = 3: uint32
+  frame_timestamp_ms = 4: uint64
+message pina.ml.v1.ImageInput
+  data = 1: bytes
+  mime_type = 2: string
+message pina.ml.v1.AnalyzeImageRequest
+  request_id = 1: string
+  media = 2: pina.ml.v1.MediaContext
+  image = 3: pina.ml.v1.ImageInput
+  steps = 4: repeated pina.ml.v1.AnalysisStep
+message pina.ml.v1.Tag
+  label = 1: string
+  confidence = 2: float
+message pina.ml.v1.NormalizedBoundingBox
+  x = 1: float
+  y = 2: float
+  width = 3: float
+  height = 4: float
+message pina.ml.v1.FaceDetection
+  box = 1: pina.ml.v1.NormalizedBoundingBox
+  confidence = 2: float
+  embedding = 3: pina.ml.v1.Embedding
+message pina.ml.v1.AnalyzeImageResponse
+  request_id = 1: string
+  step_results = 2: repeated pina.ml.v1.StepResult
+  image_embedding = 3: pina.ml.v1.Embedding
+  tags = 4: repeated pina.ml.v1.Tag
+  faces = 5: repeated pina.ml.v1.FaceDetection
+message pina.ml.v1.EmbedTextRequest
+  text = 1: string
+message pina.ml.v1.EmbedTextResponse
+  embedding = 1: pina.ml.v1.Embedding
+  model = 2: pina.ml.v1.ModelRef
+message pina.ml.v1.GetServiceStatusRequest
+message pina.ml.v1.ModelAvailability
+  model = 1: pina.ml.v1.ModelRef
+  step = 2: pina.ml.v1.AnalysisStep
+  available = 3: bool
+message pina.ml.v1.GetServiceStatusResponse
+  service_version = 1: string
+  active_profile = 2: string
+  ready = 3: bool
+  models = 4: repeated pina.ml.v1.ModelAvailability
+service pina.ml.v1.ImageAnalysis
+  rpc AnalyzeImage(pina.ml.v1.AnalyzeImageRequest) returns (pina.ml.v1.AnalyzeImageResponse)
+  rpc EmbedText(pina.ml.v1.EmbedTextRequest) returns (pina.ml.v1.EmbedTextResponse)
+  rpc GetServiceStatus(pina.ml.v1.GetServiceStatusRequest) returns (pina.ml.v1.GetServiceStatusResponse)

@@ -1,0 +1,133 @@
+syntax = "proto3";
+
+package pina.ml.v1;
+
+import "pina/ml/v1/common.proto";
+
+option java_package = "dev.pina.ml.v1";
+option java_multiple_files = true;
+option java_outer_classname = "ImageAnalysisProto";
+
+// Phase 4 is photo-first, but the contract stays media-agnostic so that
+// keyframe-based video analysis (Phase 7) fits without a protocol redesign.
+enum MediaKind {
+  MEDIA_KIND_UNSPECIFIED = 0;
+  PHOTO = 1;
+  VIDEO_KEYFRAME = 2;
+}
+
+message MediaContext {
+  MediaKind kind = 1;
+  // Backend UUID of the source media item (photo now, video later).
+  string media_id = 2;
+  // Keyframe ordinal within the source video; 0 for photos.
+  uint32 frame_index = 3;
+  // Keyframe position within the source video; 0 for photos.
+  uint64 frame_timestamp_ms = 4;
+}
+
+// An already-derived analysis variant (compressed or thumbnail rendition).
+// Originals are never required for analysis.
+message ImageInput {
+  bytes data = 1;
+  // IANA media type of data, e.g. "image/jpeg".
+  string mime_type = 2;
+}
+
+message AnalyzeImageRequest {
+  // Correlation and idempotency id chosen by the caller.
+  string request_id = 1;
+  MediaContext media = 2;
+  ImageInput image = 3;
+  // Steps to run. Empty means all steps enabled by the active profile.
+  repeated AnalysisStep steps = 4;
+}
+
+message Tag {
+  string label = 1;
+  // Classifier confidence in [0, 1].
+  float confidence = 2;
+}
+
+// Coordinates normalized to [0, 1] relative to the analyzed image.
+message NormalizedBoundingBox {
+  // Left edge.
+  float x = 1;
+  // Top edge.
+  float y = 2;
+  float width = 3;
+  float height = 4;
+}
+
+message FaceDetection {
+  NormalizedBoundingBox box = 1;
+  // Detector confidence in [0, 1].
+  float confidence = 2;
+  // Face descriptor used for clustering; absent when FACE_EMBEDDING was
+  // skipped or failed. Named "embedding" because protobuf-java reserves
+  // getDescriptor().
+  Embedding embedding = 3;
+}
+
+message AnalyzeImageResponse {
+  // Echo of AnalyzeImageRequest.request_id.
+  string request_id = 1;
+  // One entry per requested (or profile-enabled) step.
+  repeated StepResult step_results = 2;
+  // Present when IMAGE_EMBEDDING completed.
+  Embedding image_embedding = 3;
+  // Present when TAGGING completed.
+  repeated Tag tags = 4;
+  // Present when FACE_DETECTION completed.
+  repeated FaceDetection faces = 5;
+}
+
+message EmbedTextRequest {
+  string text = 1;
+}
+
+message EmbedTextResponse {
+  Embedding embedding = 1;
+  ModelRef model = 2;
+}
+
+message GetServiceStatusRequest {
+}
+
+message ModelAvailability {
+  ModelRef model = 1;
+  // The pipeline step this model serves.
+  AnalysisStep step = 2;
+  // True when the manifest resolved and the artifact is cached and loadable.
+  bool available = 3;
+}
+
+message GetServiceStatusResponse {
+  string service_version = 1;
+  // Active runtime profile, e.g. "default" or "cpu-lite".
+  string active_profile = 2;
+  // True when every model required by the active profile is available.
+  bool ready = 3;
+  repeated ModelAvailability models = 4;
+}
+
+// Image analysis service for the backend-to-ML boundary. Photos and, later,
+// video keyframes go through the same RPC; MediaContext.kind disambiguates.
+//
+// Liveness and readiness probing additionally uses the standard
+// grpc.health.v1.Health service, provided by gRPC runtime libraries on both
+// sides and therefore not vendored into this contract.
+service ImageAnalysis {
+  // Analyze a single derived image. Per-step failures are reported in
+  // step_results; the RPC itself fails only for transport- or request-level
+  // errors (e.g. undecodable payload).
+  rpc AnalyzeImage(AnalyzeImageRequest) returns (AnalyzeImageResponse);
+
+  // Embed a text query into the same vector space as image embeddings.
+  // Reserved for semantic text search wiring; servers may respond with
+  // UNIMPLEMENTED until that lands.
+  rpc EmbedText(EmbedTextRequest) returns (EmbedTextResponse);
+
+  // Application-level status: active profile and per-model availability.
+  rpc GetServiceStatus(GetServiceStatusRequest) returns (GetServiceStatusResponse);
+}

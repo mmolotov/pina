@@ -3,9 +3,9 @@ name: Backend CI
 on:
   push:
     branches: [main]
-    paths: ['backend/**']
+    paths: ['backend/**', 'proto/**']
   pull_request:
-    paths: ['backend/**']
+    paths: ['backend/**', 'proto/**']
   workflow_dispatch:
 
 defaults:

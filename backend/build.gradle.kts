@@ -1,3 +1,5 @@
+import org.gradle.api.tasks.PathSensitivity
+
 plugins {
     java
     jacoco
@@ -34,6 +36,9 @@ dependencies {
     implementation("io.quarkus:quarkus-smallrye-health")
     implementation("io.quarkus:quarkus-scheduler")
 
+    // gRPC (backend↔ML contract; stubs generated from the shared ../proto dir)
+    implementation("io.quarkus:quarkus-grpc")
+
     // Security & JWT
     implementation("io.quarkus:quarkus-smallrye-jwt")
     implementation("io.quarkus:quarkus-smallrye-jwt-build")
@@ -61,6 +66,17 @@ java {
     }
 }
 
+// gRPC code generation reads the shared contract instead of src/main/proto.
+val sharedProtoDir = layout.projectDirectory.dir("../proto")
+
+quarkus {
+    quarkusBuildProperties.put("quarkus.grpc.codegen.proto-directory", sharedProtoDir.asFile.absolutePath)
+}
+
+tasks.withType<io.quarkus.gradle.tasks.QuarkusGenerateCode>().configureEach {
+    inputs.dir(sharedProtoDir).withPathSensitivity(PathSensitivity.RELATIVE)
+}
+
 tasks.withType<JavaCompile> {
     options.encoding = "UTF-8"
     options.compilerArgs.add("-parameters")
@@ -68,6 +84,8 @@ tasks.withType<JavaCompile> {
 
 tasks.withType<Test> {
     systemProperty("java.util.logging.manager", "org.jboss.logmanager.LogManager")
+    // Pass-through for the proto golden fixture regeneration switch.
+    systemProperty("pina.proto.golden.update", System.getProperty("pina.proto.golden.update", "false"))
 }
 
 val testStorageData = layout.buildDirectory.dir("test-data")
@@ -81,6 +99,8 @@ tasks.register<Delete>("cleanTestStorageData") {
 // Code formatting
 spotless {
     java {
+        // Generated gRPC/protobuf sources are not subject to project formatting.
+        targetExclude("build/**")
         eclipse()
         formatAnnotations()
         removeUnusedImports()
@@ -128,12 +148,21 @@ tasks.withType<Test> {
 // Coverage verification (run explicitly, not part of build)
 val quarkusExecData = layout.buildDirectory.file("jacoco/jacoco-quarkus.exec")
 
+// Generated gRPC/protobuf classes are excluded from coverage accounting.
+val jacocoClassExcludes = listOf("dev/pina/ml/v1/**")
+
 tasks.jacocoTestReport {
     executionData(quarkusExecData)
+    classDirectories.setFrom(files(classDirectories.files.map { dir ->
+        fileTree(dir) { exclude(jacocoClassExcludes) }
+    }))
 }
 
 tasks.jacocoTestCoverageVerification {
     executionData(quarkusExecData)
+    classDirectories.setFrom(files(classDirectories.files.map { dir ->
+        fileTree(dir) { exclude(jacocoClassExcludes) }
+    }))
     violationRules {
         rule {
             limit {
