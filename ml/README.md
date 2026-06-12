@@ -5,10 +5,10 @@ plus a FastAPI admin/health surface. Phase 4 scope and sequencing live in
 [MILESTONES.md](../MILESTONES.md); the shared contract lives in
 [proto/](../proto/README.md).
 
-Current state: runnable service with a model registry. `GetServiceStatus`,
-gRPC health, the admin endpoints, manifests, profiles, and model downloads are
-live; `AnalyzeImage` / `EmbedText` respond `UNIMPLEMENTED` until the pipeline
-lands (TASK-050.04).
+Current state: the full photo-analysis pipeline is live. `AnalyzeImage` runs
+the profile-enabled steps (CLIP image embedding, zero-shot tagging, SCRFD face
+detection, ArcFace descriptors), `EmbedText` embeds queries into the CLIP
+space, and `GetServiceStatus` reports per-model availability.
 
 ## Layout
 
@@ -17,8 +17,10 @@ pyproject.toml          # uv-managed project (Python >= 3.12)
 src/pina_ml/            # service code: config, gRPC server, FastAPI admin, entrypoint
 src/pina_ml/registry/   # model manifests schema, artifact cache/downloads, registry
 src/pina_ml/manifests/  # packaged model manifests + runtime profiles (YAML)
+src/pina_ml/pipeline/   # analysis pipeline: CLIP, faces (SCRFD/ArcFace), orchestrator
 src/pina/               # GENERATED gRPC modules (git-ignored, `make proto`)
-tests/                  # pytest suite (offline: smoke, config, registry, downloads)
+scripts/                # real_model_smoke.py — one-shot real-model verification
+tests/                  # pytest suite (offline; tiny ONNX fixture models)
 Makefile                # proto / lint / format / test / run / clean
 ```
 
@@ -52,6 +54,10 @@ edits needed. Lists use JSON syntax.
 | `PINA_ML_PROFILE`             | `default`                  | Runtime profile: `default` or `cpu-lite`   |
 | `PINA_ML_EXECUTION_PROVIDERS` | `["CPUExecutionProvider"]` | ONNX Runtime execution provider order      |
 | `PINA_ML_LOG_LEVEL`           | `INFO`                     | Logging level                              |
+| `PINA_ML_TAG_TOP_K`           | `8`                        | Max auto-tags per photo                    |
+| `PINA_ML_TAG_MIN_CONFIDENCE`  | `0.05`                     | Min softmax probability for a tag          |
+| `PINA_ML_FACE_MIN_CONFIDENCE` | `0.5`                      | Min detector score for a face              |
+| `PINA_ML_TAGS_VOCABULARY_PATH`| packaged list              | Override zero-shot tag vocabulary file     |
 
 ## Model registry and profiles
 
@@ -71,6 +77,32 @@ Artifacts are downloaded on startup (or first use) into the persistent cache
 never re-downloaded while present. Operators can add or override manifests via
 `PINA_ML_MANIFESTS_DIR`; `GET /api/models` shows what the active profile
 resolved.
+
+## Analysis pipeline
+
+`AnalyzeImage` decodes the supplied derived variant (never an original),
+downscales to the profile's `analysis_max_resolution`, and runs the enabled
+steps in order:
+
+1. **image_embedding** — CLIP vision encoder → L2-normalized embedding.
+2. **tagging** — zero-shot scoring of the image embedding against the packaged
+   tag vocabulary (`pipeline/data/tag_vocabulary.txt`, prompt "a photo of …");
+   reuses the embedding from step 1.
+3. **face_detection** — SCRFD at 640px letterbox, NMS, normalized boxes.
+4. **face_embedding** — 5-point alignment to the 112×112 ArcFace template,
+   L2-normalized 512-d descriptors for later clustering.
+
+Every step reports its own status (`COMPLETED`, `FAILED`, `SKIPPED_DISABLED`,
+`SKIPPED_UNAVAILABLE`), model provenance, and duration — one broken model
+never fails the RPC. Models load lazily and download on first use if the
+startup prefetch is disabled. Concurrency is capped by the profile's
+`max_parallel_analyses`.
+
+To verify real models end to end (downloads the active profile's artifacts):
+
+```bash
+PINA_ML_PROFILE=cpu-lite uv run python scripts/real_model_smoke.py <image>
+```
 
 ## Model licensing
 

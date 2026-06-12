@@ -36,3 +36,9 @@ class Settings(BaseSettings):
     profile: RuntimeProfile = RuntimeProfile.DEFAULT
     execution_providers: list[str] = ["CPUExecutionProvider"]
     log_level: str = "INFO"
+    # Pipeline knobs
+    tag_top_k: int = 8
+    tag_min_confidence: float = 0.05
+    face_min_confidence: float = 0.5
+    # Optional override for the packaged zero-shot tag vocabulary.
+    tags_vocabulary_path: Path | None = None

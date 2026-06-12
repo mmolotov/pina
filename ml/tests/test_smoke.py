@@ -4,7 +4,6 @@ from pathlib import Path
 
 import grpc
 import httpx
-import pytest
 from grpc_health.v1 import health_pb2, health_pb2_grpc
 
 from manifest_fixtures import build_local_manifests
@@ -70,25 +69,6 @@ async def test_status_reports_ready_once_models_are_cached(tmp_path: Path) -> No
             assert status.ready is True
             assert len(status.models) == 4
             assert all(entry.available for entry in status.models)
-    finally:
-        await server.stop(grace=None)
-
-
-async def test_inference_rpcs_report_unimplemented_until_pipeline_lands(tmp_path: Path) -> None:
-    settings = loopback_settings(tmp_path)
-    registry = ModelRegistry.load(settings)
-    server, port = await create_grpc_server(settings, registry)
-    try:
-        async with grpc.aio.insecure_channel(f"127.0.0.1:{port}") as channel:
-            stub = image_analysis_pb2_grpc.ImageAnalysisStub(channel)
-
-            with pytest.raises(grpc.aio.AioRpcError) as analyze_error:
-                await stub.AnalyzeImage(image_analysis_pb2.AnalyzeImageRequest(request_id="r1"))
-            assert analyze_error.value.code() == grpc.StatusCode.UNIMPLEMENTED
-
-            with pytest.raises(grpc.aio.AioRpcError) as embed_error:
-                await stub.EmbedText(image_analysis_pb2.EmbedTextRequest(text="hello"))
-            assert embed_error.value.code() == grpc.StatusCode.UNIMPLEMENTED
     finally:
         await server.stop(grace=None)
 

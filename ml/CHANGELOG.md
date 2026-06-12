@@ -8,6 +8,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Photo analysis pipeline v1: CLIP image embeddings, zero-shot auto-tagging
+  over a packaged vocabulary, SCRFD face detection, and ArcFace descriptors —
+  all via ONNX Runtime with per-step status, provenance, and duration;
+  `AnalyzeImage` and `EmbedText` RPCs are now live.
+- Profile-driven limits at work: analysis resolution cap and bounded
+  concurrent analyses; lazy model loading with download-on-first-use.
+- `scripts/real_model_smoke.py` for one-shot verification with real models.
+
 - Model registry: YAML manifests (task step, version, source files, license
   metadata), persistent artifact cache with zip-archive member extraction and
   optional sha256 verification, and background downloads on startup.
