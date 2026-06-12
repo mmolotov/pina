@@ -10,3 +10,5 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Dockerfile for backend
 - docker-compose.yml with PostgreSQL service (pgvector/pgvector:pg17) and backend
+- Dockerfile for the ML service (uv-based multi-stage build with gRPC codegen)
+- docker-compose.yml `ml` service with persistent model-cache volume and healthcheck

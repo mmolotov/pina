@@ -15,6 +15,24 @@ services:
       timeout: 5s
       retries: 5
 
+  ml:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.ml
+    environment:
+      PINA_ML_PROFILE: ${PINA_ML_PROFILE:-default}
+      PINA_ML_MODEL_CACHE_DIR: /models
+    ports:
+      - "50051:50051"
+      - "8000:8000"
+    volumes:
+      - mlmodels:/models
+    healthcheck:
+      test: ["CMD", "uv", "run", "--no-sync", "python", "-c", "import sys, urllib.request; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3).status == 200 else 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   backend:
     build:
       context: ..
@@ -37,3 +55,4 @@ services:
 
 volumes:
   pgdata:
+  mlmodels:

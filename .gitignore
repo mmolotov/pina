@@ -73,6 +73,9 @@ data/
 # ML models (downloaded at runtime)
 ml/models/
 
+# ML generated gRPC modules (make proto)
+ml/src/pina/
+
 # Logs
 *.log
 logs/
