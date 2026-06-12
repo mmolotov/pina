@@ -19,6 +19,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `PINA_ML_HOST`/`PINA_ML_PORT`) and `pina.ml.*` orchestration configuration
 - Query paths for downstream search/face work: tags by photo, cosine
   nearest-neighbor photo lookup, per-photo face listings
+- Admin health now reports ML service state (`ml` block: enabled, reachable,
+  active profile, readiness, model availability)
 - Tag-backed search: `/api/v1/search` photo results now also match persisted
   ML auto-tags with deterministic relevance scoring; visibility rules are
   unchanged across library, space, and favorites scopes

@@ -15,7 +15,8 @@ from pina_ml.registry.manifest import ArtifactSpec
 
 LOG = logging.getLogger(__name__)
 
-_DOWNLOAD_TIMEOUT = httpx.Timeout(60.0, connect=15.0)
+# Generous read timeout: model CDNs can stall between chunks on large files.
+_DOWNLOAD_TIMEOUT = httpx.Timeout(connect=15.0, read=300.0, write=120.0, pool=60.0)
 
 
 class ArtifactError(RuntimeError):

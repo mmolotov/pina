@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Operations tooling: `scripts/benchmark.py` (per-step latency matrix for the
+  active profile) and a documented Operations section in the README with a
+  CPU-only sizing matrix and smoke runbook.
+- More tolerant model downloads: generous read timeout for large artifacts
+  fetched from model CDNs.
+
 - Photo analysis pipeline v1: CLIP image embeddings, zero-shot auto-tagging
   over a packaged vocabulary, SCRFD face detection, and ArcFace descriptors —
   all via ONNX Runtime with per-step status, provenance, and duration;

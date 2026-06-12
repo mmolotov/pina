@@ -104,6 +104,62 @@ To verify real models end to end (downloads the active profile's artifacts):
 PINA_ML_PROFILE=cpu-lite uv run python scripts/real_model_smoke.py <image>
 ```
 
+## Operations
+
+### Health and status surfaces
+
+- gRPC `grpc.health.v1.Health` — liveness for infra probes (`SERVING`).
+- gRPC `ImageAnalysis.GetServiceStatus` — active profile, readiness, per-model
+  availability (what the backend admin health consumes).
+- HTTP `/healthz`, `/readyz` — container/compose probes.
+- HTTP `/api/info`, `/api/models` — version, profile, limits, model licenses
+  and availability.
+- Backend `GET /api/v1/admin/health` mirrors this as an `ml` block for admins.
+
+### Cache and providers
+
+Model artifacts live in `PINA_ML_MODEL_CACHE_DIR` (compose: the `mlmodels`
+volume) and are downloaded once per id+version; deleting the volume forces a
+re-download. Execution providers are selected via
+`PINA_ML_EXECUTION_PROVIDERS` in priority order with automatic
+`CPUExecutionProvider` fallback; on Intel hardware the ONNX Runtime OpenVINO
+execution provider is the first acceleration option to evaluate (requires an
+onnxruntime build that ships it).
+
+### Stack smoke (boot + backend↔ML round-trip)
+
+```bash
+PINA_ML_PROFILE=cpu-lite docker/smoke-ml.sh        # add --down to clean up
+```
+
+Boots postgres + ml + backend, registers a user, uploads a photo through the
+API, and waits until the asynchronous analysis lands in `photo_analysis_jobs`
+/ `photo_tags` / `photo_embeddings`. First run downloads the profile's models
+into the `mlmodels` volume.
+
+### CPU-only sizing (benchmark)
+
+```bash
+PINA_ML_PROFILE=cpu-lite uv run python scripts/benchmark.py <image> [iterations]
+```
+
+Measured on an Apple Silicon laptop CPU (10 iterations, 1280×800 input, no
+faces in frame; one warmup pass excluded — cold start adds ~0.6–1.7 s for
+session loads plus vocabulary embedding):
+
+| Profile    | image_embedding | face_detection | total / photo | serial throughput |
+|------------|-----------------|----------------|---------------|-------------------|
+| `cpu-lite` | 14 ms           | 19 ms          | ~44 ms        | ~22 photos/s      |
+| `default`  | 33 ms           | 99 ms          | ~138 ms       | ~7 photos/s       |
+
+Tagging is a sub-millisecond matmul once the vocabulary is embedded; each
+detected face adds one ArcFace pass (w600k_mbf is several times cheaper than
+w600k_r50). Face detection dominates the default profile, so `cpu-lite`
+(det_500m + int8 CLIP) is the right choice for weak or busy CPUs — roughly 3×
+the throughput at reduced accuracy. Expect low-power x86 SBCs to be several
+times slower than these numbers; keep `max_parallel_analyses` at 1 there (the
+profile defaults already do) and let the backend queue absorb bursts.
+
 ## Model licensing
 
 License metadata is part of every manifest and surfaced via `/api/models` and

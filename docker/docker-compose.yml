@@ -6,7 +6,8 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-pina}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-pina}
     ports:
-      - "5432:5432"
+      # Host port is configurable so the stack can coexist with a local PostgreSQL.
+      - "${PINA_POSTGRES_PORT:-5432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -44,6 +45,13 @@ services:
       QUARKUS_HTTP_CORS_ORIGINS: http://localhost:*,https://localhost:*
       PINA_ML_HOST: ml
       PINA_ML_PORT: 50051
+      PINA_ALBUM_DOWNLOAD_TOKEN_SIGNING_KEY: ${PINA_ALBUM_DOWNLOAD_TOKEN_SIGNING_KEY:-compose-dev-album-signing-key}
+    volumes:
+      # JWT keys are not in the repo; generate them once (see backend/README.md):
+      #   cd backend && mkdir -p dev-keys
+      #   openssl genrsa -out dev-keys/privateKey.pem 2048
+      #   openssl rsa -in dev-keys/privateKey.pem -pubout -out dev-keys/publicKey.pem
+      - ../backend/dev-keys:/app/dev-keys:ro
     ports:
       - "8080:8080"
     depends_on:

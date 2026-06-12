@@ -279,6 +279,10 @@ The upload response is never delayed or failed by ML concerns.
 Downstream consumers (`MlAnalysisService`): `listTagsForPhotos`, `findNearestPhotoIds`
 (cosine-distance `ORDER BY embedding <=> :query` via pgvector), and per-photo face listings.
 
+Admin visibility: `GET /api/v1/admin/health` includes an `ml` block (enabled, reachable,
+activeProfile, ready, modelsAvailable/modelsTotal) sourced from the ML service's
+`GetServiceStatus` with a 2s deadline; an unreachable service degrades to `reachable=false`.
+
 Face descriptors are grouped into stable per-owner clusters (`face_clusters`) by
 `FaceClusterService` using incremental nearest-centroid assignment inside the same
 transaction that persists the faces: a descriptor joins the nearest cluster of the photo

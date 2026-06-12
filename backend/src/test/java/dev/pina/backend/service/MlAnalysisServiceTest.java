@@ -168,6 +168,37 @@ class MlAnalysisServiceTest {
 	}
 
 	@Test
+	void adminHealthReportsReachableMlService() {
+		String token = registerAdminToken();
+		given().header("Authorization", "Bearer " + token).when().get("/api/v1/admin/health").then().statusCode(200)
+				.body("ml.enabled", org.hamcrest.Matchers.equalTo(true))
+				.body("ml.reachable", org.hamcrest.Matchers.equalTo(true))
+				.body("ml.activeProfile", org.hamcrest.Matchers.equalTo("default"))
+				.body("ml.ready", org.hamcrest.Matchers.equalTo(true))
+				.body("ml.modelsAvailable", org.hamcrest.Matchers.equalTo(4))
+				.body("ml.modelsTotal", org.hamcrest.Matchers.equalTo(4));
+	}
+
+	private String registerAdminToken() {
+		String username = "ml-admin-" + UUID.randomUUID().toString().substring(0, 8);
+		String password = "testpass123";
+		given().contentType(ContentType.JSON)
+				.body("{\"username\":\"" + username + "\",\"password\":\"" + password + "\"}").when()
+				.post("/api/v1/auth/register").then().statusCode(201);
+		String token = given().contentType(ContentType.JSON)
+				.body("{\"username\":\"" + username + "\",\"password\":\"" + password + "\"}").when()
+				.post("/api/v1/auth/login").then().statusCode(200).extract().path("accessToken");
+		String userId = given().header("Authorization", "Bearer " + token).when().get("/api/v1/auth/me").then()
+				.statusCode(200).extract().path("id");
+		QuarkusTransaction.requiringNew()
+				.run(() -> dev.pina.backend.domain.User.update("instanceRole = ?1 where id = ?2",
+						dev.pina.backend.domain.InstanceRole.ADMIN, UUID.fromString(userId)));
+		return given().contentType(ContentType.JSON)
+				.body("{\"username\":\"" + username + "\",\"password\":\"" + password + "\"}").when()
+				.post("/api/v1/auth/login").then().statusCode(200).extract().path("accessToken");
+	}
+
+	@Test
 	void deletingPhotoCascadesMlRows() throws IOException {
 		Path image = createJpegImage("ml-del", 80, 80, 0x556677);
 		String token = registerUserToken("del");

@@ -75,6 +75,19 @@ public class FakeImageAnalysisService extends ImageAnalysisGrpc.ImageAnalysisImp
 				.addTags(Tag.newBuilder().setLabel("beach").setConfidence(0.4f)).build();
 	}
 
+	@Override
+	public void getServiceStatus(dev.pina.ml.v1.GetServiceStatusRequest request,
+			StreamObserver<dev.pina.ml.v1.GetServiceStatusResponse> observer) {
+		dev.pina.ml.v1.GetServiceStatusResponse.Builder builder = dev.pina.ml.v1.GetServiceStatusResponse.newBuilder()
+				.setServiceVersion("0.1.0-test").setActiveProfile("default").setReady(true);
+		for (String modelId : new String[]{"clip-test", "text-test", "det-test", "rec-test"}) {
+			builder.addModels(
+					dev.pina.ml.v1.ModelAvailability.newBuilder().setModel(model(modelId)).setAvailable(true));
+		}
+		observer.onNext(builder.build());
+		observer.onCompleted();
+	}
+
 	/** Full success with custom face descriptors (deterministic boxes). */
 	public static AnalyzeImageResponse withFaces(AnalyzeImageRequest request, float[] imageEmbedding,
 			float[][] faceDescriptors) {
