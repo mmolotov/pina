@@ -36,6 +36,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.time.Duration;
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
@@ -71,6 +72,9 @@ public class MlAnalysisService {
 
 	@Inject
 	StorageProvider storage;
+
+	@Inject
+	FaceClusterService faceClusterService;
 
 	@GrpcClient("ml")
 	ImageAnalysis mlClient;
@@ -281,6 +285,7 @@ public class MlAnalysisService {
 				boolean descriptorsCompleted = isCompleted(steps.get(AnalysisStep.FACE_EMBEDDING));
 				em.createQuery("DELETE FROM PhotoFace f WHERE f.photoId = :photoId").setParameter("photoId", photoId)
 						.executeUpdate();
+				List<PhotoFace> insertedFaces = new ArrayList<>();
 				for (FaceDetection face : response.getFacesList()) {
 					PhotoFace photoFace = new PhotoFace();
 					photoFace.photoId = photoId;
@@ -295,6 +300,12 @@ public class MlAnalysisService {
 					photoFace.modelId = detectionStep.getModel().getModelId();
 					photoFace.modelVersion = detectionStep.getModel().getVersion();
 					em.persist(photoFace);
+					insertedFaces.add(photoFace);
+				}
+				if (!insertedFaces.isEmpty()) {
+					UUID ownerId = em.createQuery("SELECT p.uploader.id FROM Photo p WHERE p.id = :photoId", UUID.class)
+							.setParameter("photoId", photoId).getSingleResult();
+					faceClusterService.assignFaces(ownerId, insertedFaces);
 				}
 			}
 		});

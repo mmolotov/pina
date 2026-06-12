@@ -75,6 +75,41 @@ public class FakeImageAnalysisService extends ImageAnalysisGrpc.ImageAnalysisImp
 				.addTags(Tag.newBuilder().setLabel("beach").setConfidence(0.4f)).build();
 	}
 
+	/** Full success with custom face descriptors (deterministic boxes). */
+	public static AnalyzeImageResponse withFaces(AnalyzeImageRequest request, float[] imageEmbedding,
+			float[][] faceDescriptors) {
+		AnalyzeImageResponse.Builder builder = AnalyzeImageResponse.newBuilder().setRequestId(request.getRequestId())
+				.addStepResults(completed(AnalysisStep.IMAGE_EMBEDDING, "clip-test"))
+				.addStepResults(completed(AnalysisStep.TAGGING, "text-test"))
+				.addStepResults(completed(AnalysisStep.FACE_DETECTION, "det-test"))
+				.addStepResults(completed(AnalysisStep.FACE_EMBEDDING, "rec-test"))
+				.setImageEmbedding(embedding(imageEmbedding));
+		for (int i = 0; i < faceDescriptors.length; i++) {
+			builder.addFaces(FaceDetection
+					.newBuilder().setBox(NormalizedBoundingBox.newBuilder().setX(0.1f * (i + 1)).setY(0.1f)
+							.setWidth(0.1f).setHeight(0.1f))
+					.setConfidence(0.9f).setEmbedding(embedding(faceDescriptors[i])));
+		}
+		return builder.build();
+	}
+
+	/** Detections without descriptors: FACE_EMBEDDING is disabled by profile. */
+	public static AnalyzeImageResponse detectionsWithoutDescriptors(AnalyzeImageRequest request, float[] imageEmbedding,
+			int faceCount) {
+		AnalyzeImageResponse.Builder builder = AnalyzeImageResponse.newBuilder().setRequestId(request.getRequestId())
+				.addStepResults(completed(AnalysisStep.IMAGE_EMBEDDING, "clip-test"))
+				.addStepResults(completed(AnalysisStep.TAGGING, "text-test"))
+				.addStepResults(completed(AnalysisStep.FACE_DETECTION, "det-test")).addStepResults(StepResult
+						.newBuilder().setStep(AnalysisStep.FACE_EMBEDDING).setStatus(StepStatus.SKIPPED_DISABLED))
+				.setImageEmbedding(embedding(imageEmbedding));
+		for (int i = 0; i < faceCount; i++) {
+			builder.addFaces(FaceDetection.newBuilder().setBox(
+					NormalizedBoundingBox.newBuilder().setX(0.1f * (i + 1)).setY(0.1f).setWidth(0.1f).setHeight(0.1f))
+					.setConfidence(0.9f));
+		}
+		return builder.build();
+	}
+
 	private static Embedding embedding(float[] values) {
 		Embedding.Builder builder = Embedding.newBuilder();
 		for (float value : values) {

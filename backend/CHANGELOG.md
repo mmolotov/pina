@@ -19,6 +19,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `PINA_ML_HOST`/`PINA_ML_PORT`) and `pina.ml.*` orchestration configuration
 - Query paths for downstream search/face work: tags by photo, cosine
   nearest-neighbor photo lookup, per-photo face listings
+- Face clustering foundation: per-owner `face_clusters` with incremental
+  nearest-centroid assignment during ML result persistence (migration
+  `V03__face_clusters`, `pina.ml.face-cluster-distance` threshold); clusters
+  are never merged implicitly — naming/merge/split stay explicit API
+  operations for the face browse work
 - Cookie-backed browser session authentication with persistent `browser_sessions` storage
 - Browser-session auth endpoints: `/auth/session/register`, `/auth/session/login`, and `/auth/session/logout`
 - CSRF protection for mutating requests authenticated by session cookie

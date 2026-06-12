@@ -48,6 +48,10 @@ public class PhotoFace extends PanacheEntityBase {
 	@Column
 	public float[] descriptor;
 
+	// Assigned face cluster; null until a descriptor is clustered.
+	@Column(name = "cluster_id")
+	public UUID clusterId;
+
 	@Column(nullable = false)
 	public String modelId;
 

@@ -38,4 +38,11 @@ public interface MlConfig {
 	/** Upper bound for the retry delay. */
 	@WithDefault("PT30M")
 	Duration backoffCap();
+
+	/**
+	 * Max cosine distance between a face descriptor and a cluster centroid for the
+	 * face to join that cluster (0.6 ~ ArcFace cosine similarity 0.4).
+	 */
+	@WithDefault("0.6")
+	double faceClusterDistance();
 }

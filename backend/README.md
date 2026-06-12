@@ -279,6 +279,14 @@ The upload response is never delayed or failed by ML concerns.
 Downstream consumers (`MlAnalysisService`): `listTagsForPhotos`, `findNearestPhotoIds`
 (cosine-distance `ORDER BY embedding <=> :query` via pgvector), and per-photo face listings.
 
+Face descriptors are grouped into stable per-owner clusters (`face_clusters`) by
+`FaceClusterService` using incremental nearest-centroid assignment inside the same
+transaction that persists the faces: a descriptor joins the nearest cluster of the photo
+owner when its cosine distance to the centroid is within `pina.ml.face-cluster-distance`,
+otherwise it seeds a new cluster; centroids update incrementally (running normalized mean),
+so new photos never require a rebuild. Clusters are never merged implicitly — naming, merge,
+and split are explicit operations of the face APIs (`/api/v1/search/faces`, follow-up task).
+
 ## API
 
 All endpoints under `/api/v1/*` require either a valid JWT `Authorization: Bearer <token>` header
@@ -598,6 +606,7 @@ Additional auth/admin schema changes are applied by later migrations:
 
 `V02__ml_photo_analysis.sql` enables the `vector` extension (pgvector) and adds the ML analysis
 tables: `photo_analysis_jobs`, `photo_embeddings`, `photo_tags`, `photo_faces`.
+`V03__face_clusters.sql` adds `face_clusters` and `photo_faces.cluster_id`.
 
 Quarkus Dev Services starts PostgreSQL automatically in dev/test mode. Docker is required.
 
@@ -630,6 +639,7 @@ Key properties from `src/main/resources/application.properties`:
 | `pina.ml.deadline`                      | `PT120S`                  | per-call AnalyzeImage deadline            |
 | `pina.ml.max-attempts`                  | `8`                       | attempts before a job is FAILED           |
 | `pina.ml.backoff-base` / `-cap`         | `PT30S` / `PT30M`         | retry backoff window                      |
+| `pina.ml.face-cluster-distance`         | `0.6`                     | max cosine distance to join a face cluster|
 | `quarkus.grpc.clients.ml.host` / `.port`| `localhost` / `50051`     | ML service endpoint (`PINA_ML_HOST/PORT`) |
 
 Photo upload resource controls:
