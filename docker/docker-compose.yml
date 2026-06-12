@@ -42,11 +42,17 @@ services:
       QUARKUS_DATASOURCE_USERNAME: ${POSTGRES_USER:-pina}
       QUARKUS_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-pina}
       QUARKUS_HTTP_CORS_ORIGINS: http://localhost:*,https://localhost:*
+      PINA_ML_HOST: ml
+      PINA_ML_PORT: 50051
     ports:
       - "8080:8080"
     depends_on:
       postgres:
         condition: service_healthy
+      # The backend tolerates an unavailable ML service (jobs retry later),
+      # so plain startup ordering is enough here.
+      ml:
+        condition: service_started
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:8080/q/health/ready || exit 1"]
       interval: 10s

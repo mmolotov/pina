@@ -12,3 +12,5 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - docker-compose.yml with PostgreSQL service (pgvector/pgvector:pg17) and backend
 - Dockerfile for the ML service (uv-based multi-stage build with gRPC codegen)
 - docker-compose.yml `ml` service with persistent model-cache volume and healthcheck
+- backend wired to the ML service (`PINA_ML_HOST`/`PINA_ML_PORT`, startup-order dependency;
+  the backend tolerates an unavailable ML service)

@@ -28,6 +28,8 @@ dependencies {
     implementation("io.quarkus:quarkus-jdbc-postgresql")
     implementation("io.quarkus:quarkus-flyway")
     implementation("jakarta.json.bind:jakarta.json.bind-api")
+    // pgvector column mapping (photo embeddings / face descriptors)
+    implementation("org.hibernate.orm:hibernate-vector")
 
     // OpenAPI
     implementation("io.quarkus:quarkus-smallrye-openapi")

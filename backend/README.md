@@ -254,6 +254,31 @@ Supported input formats today:
 Compression output format is configurable, but the current implementation supports `jpeg`, `jpg`,
 and `png`. Default is `jpeg`.
 
+## ML Analysis
+
+After a photo is persisted, the backend enqueues an asynchronous analysis job
+(`photo_analysis_jobs`, one per photo) and hands the work to the ML service over gRPC
+(shared contract in [proto/](../proto/README.md), service in [ml/](../ml/README.md)).
+The upload response is never delayed or failed by ML concerns.
+
+- A polling worker (`pina.ml.poll-interval`, plus an immediate poke after enqueue) claims due
+  jobs with `FOR UPDATE SKIP LOCKED` using lease semantics: claiming bumps `attempts` and pushes
+  `next_attempt_at` forward, so a crashed worker self-heals.
+- The worker sends a derived variant (`THUMB_MD`, falling back to `COMPRESSED`/`ORIGINAL`) to
+  `pina.ml.v1.ImageAnalysis/AnalyzeImage` and persists the outputs transactionally:
+  `photo_embeddings` (CLIP vector, pgvector `vector(512)` with an HNSW cosine index),
+  `photo_tags` (zero-shot labels + confidence), `photo_faces` (normalized boxes + optional
+  ArcFace descriptors). Each row carries model id/version provenance.
+- Only categories whose pipeline step reported `COMPLETED` are replaced; partial results are
+  kept and the job retries with exponential backoff (`pina.ml.backoff-*`) until
+  `pina.ml.max-attempts`, after which it is marked `FAILED` with the last error.
+  `INVALID_ARGUMENT` from the ML side (undecodable input) fails the job immediately.
+- When the ML service is unreachable the job simply stays `PENDING` with a scheduled retry —
+  uploads continue to work and analysis catches up once the service returns.
+
+Downstream consumers (`MlAnalysisService`): `listTagsForPhotos`, `findNearestPhotoIds`
+(cosine-distance `ORDER BY embedding <=> :query` via pgvector), and per-photo face listings.
+
 ## API
 
 All endpoints under `/api/v1/*` require either a valid JWT `Authorization: Bearer <token>` header
@@ -571,6 +596,9 @@ Additional auth/admin schema changes are applied by later migrations:
 - `users.instance_role` for instance-level authorization
 - `users.active` for account deactivation
 
+`V02__ml_photo_analysis.sql` enables the `vector` extension (pgvector) and adds the ML analysis
+tables: `photo_analysis_jobs`, `photo_embeddings`, `photo_tags`, `photo_faces`.
+
 Quarkus Dev Services starts PostgreSQL automatically in dev/test mode. Docker is required.
 
 ## Configuration
@@ -597,6 +625,12 @@ Key properties from `src/main/resources/application.properties`:
 | `pina.photo.thumbnails.lg-width`        | `1920`                    | large thumbnail width                     |
 | `pina.photo.variant-generation.parallelism` | `0`                   | shared variant worker pool (`0` = auto)  |
 | `pina.photo.heavy-phase.max-concurrent` | `0`                       | concurrent image-heavy uploads (`0` = auto) |
+| `pina.ml.enabled`                       | `true`                    | enqueue photos for ML analysis            |
+| `pina.ml.poll-interval`                 | `10s`                     | analysis worker poll cadence              |
+| `pina.ml.deadline`                      | `PT120S`                  | per-call AnalyzeImage deadline            |
+| `pina.ml.max-attempts`                  | `8`                       | attempts before a job is FAILED           |
+| `pina.ml.backoff-base` / `-cap`         | `PT30S` / `PT30M`         | retry backoff window                      |
+| `quarkus.grpc.clients.ml.host` / `.port`| `localhost` / `50051`     | ML service endpoint (`PINA_ML_HOST/PORT`) |
 
 Photo upload resource controls:
 

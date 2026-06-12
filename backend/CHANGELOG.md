@@ -8,6 +8,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Asynchronous ML photo analysis orchestration: per-photo jobs
+  (`photo_analysis_jobs`) enqueued after upload, lease-based claiming with
+  retry backoff, gRPC `AnalyzeImage` calls to the ML service, and graceful
+  degradation when the service is unavailable
+- ML output persistence with pgvector: `photo_embeddings` (vector(512), HNSW
+  cosine index), `photo_tags`, `photo_faces` with optional descriptors; all
+  rows carry model id/version provenance (migration `V02__ml_photo_analysis`)
+- gRPC client for `pina.ml.v1.ImageAnalysis` (`quarkus.grpc.clients.ml.*`,
+  `PINA_ML_HOST`/`PINA_ML_PORT`) and `pina.ml.*` orchestration configuration
+- Query paths for downstream search/face work: tags by photo, cosine
+  nearest-neighbor photo lookup, per-photo face listings
 - Cookie-backed browser session authentication with persistent `browser_sessions` storage
 - Browser-session auth endpoints: `/auth/session/register`, `/auth/session/login`, and `/auth/session/logout`
 - CSRF protection for mutating requests authenticated by session cookie
