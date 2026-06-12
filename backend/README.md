@@ -493,13 +493,15 @@ Public-share notes:
 |--------|------|-------------|
 | `GET` | `/api/v1/search?q=&scope=&kind=&sort=&page=&size=&needsTotal=` | Search accessible photos and albums with a stable paginated mixed-result contract |
 
-Phase 3 search behavior today:
+Search behavior today:
 
-- `q` is plain text matching for the current backend phase. There is no semantic embedding search yet.
-- Searchable fields today are intentionally limited to currently available text:
-  - photos: `originalFilename`
+- `q` is plain text matching. There is no semantic embedding search yet (the ML service already
+  exposes `EmbedText` for it; wiring is follow-up work).
+- Searchable fields:
+  - photos: `originalFilename` and persisted ML auto-tags (`photo_tags.label`)
   - albums: `name`, `description`
-- "Tag-like" queries are accepted through the same `q` parameter, but they only match when the tag text is already present in those current textual fields. Dedicated ML tag indexing is not implemented yet.
+- Tag matches go through the same access-control joins as filename matches and contribute to
+  relevance scoring (exact tag > filename prefix > tag prefix > filename contains > tag contains).
 - Supported `scope` values:
   - `all` (default): user's own library items plus items visible through accessible Space albums
   - `library`: personal-library photos and albums owned by the current user

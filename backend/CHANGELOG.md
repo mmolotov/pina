@@ -19,6 +19,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `PINA_ML_HOST`/`PINA_ML_PORT`) and `pina.ml.*` orchestration configuration
 - Query paths for downstream search/face work: tags by photo, cosine
   nearest-neighbor photo lookup, per-photo face listings
+- Tag-backed search: `/api/v1/search` photo results now also match persisted
+  ML auto-tags with deterministic relevance scoring; visibility rules are
+  unchanged across library, space, and favorites scopes
 - Face clustering foundation: per-owner `face_clusters` with incremental
   nearest-centroid assignment during ML result persistence (migration
   `V03__face_clusters`, `pina.ml.face-cluster-distance` threshold); clusters

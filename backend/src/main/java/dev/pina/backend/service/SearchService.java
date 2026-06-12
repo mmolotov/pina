@@ -5,6 +5,7 @@ import dev.pina.backend.domain.AlbumPhoto;
 import dev.pina.backend.domain.Favorite;
 import dev.pina.backend.domain.FavoriteTargetType;
 import dev.pina.backend.domain.Photo;
+import dev.pina.backend.domain.PhotoTag;
 import dev.pina.backend.domain.User;
 import dev.pina.backend.pagination.PageRequest;
 import dev.pina.backend.pagination.PageResult;
@@ -150,9 +151,12 @@ public class SearchService {
 	private void addLibraryHits(UUID userId, String normalizedQuery, String likePattern, SearchKind kind,
 			Set<UUID> favoritePhotoIds, Set<UUID> favoriteAlbumIds, Map<String, SearchAccumulator> hits) {
 		if (kind == SearchKind.ALL || kind == SearchKind.PHOTO) {
-			for (Photo photo : loadLibraryPhotoMatches(userId, likePattern)) {
+			List<Photo> photos = loadLibraryPhotoMatches(userId, likePattern);
+			Map<UUID, List<String>> tagMatches = loadMatchingTagLabels(
+					photos.stream().map(photo -> photo.id).collect(Collectors.toSet()), likePattern);
+			for (Photo photo : photos) {
 				mergePhotoHit(hits, photo, null, null, null, null, favoritePhotoIds.contains(photo.id),
-						computePhotoScore(photo, normalizedQuery));
+						computePhotoScore(photo, normalizedQuery, tagMatches.getOrDefault(photo.id, List.of())));
 			}
 		}
 		if (kind == SearchKind.ALL || kind == SearchKind.ALBUM) {
@@ -169,11 +173,15 @@ public class SearchService {
 			return;
 		}
 		if (kind == SearchKind.ALL || kind == SearchKind.PHOTO) {
-			for (AlbumPhoto albumPhoto : loadSpacePhotoMatches(accessibleSpaceIds, likePattern)) {
+			List<AlbumPhoto> albumPhotos = loadSpacePhotoMatches(accessibleSpaceIds, likePattern);
+			Map<UUID, List<String>> tagMatches = loadMatchingTagLabels(
+					albumPhotos.stream().map(albumPhoto -> albumPhoto.photo.id).collect(Collectors.toSet()),
+					likePattern);
+			for (AlbumPhoto albumPhoto : albumPhotos) {
 				mergePhotoHit(hits, albumPhoto.photo, albumPhoto.album.id, albumPhoto.album.name,
 						albumPhoto.album.space.id, albumPhoto.album.space.name,
-						favoritePhotoIds.contains(albumPhoto.photo.id),
-						computePhotoScore(albumPhoto.photo, normalizedQuery));
+						favoritePhotoIds.contains(albumPhoto.photo.id), computePhotoScore(albumPhoto.photo,
+								normalizedQuery, tagMatches.getOrDefault(albumPhoto.photo.id, List.of())));
 			}
 		}
 		if (kind == SearchKind.ALL || kind == SearchKind.ALBUM) {
@@ -249,7 +257,13 @@ public class SearchService {
 				LEFT JOIN FETCH p.uploader
 				LEFT JOIN FETCH p.personalLibrary
 				WHERE p.uploader.id = :userId
-				  AND LOWER(COALESCE(p.originalFilename, '')) LIKE :pattern ESCAPE '!'
+				  AND (
+				      LOWER(COALESCE(p.originalFilename, '')) LIKE :pattern ESCAPE '!'
+				      OR EXISTS (
+				          SELECT 1 FROM PhotoTag t
+				          WHERE t.photoId = p.id AND LOWER(t.label) LIKE :pattern ESCAPE '!'
+				      )
+				  )
 				""", Photo.class).setParameter("userId", userId).setParameter("pattern", likePattern).getResultList();
 	}
 
@@ -264,9 +278,27 @@ public class SearchService {
 				JOIN FETCH ap.album a
 				JOIN FETCH a.space s
 				WHERE s.id IN :spaceIds
-				  AND LOWER(COALESCE(p.originalFilename, '')) LIKE :pattern ESCAPE '!'
+				  AND (
+				      LOWER(COALESCE(p.originalFilename, '')) LIKE :pattern ESCAPE '!'
+				      OR EXISTS (
+				          SELECT 1 FROM PhotoTag t
+				          WHERE t.photoId = p.id AND LOWER(t.label) LIKE :pattern ESCAPE '!'
+				      )
+				  )
 				""", AlbumPhoto.class).setParameter("spaceIds", accessibleSpaceIds).setParameter("pattern", likePattern)
 				.getResultList();
+	}
+
+	private Map<UUID, List<String>> loadMatchingTagLabels(Set<UUID> photoIds, String likePattern) {
+		if (photoIds.isEmpty()) {
+			return Map.of();
+		}
+		return em.createQuery("""
+				SELECT t FROM PhotoTag t
+				WHERE t.photoId IN :photoIds AND LOWER(t.label) LIKE :pattern ESCAPE '!'
+				""", PhotoTag.class).setParameter("photoIds", photoIds).setParameter("pattern", likePattern)
+				.getResultList().stream().collect(Collectors.groupingBy(tag -> tag.photoId,
+						Collectors.mapping(tag -> tag.label, Collectors.toList())));
 	}
 
 	private List<Album> loadLibraryAlbumMatches(UUID userId, String likePattern) {
@@ -315,15 +347,27 @@ public class SearchService {
 		return "%" + escapedQuery + "%";
 	}
 
-	private int computePhotoScore(Photo photo, String normalizedQuery) {
+	private int computePhotoScore(Photo photo, String normalizedQuery, List<String> matchedTagLabels) {
 		int score = 0;
 		String filename = normalizeQuery(photo.originalFilename);
 		if (filename.equals(normalizedQuery)) {
-			score += 120;
+			score = 120;
 		} else if (filename.startsWith(normalizedQuery)) {
-			score += 90;
+			score = 90;
 		} else if (filename.contains(normalizedQuery)) {
-			score += 60;
+			score = 60;
+		}
+		for (String label : matchedTagLabels) {
+			String normalizedLabel = normalizeQuery(label);
+			int tagScore;
+			if (normalizedLabel.equals(normalizedQuery)) {
+				tagScore = 100;
+			} else if (normalizedLabel.startsWith(normalizedQuery)) {
+				tagScore = 70;
+			} else {
+				tagScore = 40;
+			}
+			score = Math.max(score, tagScore);
 		}
 		return score;
 	}
