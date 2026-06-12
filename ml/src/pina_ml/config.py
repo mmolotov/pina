@@ -30,6 +30,9 @@ class Settings(BaseSettings):
     http_host: str = "0.0.0.0"
     http_port: int = 8000
     model_cache_dir: Path = Path("models")
+    # Optional operator-provided dir with extra/override model manifests.
+    manifests_dir: Path | None = None
+    download_models_on_startup: bool = True
     profile: RuntimeProfile = RuntimeProfile.DEFAULT
     execution_providers: list[str] = ["CPUExecutionProvider"]
     log_level: str = "INFO"

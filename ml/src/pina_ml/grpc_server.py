@@ -5,9 +5,10 @@ import logging
 import grpc
 from grpc_health.v1 import health, health_pb2, health_pb2_grpc
 
-from pina.ml.v1 import image_analysis_pb2, image_analysis_pb2_grpc
+from pina.ml.v1 import common_pb2, image_analysis_pb2, image_analysis_pb2_grpc
 from pina_ml import __version__
 from pina_ml.config import Settings
+from pina_ml.registry import ModelRegistry
 
 LOG = logging.getLogger(__name__)
 
@@ -15,14 +16,15 @@ GRPC_SERVICE_NAME = "pina.ml.v1.ImageAnalysis"
 
 
 class ImageAnalysisService(image_analysis_pb2_grpc.ImageAnalysisServicer):
-    """Scaffold servicer.
+    """Service backed by the model registry.
 
-    GetServiceStatus is live; the inference RPCs respond UNIMPLEMENTED until
-    the model registry (TASK-050.03) and pipeline (TASK-050.04) land.
+    GetServiceStatus reports real per-model availability; the inference RPCs
+    respond UNIMPLEMENTED until the pipeline lands (TASK-050.04).
     """
 
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: Settings, registry: ModelRegistry) -> None:
         self._settings = settings
+        self._registry = registry
 
     async def AnalyzeImage(self, request, context):
         await context.abort(
@@ -33,19 +35,33 @@ class ImageAnalysisService(image_analysis_pb2_grpc.ImageAnalysisServicer):
         await context.abort(grpc.StatusCode.UNIMPLEMENTED, "Text embedding is not implemented yet")
 
     async def GetServiceStatus(self, request, context):
-        # No registry yet: the scaffold requires no models, so it reports ready.
+        availability = self._registry.availability()
         return image_analysis_pb2.GetServiceStatusResponse(
             service_version=__version__,
-            active_profile=self._settings.profile.value,
-            ready=True,
+            active_profile=self._registry.profile.name,
+            ready=all(entry.available for entry in availability),
+            models=[
+                image_analysis_pb2.ModelAvailability(
+                    model=common_pb2.ModelRef(
+                        model_id=entry.manifest.id,
+                        version=entry.manifest.version,
+                        runtime=entry.manifest.runtime,
+                    ),
+                    step=common_pb2.AnalysisStep.Value(entry.step.name),
+                    available=entry.available,
+                )
+                for entry in availability
+            ],
         )
 
 
-async def create_grpc_server(settings: Settings) -> tuple[grpc.aio.Server, int]:
+async def create_grpc_server(
+    settings: Settings, registry: ModelRegistry
+) -> tuple[grpc.aio.Server, int]:
     """Start the gRPC server and mark it SERVING; returns (server, bound port)."""
     server = grpc.aio.server()
     image_analysis_pb2_grpc.add_ImageAnalysisServicer_to_server(
-        ImageAnalysisService(settings), server
+        ImageAnalysisService(settings, registry), server
     )
     health_servicer = health.aio.HealthServicer()
     health_pb2_grpc.add_HealthServicer_to_server(health_servicer, server)

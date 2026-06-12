@@ -1,0 +1,12 @@
+name: cpu-lite
+max_parallel_analyses: 1
+analysis_max_resolution: 960
+steps:
+  image_embedding:
+    model: clip-vit-b32-vision-int8
+  tagging:
+    model: clip-vit-b32-text-int8
+  face_detection:
+    model: scrfd-500m
+  face_embedding:
+    model: arcface-w600k-mbf

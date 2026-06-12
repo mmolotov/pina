@@ -1,0 +1,24 @@
+id: arcface-w600k-mbf
+version: "0.7"
+step: face_embedding
+runtime: onnxruntime
+license:
+  spdx: LicenseRef-InsightFace-NonCommercial
+  url: https://github.com/deepinsight/insightface#license
+  commercial_use: false
+  allow_bundling: false
+  notes: >-
+    InsightFace pretrained packs are available for non-commercial research
+    purposes only. PINA downloads them at runtime onto the operator's own
+    instance and never redistributes the weights. MobileFaceNet backbone for
+    weak CPUs.
+files:
+  - name: w600k_mbf.onnx
+    url: https://github.com/deepinsight/insightface/releases/download/v0.7/buffalo_s.zip
+    archive:
+      format: zip
+      member: w600k_mbf.onnx
+input:
+  image_size: 112
+output:
+  embedding_dim: 512

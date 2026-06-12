@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse
 
 from pina_ml import __version__
 from pina_ml.config import Settings
+from pina_ml.registry import ModelRegistry
 
 
 @dataclass
@@ -16,7 +17,7 @@ class ServiceState:
     grpc_ready: bool = False
 
 
-def create_admin_app(settings: Settings, state: ServiceState) -> FastAPI:
+def create_admin_app(settings: Settings, state: ServiceState, registry: ModelRegistry) -> FastAPI:
     app = FastAPI(title="PINA ML admin", version=__version__)
 
     @app.get("/healthz")
@@ -34,10 +35,32 @@ def create_admin_app(settings: Settings, state: ServiceState) -> FastAPI:
         return {
             "service": "pina-ml",
             "version": __version__,
-            "profile": settings.profile.value,
+            "profile": registry.profile.name,
+            "models_ready": registry.ready,
+            "max_parallel_analyses": registry.profile.max_parallel_analyses,
             "execution_providers": settings.execution_providers,
             "model_cache_dir": str(settings.model_cache_dir),
             "grpc_port": settings.grpc_port,
         }
+
+    @app.get("/api/models")
+    async def models() -> list[dict[str, object]]:
+        return [
+            {
+                "id": entry.manifest.id,
+                "version": entry.manifest.version,
+                "step": entry.step.value,
+                "runtime": entry.manifest.runtime,
+                "available": entry.available,
+                "license": {
+                    "spdx": entry.manifest.license.spdx,
+                    "url": entry.manifest.license.url,
+                    "commercial_use": entry.manifest.license.commercial_use,
+                    "allow_bundling": entry.manifest.license.allow_bundling,
+                    "notes": entry.manifest.license.notes,
+                },
+            }
+            for entry in registry.availability()
+        ]
 
     return app

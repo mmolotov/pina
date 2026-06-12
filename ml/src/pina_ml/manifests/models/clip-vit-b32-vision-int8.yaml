@@ -1,0 +1,20 @@
+id: clip-vit-b32-vision-int8
+version: "1.0"
+step: image_embedding
+runtime: onnxruntime
+license:
+  spdx: MIT
+  url: https://github.com/openai/CLIP/blob/main/LICENSE
+  commercial_use: true
+  allow_bundling: true
+  notes: >-
+    Dynamically quantized int8 ONNX export (Xenova/clip-vit-base-patch32) of
+    openai/clip-vit-base-patch32; smaller and faster on weak CPUs at a small
+    accuracy cost.
+files:
+  - name: vision_model_quantized.onnx
+    url: https://huggingface.co/Xenova/clip-vit-base-patch32/resolve/main/onnx/vision_model_quantized.onnx
+input:
+  image_size: 224
+output:
+  embedding_dim: 512
