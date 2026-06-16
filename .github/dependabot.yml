@@ -23,6 +23,17 @@ updates:
       prefix: "deps(frontend):"
     open-pull-requests-limit: 10
 
+  # ML service (Python, uv.lock)
+  - package-ecosystem: uv
+    directory: /ml
+    schedule:
+      interval: weekly
+      day: monday
+    labels: [dependencies, ml]
+    commit-message:
+      prefix: "deps(ml):"
+    open-pull-requests-limit: 10
+
   # GitHub Actions
   - package-ecosystem: github-actions
     directory: /

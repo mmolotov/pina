@@ -27,6 +27,9 @@ defaults:
 jobs:
   checks:
     runs-on: ubuntu-latest
+    # Without a cap a hung step (e.g. `playwright install --with-deps` stalling on
+    # an apt lock) runs to the 6h GitHub hard limit. Fail fast instead.
+    timeout-minutes: 30
 
     steps:
       - uses: actions/checkout@v6
@@ -41,7 +44,13 @@ jobs:
         run: npm ci
 
       - name: Install Playwright browser
-        run: npx playwright install --with-deps chromium
+        # No `--with-deps`: it shells out to `apt`, which on hosted runners stalls
+        # indefinitely on the dpkg lock held by unattended-upgrades (the step then
+        # produces no output and only dies at the timeout). ubuntu-latest already
+        # ships Chromium's system libraries, so a plain browser download — HTTPS,
+        # no apt, no lock — is reliable. The cap stays as a backstop.
+        run: npx playwright install chromium
+        timeout-minutes: 10
 
       - name: UI quality gates
         run: npm run check

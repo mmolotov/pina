@@ -104,7 +104,7 @@ If Phase 3/4 UI requirements add gesture-heavy viewers, large virtualized grids,
 
 === LANG-004: Separate Python ML service with gRPC
 
-Status:: Accepted
+Status:: Implemented
 Date:: 2026-03-25
 
 ==== Context

@@ -1,0 +1,23 @@
+id: scrfd-10g
+version: "0.7"
+step: face_detection
+runtime: onnxruntime
+license:
+  spdx: LicenseRef-InsightFace-NonCommercial
+  url: https://github.com/deepinsight/insightface#license
+  commercial_use: false
+  allow_bundling: false
+  notes: >-
+    InsightFace pretrained packs are available for non-commercial research
+    purposes only. PINA downloads them at runtime onto the operator's own
+    instance and never redistributes the weights.
+files:
+  - name: det_10g.onnx
+    url: https://github.com/deepinsight/insightface/releases/download/v0.7/buffalo_l.zip
+    archive:
+      format: zip
+      member: det_10g.onnx
+input:
+  image_size: 640
+output:
+  bbox_format: normalized-xywh

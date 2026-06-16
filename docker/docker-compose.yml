@@ -6,12 +6,31 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-pina}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-pina}
     ports:
-      - "5432:5432"
+      # Host port is configurable so the stack can coexist with a local PostgreSQL.
+      - "${PINA_POSTGRES_PORT:-5432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-pina}"]
       interval: 5s
+      timeout: 5s
+      retries: 5
+
+  ml:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.ml
+    environment:
+      PINA_ML_PROFILE: ${PINA_ML_PROFILE:-default}
+      PINA_ML_MODEL_CACHE_DIR: /models
+    ports:
+      - "50051:50051"
+      - "8000:8000"
+    volumes:
+      - mlmodels:/models
+    healthcheck:
+      test: ["CMD", "uv", "run", "--no-sync", "python", "-c", "import sys, urllib.request; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3).status == 200 else 1)"]
+      interval: 10s
       timeout: 5s
       retries: 5
 
@@ -24,11 +43,24 @@ services:
       QUARKUS_DATASOURCE_USERNAME: ${POSTGRES_USER:-pina}
       QUARKUS_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-pina}
       QUARKUS_HTTP_CORS_ORIGINS: http://localhost:*,https://localhost:*
+      PINA_ML_HOST: ml
+      PINA_ML_PORT: 50051
+      PINA_ALBUM_DOWNLOAD_TOKEN_SIGNING_KEY: ${PINA_ALBUM_DOWNLOAD_TOKEN_SIGNING_KEY:-compose-dev-album-signing-key}
+    volumes:
+      # JWT keys are not in the repo; generate them once (see backend/README.md):
+      #   cd backend && mkdir -p dev-keys
+      #   openssl genrsa -out dev-keys/privateKey.pem 2048
+      #   openssl rsa -in dev-keys/privateKey.pem -pubout -out dev-keys/publicKey.pem
+      - ../backend/dev-keys:/app/dev-keys:ro
     ports:
       - "8080:8080"
     depends_on:
       postgres:
         condition: service_healthy
+      # The backend tolerates an unavailable ML service (jobs retry later),
+      # so plain startup ordering is enough here.
+      ml:
+        condition: service_started
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:8080/q/health/ready || exit 1"]
       interval: 10s
@@ -37,3 +69,4 @@ services:
 
 volumes:
   pgdata:
+  mlmodels:

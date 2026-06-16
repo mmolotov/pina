@@ -69,18 +69,18 @@ Legend: ✅ done · 🔲 todo
 
 ## Phase 4: ML Service (basic)
 
-- 🔲 gRPC contract (proto definitions)
-- 🔲 Python service scaffold: FastAPI (admin) + gRPC server
-- 🔲 Pipeline engine: configurable processing steps
-- 🔲 Model registry with YAML manifests
-- 🔲 Model download from HuggingFace on first startup
-- 🔲 CLIP model: embeddings + auto-tagging
-- 🔲 InsightFace model: face detection + recognition
-- 🔲 Backend integration: photo upload → gRPC ML task → results in DB
-- 🔲 pgvector: store and query embeddings
-- 🔲 Search by tags
-- 🔲 Face clustering and grouping
-- 🔲 Video keyframe extraction for ML analysis
+- ✅ gRPC contract (proto definitions, shared `pina.ml.v1` with codegen on both sides)
+- ✅ Python service scaffold: FastAPI (admin) + gRPC server
+- ✅ Pipeline engine: configurable processing steps with per-step status and provenance
+- ✅ Model registry with YAML manifests (license metadata, `default` / `cpu-lite` profiles)
+- ✅ Model download from HuggingFace on first startup (persistent cache, no re-downloads)
+- ✅ CLIP model: embeddings + auto-tagging (zero-shot over packaged vocabulary)
+- ✅ InsightFace model: face detection + recognition (SCRFD + ArcFace descriptors)
+- ✅ Backend integration: photo upload → gRPC ML task → results in DB (async jobs, retries, graceful degradation)
+- ✅ pgvector: store and query embeddings (HNSW cosine index, nearest-neighbor query path)
+- ✅ Search by tags (via `/api/v1/search`)
+- ✅ Face clustering and grouping (per-owner incremental clusters; browse/naming APIs tracked in Phase 3 search backlog)
+- 🔲 Video keyframe extraction for ML analysis (deferred until Phase 7 video entities exist; the gRPC contract already carries the keyframe seam)
 
 ## Phase 5: Telegram
 

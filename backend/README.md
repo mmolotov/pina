@@ -254,6 +254,43 @@ Supported input formats today:
 Compression output format is configurable, but the current implementation supports `jpeg`, `jpg`,
 and `png`. Default is `jpeg`.
 
+## ML Analysis
+
+After a photo is persisted, the backend enqueues an asynchronous analysis job
+(`photo_analysis_jobs`, one per photo) and hands the work to the ML service over gRPC
+(shared contract in [proto/](../proto/README.md), service in [ml/](../ml/README.md)).
+The upload response is never delayed or failed by ML concerns.
+
+- A polling worker (`pina.ml.poll-interval`, plus an immediate poke after enqueue) claims due
+  jobs with `FOR UPDATE SKIP LOCKED` using lease semantics: claiming bumps `attempts` and pushes
+  `next_attempt_at` forward, so a crashed worker self-heals.
+- The worker sends a derived variant (`THUMB_MD`, falling back to `COMPRESSED`/`ORIGINAL`) to
+  `pina.ml.v1.ImageAnalysis/AnalyzeImage` and persists the outputs transactionally:
+  `photo_embeddings` (CLIP vector, pgvector `vector(512)` with an HNSW cosine index),
+  `photo_tags` (zero-shot labels + confidence), `photo_faces` (normalized boxes + optional
+  ArcFace descriptors). Each row carries model id/version provenance.
+- Only categories whose pipeline step reported `COMPLETED` are replaced; partial results are
+  kept and the job retries with exponential backoff (`pina.ml.backoff-*`) until
+  `pina.ml.max-attempts`, after which it is marked `FAILED` with the last error.
+  `INVALID_ARGUMENT` from the ML side (undecodable input) fails the job immediately.
+- When the ML service is unreachable the job simply stays `PENDING` with a scheduled retry —
+  uploads continue to work and analysis catches up once the service returns.
+
+Downstream consumers (`MlAnalysisService`): `listTagsForPhotos`, `findNearestPhotoIds`
+(cosine-distance `ORDER BY embedding <=> :query` via pgvector), and per-photo face listings.
+
+Admin visibility: `GET /api/v1/admin/health` includes an `ml` block (enabled, reachable,
+activeProfile, ready, modelsAvailable/modelsTotal) sourced from the ML service's
+`GetServiceStatus` with a 2s deadline; an unreachable service degrades to `reachable=false`.
+
+Face descriptors are grouped into stable per-owner clusters (`face_clusters`) by
+`FaceClusterService` using incremental nearest-centroid assignment inside the same
+transaction that persists the faces: a descriptor joins the nearest cluster of the photo
+owner when its cosine distance to the centroid is within `pina.ml.face-cluster-distance`,
+otherwise it seeds a new cluster; centroids update incrementally (running normalized mean),
+so new photos never require a rebuild. Clusters are never merged implicitly — naming, merge,
+and split are explicit operations of the face APIs (`/api/v1/search/faces`, follow-up task).
+
 ## API
 
 All endpoints under `/api/v1/*` require either a valid JWT `Authorization: Bearer <token>` header
@@ -460,13 +497,15 @@ Public-share notes:
 |--------|------|-------------|
 | `GET` | `/api/v1/search?q=&scope=&kind=&sort=&page=&size=&needsTotal=` | Search accessible photos and albums with a stable paginated mixed-result contract |
 
-Phase 3 search behavior today:
+Search behavior today:
 
-- `q` is plain text matching for the current backend phase. There is no semantic embedding search yet.
-- Searchable fields today are intentionally limited to currently available text:
-  - photos: `originalFilename`
+- `q` is plain text matching. There is no semantic embedding search yet (the ML service already
+  exposes `EmbedText` for it; wiring is follow-up work).
+- Searchable fields:
+  - photos: `originalFilename` and persisted ML auto-tags (`photo_tags.label`)
   - albums: `name`, `description`
-- "Tag-like" queries are accepted through the same `q` parameter, but they only match when the tag text is already present in those current textual fields. Dedicated ML tag indexing is not implemented yet.
+- Tag matches go through the same access-control joins as filename matches and contribute to
+  relevance scoring (exact tag > filename prefix > tag prefix > filename contains > tag contains).
 - Supported `scope` values:
   - `all` (default): user's own library items plus items visible through accessible Space albums
   - `library`: personal-library photos and albums owned by the current user
@@ -571,6 +610,10 @@ Additional auth/admin schema changes are applied by later migrations:
 - `users.instance_role` for instance-level authorization
 - `users.active` for account deactivation
 
+`V02__ml_photo_analysis.sql` enables the `vector` extension (pgvector) and adds the ML analysis
+tables: `photo_analysis_jobs`, `photo_embeddings`, `photo_tags`, `photo_faces`.
+`V03__face_clusters.sql` adds `face_clusters` and `photo_faces.cluster_id`.
+
 Quarkus Dev Services starts PostgreSQL automatically in dev/test mode. Docker is required.
 
 ## Configuration
@@ -597,6 +640,13 @@ Key properties from `src/main/resources/application.properties`:
 | `pina.photo.thumbnails.lg-width`        | `1920`                    | large thumbnail width                     |
 | `pina.photo.variant-generation.parallelism` | `0`                   | shared variant worker pool (`0` = auto)  |
 | `pina.photo.heavy-phase.max-concurrent` | `0`                       | concurrent image-heavy uploads (`0` = auto) |
+| `pina.ml.enabled`                       | `true`                    | enqueue photos for ML analysis            |
+| `pina.ml.poll-interval`                 | `10s`                     | analysis worker poll cadence              |
+| `pina.ml.deadline`                      | `PT120S`                  | per-call AnalyzeImage deadline            |
+| `pina.ml.max-attempts`                  | `8`                       | attempts before a job is FAILED           |
+| `pina.ml.backoff-base` / `-cap`         | `PT30S` / `PT30M`         | retry backoff window                      |
+| `pina.ml.face-cluster-distance`         | `0.6`                     | max cosine distance to join a face cluster|
+| `quarkus.grpc.clients.ml.host` / `.port`| `localhost` / `50051`     | ML service endpoint (`PINA_ML_HOST/PORT`) |
 
 Photo upload resource controls:
 

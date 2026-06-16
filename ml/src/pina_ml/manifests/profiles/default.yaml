@@ -1,0 +1,12 @@
+name: default
+max_parallel_analyses: 2
+analysis_max_resolution: 1280
+steps:
+  image_embedding:
+    model: clip-vit-b32-vision
+  tagging:
+    model: clip-vit-b32-text
+  face_detection:
+    model: scrfd-10g
+  face_embedding:
+    model: arcface-w600k-r50

@@ -94,6 +94,9 @@ public class PhotoService {
 	@Inject
 	TransactionalLockService lockService;
 
+	@Inject
+	MlAnalysisService mlAnalysisService;
+
 	record IngestedFile(Path tempFile, String contentHash, long size) {
 	}
 
@@ -151,8 +154,11 @@ public class PhotoService {
 				ingested.tempFile(), ingested.contentHash(), storagePrefixFor());
 
 		try {
-			return QuarkusTransaction.requiringNew().call(() -> persistPhotoWithVariants(photoId, ingested, analyzed,
-					originalFilename, mimeType, uploader, specs));
+			Photo persisted = QuarkusTransaction.requiringNew().call(() -> persistPhotoWithVariants(photoId, ingested,
+					analyzed, originalFilename, mimeType, uploader, specs));
+			// Fire-and-forget: ML analysis must never delay or fail the upload.
+			mlAnalysisService.enqueueNewPhoto(persisted.id);
+			return persisted;
 		} catch (PersistenceException persistFailure) {
 			// A same-uploader duplicate race is the common PersistenceException here,
 			// but not the only possible one. Clean up our stored files first, then

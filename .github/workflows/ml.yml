@@ -1,0 +1,42 @@
+name: ML CI
+
+on:
+  push:
+    branches: [main]
+    paths: ['ml/**', 'proto/**']
+  pull_request:
+    paths: ['ml/**', 'proto/**']
+  workflow_dispatch:
+
+defaults:
+  run:
+    working-directory: ml
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: ml/uv.lock
+
+      - name: Sync dependencies
+        run: uv sync --frozen
+
+      - name: Generate gRPC modules
+        run: uv run bash ../proto/scripts/generate-python.sh src
+
+      - name: Lint
+        run: |
+          uv run ruff check .
+          uv run ruff format --check .
+
+      - name: Type check
+        run: uv run mypy
+
+      - name: Test (with coverage gate)
+        run: uv run pytest

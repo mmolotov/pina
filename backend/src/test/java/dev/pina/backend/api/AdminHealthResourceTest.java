@@ -56,7 +56,9 @@ class AdminHealthResourceTest {
 		authAs(adminToken).when().get("/api/v1/admin/health").then().statusCode(200).body("status", equalTo("UP"))
 				.body("version", notNullValue()).body("database.connected", equalTo(true))
 				.body("database.version", notNullValue()).body("storage.provider", notNullValue())
-				.body("jvm.heapUsedBytes", greaterThan(0)).body("jvm.availableProcessors", greaterThan(0));
+				.body("jvm.heapUsedBytes", greaterThan(0)).body("jvm.availableProcessors", greaterThan(0))
+				// ML analysis is disabled in the default test profile.
+				.body("ml.enabled", equalTo(false)).body("ml.reachable", equalTo(false));
 	}
 
 	@Test

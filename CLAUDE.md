@@ -102,9 +102,17 @@ Test helpers: `TestAuthHelper` (REST-based JWT), `TestUserHelper` (direct DB set
 - `app/types/` — shared DTO types
 - Type-safe routes via `react-router typegen`
 
+### ML Service (Python + ONNX Runtime, `ml/`)
+
+- gRPC `pina.ml.v1.ImageAnalysis` (shared contract in `proto/`, codegen on both sides, golden contract test in backend)
+- Pipeline: CLIP image embedding, zero-shot tagging, SCRFD face detection, ArcFace descriptors — per-step status + model provenance
+- Model registry: YAML manifests, `default` / `cpu-lite` runtime profiles, runtime downloads into a persistent cache (InsightFace packs are non-commercial — never bundle weights into images)
+- Backend orchestrates analysis asynchronously after upload (`photo_analysis_jobs`, lease-based retries, graceful degradation when ML is down), persists embeddings/tags/faces via pgvector, clusters faces per owner
+- uv-managed project: `make proto / lint / format / test / run` from `ml/`; full-stack smoke via `docker/smoke-ml.sh`
+
 ### Current Phase
 
-Phase 2 (backend) complete. Phase 3 (frontend) nearly complete — remaining: search backend integration, admin panel. See [MILESTONES.md](MILESTONES.md).
+Phase 2 (backend) complete. Phase 3 (frontend) nearly complete — remaining: face search backend integration, admin panel. Phase 4 (ML service) implemented except video keyframe extraction (deferred to Phase 7). See [MILESTONES.md](MILESTONES.md).
 
 <!-- BACKLOG.MD MCP GUIDELINES START -->
 

@@ -1,7 +1,7 @@
 package dev.pina.backend.api.dto;
 
 public record AdminHealthDto(String status, String version, DatabaseHealth database, StorageHealth storage,
-		JvmHealth jvm) {
+		JvmHealth jvm, MlHealth ml) {
 
 	public record DatabaseHealth(boolean connected, String version) {
 	}
@@ -10,5 +10,9 @@ public record AdminHealthDto(String status, String version, DatabaseHealth datab
 	}
 
 	public record JvmHealth(long heapUsedBytes, long heapMaxBytes, long nonHeapUsedBytes, int availableProcessors) {
+	}
+
+	public record MlHealth(boolean enabled, boolean reachable, String activeProfile, boolean ready, int modelsAvailable,
+			int modelsTotal) {
 	}
 }

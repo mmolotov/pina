@@ -37,6 +37,7 @@ venv/
 .mypy_cache/
 .ruff_cache/
 .pytest_cache/
+.coverage
 
 # Node / TypeScript
 node_modules/
@@ -72,6 +73,9 @@ data/
 
 # ML models (downloaded at runtime)
 ml/models/
+
+# ML generated gRPC modules (make proto)
+ml/src/pina/
 
 # Logs
 *.log
