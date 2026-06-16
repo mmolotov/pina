@@ -1,0 +1,56 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(./gradlew *)",
+      "Bash(npm run *)",
+      "Bash(npm ci)",
+      "Bash(npm install)",
+      "Bash(npm audit *)",
+      "Bash(npx *)",
+      "Bash(git *)",
+      "Bash(gh pr *)",
+      "Bash(gh run *)",
+      "Bash(grep *)",
+      "Bash(find *)",
+      "Bash(ls *)",
+      "Bash(wc *)",
+      "Bash(awk *)",
+      "Bash(sed -n *)",
+      "Bash(xargs *)",
+      "Bash(python3 *)",
+      "Bash(trivy *)",
+      "mcp__backlog__task_list",
+      "mcp__backlog__task_view",
+      "mcp__backlog__task_search",
+      "mcp__backlog__task_create",
+      "mcp__backlog__task_edit",
+      "mcp__backlog__task_complete",
+      "mcp__backlog__milestone_list",
+      "mcp__backlog__get_backlog_instructions"
+    ]
+  },
+  "enabledMcpjsonServers": ["backlog"],
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/guard-secrets.sh"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/format.sh"
+          }
+        ]
+      }
+    ]
+  }
+}

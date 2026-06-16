@@ -1,0 +1,13 @@
+version: v2
+modules:
+  - path: .
+lint:
+  use:
+    - STANDARD
+  except:
+    # Established, intentional naming in this contract:
+    - ENUM_VALUE_PREFIX # short enum values (PHOTO, TAGGING) without the enum-name prefix
+    - SERVICE_SUFFIX # service is named ImageAnalysis, not ImageAnalysisService
+breaking:
+  use:
+    - FILE
