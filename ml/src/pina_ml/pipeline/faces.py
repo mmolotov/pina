@@ -93,21 +93,21 @@ def decode_scrfd(
     scores = np.concatenate(all_scores)
     boxes = np.concatenate(all_boxes)
     landmarks = np.concatenate(all_landmarks)
-    keep = _nms(boxes, scores, _NMS_IOU_THRESHOLD)
+    selected = _nms(boxes, scores, _NMS_IOU_THRESHOLD)
 
     width, height = original_size
     faces: list[DetectedFace] = []
-    for index in keep:
-        x1, y1, x2, y2 = boxes[index] / scale
-        x1 = float(np.clip(x1, 0, width))
-        y1 = float(np.clip(y1, 0, height))
-        x2 = float(np.clip(x2, 0, width))
-        y2 = float(np.clip(y2, 0, height))
-        if x2 <= x1 or y2 <= y1:
+    for index in selected:
+        unscaled = boxes[index] / scale
+        left = float(np.clip(unscaled[0], 0, width))
+        top = float(np.clip(unscaled[1], 0, height))
+        right = float(np.clip(unscaled[2], 0, width))
+        bottom = float(np.clip(unscaled[3], 0, height))
+        if right <= left or bottom <= top:
             continue
         faces.append(
             DetectedFace(
-                bbox=(x1 / width, y1 / height, (x2 - x1) / width, (y2 - y1) / height),
+                bbox=(left / width, top / height, (right - left) / width, (bottom - top) / height),
                 confidence=float(scores[index]),
                 landmarks=landmarks[index] / scale,
             )

@@ -32,12 +32,17 @@ Makefile                # proto / lint / format / test / run / clean
 ## Commands
 
 ```bash
-make proto    # generate pina.ml.v1 modules from ../proto (required once before test/run)
-make test     # proto + pytest
-make lint     # ruff check + format check
-make format   # ruff auto-format + autofix
-make run      # proto + start the service
+make proto      # generate pina.ml.v1 modules from ../proto (required once before test/run)
+make test       # proto + pytest with the coverage gate (fail-under 80%, branch coverage)
+make lint       # ruff check + format check
+make format     # ruff auto-format + autofix
+make typecheck  # proto + mypy over source, tests, and scripts
+make run        # proto + start the service
 ```
+
+Quality gates (all enforced in ML CI): ruff lint + format, mypy (zero-error policy;
+generated `pina/` gRPC modules excluded), and a pytest coverage floor of 80% over
+`pina_ml`. Dependencies are kept current by Dependabot (`uv` ecosystem, weekly).
 
 ## Configuration
 

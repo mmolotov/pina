@@ -23,7 +23,7 @@ EXPECTED_MODEL_BY_STEP = {
 }
 
 
-def pipeline_settings(tmp_path: Path, **overrides: object) -> Settings:
+def pipeline_settings(tmp_path: Path) -> Settings:
     vocabulary = tmp_path / "vocab.txt"
     if not vocabulary.exists():
         vocabulary.write_text("beach\ndog\nsunset\ncat\n", encoding="utf-8")
@@ -37,13 +37,13 @@ def pipeline_settings(tmp_path: Path, **overrides: object) -> Settings:
         tags_vocabulary_path=vocabulary,
         tag_top_k=3,
         tag_min_confidence=0.0,
-        **overrides,
     )
 
 
 def photo_bytes(width: int = 320, height: int = 240) -> bytes:
     image = Image.new("RGB", (width, height))
     pixels = image.load()
+    assert pixels is not None
     for x in range(width):
         for y in range(height):
             pixels[x, y] = (x % 256, y % 256, (x + y) % 256)
@@ -57,7 +57,9 @@ def analyze_request(steps: list[int] | None = None) -> image_analysis_pb2.Analyz
         request_id="req-1",
         media=image_analysis_pb2.MediaContext(kind=image_analysis_pb2.PHOTO, media_id="photo-1"),
         image=image_analysis_pb2.ImageInput(data=photo_bytes(), mime_type="image/png"),
-        steps=steps or [],
+        # The pb2 stubs type enum values via a private NewType; plain ints are
+        # what the runtime accepts.
+        steps=steps or [],  # type: ignore[arg-type]
     )
 
 
@@ -134,6 +136,7 @@ async def test_tagging_without_embedding_is_skipped(tmp_path: Path) -> None:
 
 async def test_disabled_step_reported_as_skipped_disabled(tmp_path: Path) -> None:
     settings = pipeline_settings(tmp_path)
+    assert settings.manifests_dir is not None
     profile_path = settings.manifests_dir / "profiles" / "default.yaml"
     profile = yaml.safe_load(profile_path.read_text(encoding="utf-8"))
     profile["steps"]["face_embedding"]["enabled"] = False

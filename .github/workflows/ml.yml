@@ -35,5 +35,8 @@ jobs:
           uv run ruff check .
           uv run ruff format --check .
 
-      - name: Test
+      - name: Type check
+        run: uv run mypy
+
+      - name: Test (with coverage gate)
         run: uv run pytest

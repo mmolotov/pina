@@ -252,11 +252,11 @@ class PhotoAnalysisPipeline:
         if not data:
             raise ImageDecodeError("Image payload is empty")
         try:
-            image = Image.open(io.BytesIO(data))
-            image.load()
+            opened = Image.open(io.BytesIO(data))
+            opened.load()
         except (UnidentifiedImageError, OSError, ValueError) as error:
             raise ImageDecodeError(f"Cannot decode image payload: {error}") from error
-        image = ImageOps.exif_transpose(image).convert("RGB")
+        image = ImageOps.exif_transpose(opened).convert("RGB")
         max_resolution = self._registry.profile.analysis_max_resolution
         if max(image.size) > max_resolution:
             image.thumbnail((max_resolution, max_resolution), Image.Resampling.BILINEAR)

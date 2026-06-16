@@ -15,14 +15,14 @@ from pina_ml.grpc_server import GRPC_SERVICE_NAME, create_grpc_server
 from pina_ml.registry import ModelRegistry
 
 
-def loopback_settings(tmp_path: Path, **overrides: object) -> Settings:
+def loopback_settings(tmp_path: Path, manifests_dir: Path | None = None) -> Settings:
     return Settings(
         grpc_host="127.0.0.1",
         grpc_port=0,
         http_host="127.0.0.1",
         http_port=0,
         model_cache_dir=tmp_path / "cache",
-        **overrides,
+        manifests_dir=manifests_dir,
     )
 
 

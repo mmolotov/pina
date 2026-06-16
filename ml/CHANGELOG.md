@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Quality gates: mypy type checking (pydantic plugin, zero-error policy,
+  generated gRPC modules excluded) and a pytest coverage floor of 80% with
+  branch coverage — both wired into make targets and ML CI.
+- Dependabot updates for ml Python dependencies (uv ecosystem, weekly).
+
 - Operations tooling: `scripts/benchmark.py` (per-step latency matrix for the
   active profile) and a documented Operations section in the README with a
   CPU-only sizing matrix and smoke runbook.
