@@ -81,8 +81,7 @@ ml/src/pina/
 *.log
 logs/
 
-# agents
-.claude/
-.mcp.json
+# Claude Code — version-control shared project config, ignore personal/local
+.claude/settings.local.json
 
 design/
