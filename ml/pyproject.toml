@@ -24,7 +24,7 @@ pina-ml = "pina_ml.main:main"
 
 [dependency-groups]
 dev = [
-    "pytest>=8",
+    "pytest>=9.1.0",
     "pytest-asyncio>=0.24",
     "pytest-cov>=6",
     "grpcio-tools>=1.66",
