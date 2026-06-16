@@ -29,7 +29,7 @@ dev = [
     "pytest-cov>=6",
     "grpcio-tools>=1.66",
     "ruff>=0.6",
-    "onnx>=1.17",
+    "onnx>=1.22.0",
     "mypy>=1.13",
     "types-pyyaml>=6.0",
 ]
