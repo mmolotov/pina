@@ -18,6 +18,11 @@ LOG = logging.getLogger(__name__)
 # Generous read timeout: model CDNs can stall between chunks on large files.
 _DOWNLOAD_TIMEOUT = httpx.Timeout(connect=15.0, read=300.0, write=120.0, pool=60.0)
 
+# Upper bound on a single fetched artifact. Comfortably above real model/pack
+# sizes (CLIP ~350 MB, InsightFace packs ~300 MB) while bounding a hostile or
+# misconfigured URL so it cannot exhaust the model-cache disk.
+_MAX_ARTIFACT_BYTES = 2 * 1024**3
+
 
 class ArtifactError(RuntimeError):
     """Raised when an artifact cannot be fetched or fails validation."""
@@ -50,6 +55,14 @@ class ArtifactDownloader:
         async with self._lock:
             if self.is_cached(model_id, version, artifact):
                 return path
+            if artifact.sha256 is None and urlparse(artifact.url).scheme in ("http", "https"):
+                LOG.warning(
+                    "Artifact %s/%s/%s has no sha256 in its manifest; fetching %s unverified",
+                    model_id,
+                    version,
+                    artifact.name,
+                    artifact.url,
+                )
             path.parent.mkdir(parents=True, exist_ok=True)
             part = path.with_name(path.name + ".part")
             try:
@@ -98,8 +111,20 @@ class ArtifactDownloader:
         ):
             if response.status_code != 200:
                 raise ArtifactError(f"Download failed with HTTP {response.status_code}: {url}")
+            declared = response.headers.get("content-length")
+            if declared is not None and declared.isdigit() and int(declared) > _MAX_ARTIFACT_BYTES:
+                raise ArtifactError(
+                    f"Artifact at {url} exceeds the {_MAX_ARTIFACT_BYTES}-byte "
+                    f"cap (declares {declared} bytes)"
+                )
+            written = 0
             with dest.open("wb") as handle:
                 async for chunk in response.aiter_bytes():
+                    written += len(chunk)
+                    if written > _MAX_ARTIFACT_BYTES:
+                        raise ArtifactError(
+                            f"Artifact exceeds the {_MAX_ARTIFACT_BYTES}-byte cap: {url}"
+                        )
                     handle.write(chunk)
 
 

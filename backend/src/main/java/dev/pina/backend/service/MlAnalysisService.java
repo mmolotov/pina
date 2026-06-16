@@ -41,6 +41,7 @@ import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -345,23 +346,53 @@ public class MlAnalysisService {
 				.collect(Collectors.groupingBy(tag -> tag.photoId));
 	}
 
-	/** Nearest photos by cosine distance in the CLIP embedding space. */
-	public List<UUID> findNearestPhotoIds(float[] queryEmbedding, int limit) {
+	/**
+	 * Nearest photos by cosine distance in the CLIP embedding space, restricted to
+	 * the photos {@code userId} may access: their personal-library uploads plus
+	 * photos in albums of the supplied accessible spaces. Scoping is mandatory — an
+	 * unscoped query would leak photo ids across owners once wired into search.
+	 */
+	public List<UUID> findNearestAccessiblePhotoIds(UUID userId, Set<UUID> accessibleSpaceIds, float[] queryEmbedding,
+			int limit) {
+		// Two constant queries (vs string-built SQL) keep static analysis happy;
+		// the embedding and ids flow in only as bound parameters.
+		String vectorLiteral = toVectorLiteral(queryEmbedding);
+		if (accessibleSpaceIds.isEmpty()) {
+			@SuppressWarnings("unchecked")
+			List<UUID> ids = em.createNativeQuery("""
+					SELECT pe.photo_id FROM photo_embeddings pe
+					WHERE pe.photo_id IN (SELECT p.id FROM photos p WHERE p.uploader_id = :userId)
+					ORDER BY pe.embedding <=> CAST(:query AS vector)
+					LIMIT :limit
+					""", UUID.class).setParameter("userId", userId).setParameter("query", vectorLiteral)
+					.setParameter("limit", limit).getResultList();
+			return ids;
+		}
+		@SuppressWarnings("unchecked")
+		List<UUID> ids = em.createNativeQuery("""
+				SELECT pe.photo_id FROM photo_embeddings pe
+				WHERE pe.photo_id IN (
+				    SELECT p.id FROM photos p WHERE p.uploader_id = :userId
+				    UNION
+				    SELECT ap.photo_id FROM album_photos ap JOIN albums a ON ap.album_id = a.id
+				    WHERE a.space_id IN (:spaceIds)
+				)
+				ORDER BY pe.embedding <=> CAST(:query AS vector)
+				LIMIT :limit
+				""", UUID.class).setParameter("userId", userId).setParameter("query", vectorLiteral)
+				.setParameter("limit", limit).setParameter("spaceIds", accessibleSpaceIds).getResultList();
+		return ids;
+	}
+
+	private static String toVectorLiteral(float[] vector) {
 		StringBuilder literal = new StringBuilder("[");
-		for (int i = 0; i < queryEmbedding.length; i++) {
+		for (int i = 0; i < vector.length; i++) {
 			if (i > 0) {
 				literal.append(',');
 			}
-			literal.append(queryEmbedding[i]);
+			literal.append(vector[i]);
 		}
-		literal.append(']');
-		@SuppressWarnings("unchecked")
-		List<UUID> ids = em.createNativeQuery("""
-				SELECT photo_id FROM photo_embeddings
-				ORDER BY embedding <=> CAST(:query AS vector)
-				LIMIT :limit
-				""", UUID.class).setParameter("query", literal.toString()).setParameter("limit", limit).getResultList();
-		return ids;
+		return literal.append(']').toString();
 	}
 
 	// --- job bookkeeping ---

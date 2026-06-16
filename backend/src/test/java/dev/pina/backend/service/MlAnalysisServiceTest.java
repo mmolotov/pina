@@ -2,6 +2,7 @@ package dev.pina.backend.service;
 
 import static io.restassured.RestAssured.given;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -25,6 +26,7 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
@@ -144,11 +146,15 @@ class MlAnalysisServiceTest {
 		FakeImageAnalysisService.HANDLER.set(request -> FakeImageAnalysisService.fullSuccess(request,
 				FakeImageAnalysisService.unitVector(counter.getAndIncrement())));
 
-		UUID first = uploadPhoto("ml-nn-a", 0x010101);
+		// All three photos belong to one owner so the access-scoped query returns
+		// them; they get distinct basis vectors (0, 1, 2) in upload order.
+		String ownerToken = registerUserToken("nn-owner");
+		UUID ownerId = userId(ownerToken);
+		UUID first = UUID.fromString(uploadFile(ownerToken, createJpegImage("ml-nn-a", 100, 100, 0x010101)));
 		awaitJob(first, AnalysisJobStatus.COMPLETED);
-		UUID second = uploadPhoto("ml-nn-b", 0x020202);
+		UUID second = UUID.fromString(uploadFile(ownerToken, createJpegImage("ml-nn-b", 100, 100, 0x020202)));
 		awaitJob(second, AnalysisJobStatus.COMPLETED);
-		UUID third = uploadPhoto("ml-nn-c", 0x030303);
+		UUID third = UUID.fromString(uploadFile(ownerToken, createJpegImage("ml-nn-c", 100, 100, 0x030303)));
 		awaitJob(third, AnalysisJobStatus.COMPLETED);
 
 		UUID expectedNearest = QuarkusTransaction.requiringNew().call(() -> {
@@ -161,10 +167,34 @@ class MlAnalysisServiceTest {
 			throw new AssertionError("No photo got the unit vector at index 1");
 		});
 
-		List<UUID> nearest = QuarkusTransaction.requiringNew()
-				.call(() -> mlAnalysisService.findNearestPhotoIds(FakeImageAnalysisService.unitVector(1), 3));
+		List<UUID> nearest = QuarkusTransaction.requiringNew().call(() -> mlAnalysisService
+				.findNearestAccessiblePhotoIds(ownerId, Set.of(), FakeImageAnalysisService.unitVector(1), 3));
 		assertEquals(expectedNearest, nearest.get(0));
 		assertEquals(3, nearest.size());
+	}
+
+	@Test
+	void nearestNeighborQueryExcludesInaccessiblePhotos() throws IOException {
+		// Every photo gets the exact query vector, so cosine distance alone cannot
+		// separate them - only access scoping can keep another owner's photo out.
+		FakeImageAnalysisService.HANDLER
+				.set(request -> FakeImageAnalysisService.fullSuccess(request, FakeImageAnalysisService.unitVector(1)));
+
+		String ownerToken = registerUserToken("nn-owner");
+		UUID ownerId = userId(ownerToken);
+		UUID ownerPhoto = UUID.fromString(uploadFile(ownerToken, createJpegImage("ml-nn-own", 100, 100, 0x111111)));
+		awaitJob(ownerPhoto, AnalysisJobStatus.COMPLETED);
+
+		String intruderToken = registerUserToken("nn-intruder");
+		UUID intruderPhoto = UUID
+				.fromString(uploadFile(intruderToken, createJpegImage("ml-nn-int", 100, 100, 0x222222)));
+		awaitJob(intruderPhoto, AnalysisJobStatus.COMPLETED);
+
+		List<UUID> nearest = QuarkusTransaction.requiringNew().call(() -> mlAnalysisService
+				.findNearestAccessiblePhotoIds(ownerId, Set.of(), FakeImageAnalysisService.unitVector(1), 10));
+
+		assertEquals(List.of(ownerPhoto), nearest);
+		assertFalse(nearest.contains(intruderPhoto), "another owner's photo must never surface");
 	}
 
 	@Test
@@ -248,6 +278,11 @@ class MlAnalysisServiceTest {
 	private String uploadFile(String token, Path image) {
 		return given().header("Authorization", "Bearer " + token).multiPart("file", image.toFile(), "image/jpeg").when()
 				.post("/api/v1/photos").then().statusCode(201).extract().path("id");
+	}
+
+	private UUID userId(String token) {
+		return UUID.fromString(given().header("Authorization", "Bearer " + token).when().get("/api/v1/auth/me").then()
+				.statusCode(200).extract().path("id"));
 	}
 
 	private Path createJpegImage(String prefix, int width, int height, int rgb) throws IOException {

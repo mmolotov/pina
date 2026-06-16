@@ -36,6 +36,7 @@ class ImageAnalysisService(image_analysis_pb2_grpc.ImageAnalysisServicer):
             result = await self._pipeline.analyze(request.image.data, requested)
         except ImageDecodeError as error:
             await context.abort(grpc.StatusCode.INVALID_ARGUMENT, str(error))
+            raise  # abort() terminates the RPC; explicit so `result` is provably bound below
 
         response = image_analysis_pb2.AnalyzeImageResponse(request_id=request.request_id)
         for outcome in result.outcomes:
@@ -69,6 +70,7 @@ class ImageAnalysisService(image_analysis_pb2_grpc.ImageAnalysisServicer):
             values, manifest = await self._pipeline.embed_text(request.text)
         except RegistryError as error:
             await context.abort(grpc.StatusCode.FAILED_PRECONDITION, str(error))
+            raise  # abort() terminates the RPC; explicit so `values`/`manifest` are bound below
         return image_analysis_pb2.EmbedTextResponse(
             embedding=common_pb2.Embedding(values=values), model=_model_ref(manifest)
         )
