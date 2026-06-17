@@ -223,6 +223,61 @@ describe("AppLibraryRoute", () => {
     });
   });
 
+  it("selects photos and bulk-favorites them", async () => {
+    apiMocks.listAllPhotos.mockResolvedValue([
+      {
+        id: "photo-1",
+        uploaderId: "user-1",
+        originalFilename: "beach.jpg",
+        mimeType: "image/jpeg",
+        width: 1600,
+        height: 1000,
+        sizeBytes: 100,
+        personalLibraryId: "library-1",
+        exifData: null,
+        takenAt: null,
+        latitude: null,
+        longitude: null,
+        createdAt: "2026-04-02T10:05:00Z",
+        variants: [],
+      },
+      {
+        id: "photo-2",
+        uploaderId: "user-1",
+        originalFilename: "dinner.jpg",
+        mimeType: "image/jpeg",
+        width: 1600,
+        height: 900,
+        sizeBytes: 100,
+        personalLibraryId: "library-1",
+        exifData: null,
+        takenAt: null,
+        latitude: null,
+        longitude: null,
+        createdAt: "2026-04-01T20:15:00Z",
+        variants: [],
+      },
+    ]);
+
+    renderRoute();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Select beach.jpg" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Select dinner.jpg" }));
+
+    expect(
+      screen.getByRole("region", { name: /2 selected/i }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /^favorite$/i }));
+
+    await waitFor(() => {
+      expect(apiMocks.addFavorite).toHaveBeenCalledWith("PHOTO", "photo-1");
+      expect(apiMocks.addFavorite).toHaveBeenCalledWith("PHOTO", "photo-2");
+    });
+  });
+
   it("shows albums-only view when opened with view=albums", async () => {
     renderRoute("/app/library?view=albums");
 

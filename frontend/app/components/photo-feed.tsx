@@ -4,8 +4,13 @@ import {
   Calendar,
   CalendarDays,
   CalendarRange,
+  Check,
+  Download,
+  FolderPlus,
   Heart,
   Play,
+  Trash2,
+  X,
 } from "lucide-react";
 import { getPhotoBlob } from "~/lib/api";
 import { type MessageKey, useI18n, type Locale } from "~/lib/i18n";
@@ -195,14 +200,18 @@ export function PhotoFeedTile({
   width,
   height,
   isFavorite,
+  selected,
   onToggleFavorite,
+  onToggleSelect,
   photoHref,
 }: {
   photo: PhotoDto;
   width?: number;
   height?: number;
   isFavorite: boolean;
+  selected: boolean;
   onToggleFavorite: (photoId: string) => void;
+  onToggleSelect: (photoId: string) => void;
   photoHref: (photoId: string) => string;
 }) {
   const { t } = useI18n();
@@ -214,7 +223,7 @@ export function PhotoFeedTile({
       {previewUrl ? (
         <img
           alt={photo.originalFilename}
-          className="ph-tile-fill"
+          className={`ph-tile-fill ${selected ? "is-selected" : ""}`}
           loading="lazy"
           src={previewUrl}
         />
@@ -241,6 +250,18 @@ export function PhotoFeedTile({
       ) : null}
 
       <div className="ph-hover" />
+
+      <button
+        aria-label={t("app.library.photoCheckboxAria", {
+          fileName: photo.originalFilename,
+        })}
+        aria-pressed={selected}
+        className={`ph-check ${selected ? "is-on" : ""}`}
+        onClick={() => onToggleSelect(photo.id)}
+        type="button"
+      >
+        {selected ? <Check size={14} strokeWidth={3.5} /> : null}
+      </button>
 
       <button
         aria-label={
@@ -271,14 +292,18 @@ export function JustifiedPhotoGrid({
   targetHeight,
   gap,
   isFavorite,
+  isSelected,
   onToggleFavorite,
+  onToggleSelect,
   photoHref,
 }: {
   photos: PhotoDto[];
   targetHeight: number;
   gap: number;
   isFavorite: (photoId: string) => boolean;
+  isSelected: (photoId: string) => boolean;
   onToggleFavorite: (photoId: string) => void;
+  onToggleSelect: (photoId: string) => void;
   photoHref: (photoId: string) => string;
 }) {
   const [ref, width] = useContainerWidth();
@@ -301,8 +326,10 @@ export function JustifiedPhotoGrid({
               isFavorite={isFavorite(photo.id)}
               key={photo.id}
               onToggleFavorite={onToggleFavorite}
+              onToggleSelect={onToggleSelect}
               photo={photo}
               photoHref={photoHref}
+              selected={isSelected(photo.id)}
               width={getPhotoRatio(photo) * row.height}
             />
           ))}
@@ -483,6 +510,143 @@ export function PhotoScrubberRail({
             </div>
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// BULK ACTION BAR
+// ═══════════════════════════════════════════════════════════════
+
+export function PhotoBulkBar({
+  count,
+  albums,
+  busy,
+  onClear,
+  onFavorite,
+  onAddToAlbum,
+  onDownload,
+  onDelete,
+}: {
+  count: number;
+  albums: { id: string; name: string }[];
+  busy: boolean;
+  onClear: () => void;
+  onFavorite: () => void;
+  onAddToAlbum: (albumId: string) => void;
+  onDownload: () => void;
+  onDelete: () => void;
+}) {
+  const { t } = useI18n();
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const pickerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!pickerOpen) {
+      return;
+    }
+    function onMouseDown(event: MouseEvent) {
+      if (!pickerRef.current?.contains(event.target as Node)) {
+        setPickerOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", onMouseDown);
+    return () => document.removeEventListener("mousedown", onMouseDown);
+  }, [pickerOpen]);
+
+  if (count === 0) {
+    return null;
+  }
+
+  return (
+    <div
+      aria-label={`${count} ${t("app.library.bulkSelectedLabel")}`}
+      className="ph-bulkbar"
+      role="region"
+    >
+      <button
+        aria-label={t("app.library.clearSelection")}
+        className="ph-bulkbar-close"
+        onClick={onClear}
+        type="button"
+      >
+        <X size={18} />
+      </button>
+      <span className="ph-bulkbar-count">
+        <strong>{count}</strong> {t("app.library.bulkSelectedLabel")}
+      </span>
+      <div className="ph-bulkbar-actions">
+        <button
+          className="ph-bulkbar-act"
+          disabled={busy}
+          onClick={onFavorite}
+          type="button"
+        >
+          <Heart size={15} />
+          {t("app.library.bulkFavorite")}
+        </button>
+        <div
+          ref={pickerRef}
+          style={{ display: "inline-flex", position: "relative" }}
+        >
+          <button
+            aria-expanded={pickerOpen}
+            aria-haspopup="menu"
+            className="ph-bulkbar-act"
+            disabled={busy}
+            onClick={() => setPickerOpen((value) => !value)}
+            type="button"
+          >
+            <FolderPlus size={15} />
+            {t("app.library.bulkAddToAlbum")}
+          </button>
+          {pickerOpen ? (
+            <div className="ph-bulkbar-pop" role="menu">
+              <p className="ph-bulkbar-pop-title">
+                {t("app.library.bulkAlbumPickerTitle")}
+              </p>
+              {albums.length === 0 ? (
+                <p className="ph-bulkbar-pop-empty">
+                  {t("app.library.bulkAlbumPickerEmpty")}
+                </p>
+              ) : (
+                albums.map((album) => (
+                  <button
+                    className="ph-bulkbar-pop-item"
+                    key={album.id}
+                    onClick={() => {
+                      setPickerOpen(false);
+                      onAddToAlbum(album.id);
+                    }}
+                    role="menuitem"
+                    type="button"
+                  >
+                    {album.name}
+                  </button>
+                ))
+              )}
+            </div>
+          ) : null}
+        </div>
+        <button
+          className="ph-bulkbar-act"
+          disabled={busy}
+          onClick={onDownload}
+          type="button"
+        >
+          <Download size={15} />
+          {t("app.library.bulkDownload")}
+        </button>
+        <button
+          className="ph-bulkbar-act is-danger"
+          disabled={busy}
+          onClick={onDelete}
+          type="button"
+        >
+          <Trash2 size={15} />
+          {t("app.library.bulkDelete")}
+        </button>
       </div>
     </div>
   );

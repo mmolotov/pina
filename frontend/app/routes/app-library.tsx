@@ -23,6 +23,7 @@ import { AlbumTile } from "~/components/album-tile";
 import {
   EMPTY_PHOTO_FILTERS,
   JustifiedPhotoGrid,
+  PhotoBulkBar,
   PhotoFilterBar,
   PhotoScrubberRail,
   ZoomSwitch,
@@ -39,6 +40,7 @@ import {
   createAlbumArchiveDownloadUrl,
   deleteAlbum,
   deletePhoto,
+  getPhotoBlob,
   listGeoPhotos,
   listAllPhotos,
   listAlbumShareLinks,
@@ -1270,6 +1272,113 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
     handleScroll();
     return () => scroller.removeEventListener("scroll", handleScroll);
   }, [libraryView, zoom, zoomGroups.length]);
+
+  const [selectedPhotoIds, setSelectedPhotoIds] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const selectedPhotos = useMemo(
+    () => feedPhotos.filter((photo) => selectedPhotoIds.has(photo.id)),
+    [feedPhotos, selectedPhotoIds],
+  );
+
+  const togglePhotoSelect = (photoId: string) =>
+    setSelectedPhotoIds((current) => {
+      const next = new Set(current);
+      if (next.has(photoId)) {
+        next.delete(photoId);
+      } else {
+        next.add(photoId);
+      }
+      return next;
+    });
+
+  const toggleGroupSelect = (groupPhotoIds: string[]) =>
+    setSelectedPhotoIds((current) => {
+      const next = new Set(current);
+      const allSelected = groupPhotoIds.every((id) => next.has(id));
+      for (const id of groupPhotoIds) {
+        if (allSelected) {
+          next.delete(id);
+        } else {
+          next.add(id);
+        }
+      }
+      return next;
+    });
+
+  const clearSelection = () => setSelectedPhotoIds(new Set());
+
+  async function runBulkAction(worker: () => Promise<void>): Promise<boolean> {
+    setBulkBusy(true);
+    setErrorMessage(null);
+    try {
+      await worker();
+      clearSelection();
+      return true;
+    } catch (error) {
+      setErrorMessage(
+        error instanceof ApiError
+          ? error.message
+          : t("app.library.bulkActionFailed"),
+      );
+      return false;
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+
+  async function handleBulkFavorite() {
+    const targets = selectedPhotos.filter((photo) => !photoFavorites[photo.id]);
+    await runBulkAction(async () => {
+      if (targets.length > 0) {
+        await runWithConcurrency(targets, PHOTO_UPLOAD_CONCURRENCY, (photo) =>
+          addFavorite("PHOTO", photo.id),
+        );
+        await reloadLibrary();
+      }
+    });
+  }
+
+  async function handleBulkAddToAlbum(albumId: string) {
+    const targets = selectedPhotos;
+    await runBulkAction(async () => {
+      await runWithConcurrency(targets, PHOTO_UPLOAD_CONCURRENCY, (photo) =>
+        addPhotoToAlbum(albumId, photo.id),
+      );
+      await reloadLibrary();
+    });
+  }
+
+  async function handleBulkDownload() {
+    const targets = selectedPhotos;
+    await runBulkAction(async () => {
+      for (const photo of targets) {
+        const blob = await getPhotoBlob(photo.id, "ORIGINAL");
+        const objectUrl = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = objectUrl;
+        link.download = photo.originalFilename;
+        link.click();
+        URL.revokeObjectURL(objectUrl);
+      }
+    });
+  }
+
+  async function handleBulkDelete() {
+    const targets = selectedPhotos;
+    const ok = await runBulkAction(async () => {
+      await runWithConcurrency(targets, PHOTO_UPLOAD_CONCURRENCY, (photo) =>
+        deletePhoto(photo.id),
+      );
+      await reloadLibrary();
+    });
+    if (ok) {
+      setBulkDeleteOpen(false);
+    }
+  }
+
   const geoTaggedPhotoCount = useMemo(
     () =>
       photos.filter(
@@ -2727,13 +2836,26 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
                           {formatRelativeCount(group.photos.length, photoForms)}
                         </span>
                       </div>
+                      <button
+                        className="ph-group-select"
+                        onClick={() =>
+                          toggleGroupSelect(group.photos.map((p) => p.id))
+                        }
+                        type="button"
+                      >
+                        {group.photos.every((p) => selectedPhotoIds.has(p.id))
+                          ? t("app.library.deselectAll")
+                          : t("app.library.selectAll")}
+                      </button>
                     </header>
                     <JustifiedPhotoGrid
                       gap={zoom === "day" ? 5 : zoom === "month" ? 4 : 3}
                       isFavorite={(photoId) => Boolean(photoFavorites[photoId])}
+                      isSelected={(photoId) => selectedPhotoIds.has(photoId)}
                       onToggleFavorite={(photoId) => {
                         void handlePhotoFavoriteToggle(photoId);
                       }}
+                      onToggleSelect={togglePhotoSelect}
                       photoHref={photoHref}
                       photos={group.photos}
                       targetHeight={
@@ -2945,6 +3067,64 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
           }}
           revokeBusyLinkId={shareDialogRevokeBusyId}
         />
+      ) : null}
+
+      {libraryView === "photos" ? (
+        <PhotoBulkBar
+          albums={albums}
+          busy={bulkBusy}
+          count={selectedPhotos.length}
+          onAddToAlbum={(albumId) => {
+            void handleBulkAddToAlbum(albumId);
+          }}
+          onClear={clearSelection}
+          onDelete={() => setBulkDeleteOpen(true)}
+          onDownload={() => {
+            void handleBulkDownload();
+          }}
+          onFavorite={() => {
+            void handleBulkFavorite();
+          }}
+        />
+      ) : null}
+
+      {bulkDeleteOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 px-4 py-8">
+          <div
+            aria-modal="true"
+            className="w-full max-w-md rounded-[1.75rem] border border-[var(--color-border)] bg-[var(--color-panel-strong)] p-6 shadow-[0_30px_80px_rgba(0,0,0,0.28)]"
+            role="dialog"
+          >
+            <h2 className="text-xl font-semibold tracking-tight">
+              {t("app.library.bulkDeleteTitle")}
+            </h2>
+            <p className="mt-3 text-sm leading-6 text-[var(--color-text-muted)]">
+              {t("app.library.bulkDeleteBody", {
+                count: formatRelativeCount(selectedPhotos.length, photoForms),
+              })}
+            </p>
+            <div className="mt-6 flex flex-wrap justify-end gap-2">
+              <button
+                className="button-secondary"
+                disabled={bulkBusy}
+                onClick={() => setBulkDeleteOpen(false)}
+                type="button"
+              >
+                {t("app.library.cancel")}
+              </button>
+              <button
+                className="button-secondary danger"
+                disabled={bulkBusy}
+                onClick={() => {
+                  void handleBulkDelete();
+                }}
+                type="button"
+              >
+                {bulkBusy ? t("common.deleting") : t("common.delete")}
+              </button>
+            </div>
+          </div>
+        </div>
       ) : null}
 
       <Outlet
