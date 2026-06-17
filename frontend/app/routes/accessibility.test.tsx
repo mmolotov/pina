@@ -231,10 +231,10 @@ describe("frontend accessibility smoke", () => {
       },
     ]);
 
-    const { container, findByText } = renderWithI18n(
+    const { container, findByRole } = renderWithI18n(
       <Stub initialEntries={["/app/library"]} />,
     );
-    await findByText("beach.jpg");
+    await findByRole("link", { name: "Open photo beach.jpg" });
 
     await expectNoViolations(container);
   });

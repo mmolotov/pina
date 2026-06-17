@@ -10,6 +10,7 @@ import {
 import {
   Form,
   Link,
+  Outlet,
   useActionData,
   useNavigate,
   useNavigation,
@@ -19,7 +20,14 @@ import {
 import { EmptyHint, EmptyState, InlineMessage, Panel } from "~/components/ui";
 import { AlbumShareDialog } from "~/components/album-share-dialog";
 import { AlbumTile } from "~/components/album-tile";
-import { ProportionalTimelineRail } from "~/components/proportional-timeline-rail";
+import {
+  EMPTY_PHOTO_FILTERS,
+  JustifiedPhotoGrid,
+  PhotoFilterBar,
+  PhotoScrubberRail,
+  ZoomSwitch,
+  type PhotoFeedFilters,
+} from "~/components/photo-feed";
 import { useAlbumViewPrefs, type AlbumTileStyle } from "~/lib/album-view-prefs";
 import { Grid2x2, LayoutGrid, Rows3, Search } from "lucide-react";
 import {
@@ -31,7 +39,6 @@ import {
   createAlbumArchiveDownloadUrl,
   deleteAlbum,
   deletePhoto,
-  getPhotoBlob,
   listGeoPhotos,
   listAllPhotos,
   listAlbumShareLinks,
@@ -43,7 +50,7 @@ import {
   uploadPhoto,
 } from "~/lib/api";
 import { formatRelativeCount } from "~/lib/format";
-import { selectLibraryTilePreviewVariant } from "~/lib/photo-preview";
+import { getPhotoMediaKind, type PhotoOverlayContext } from "~/lib/photo-media";
 import {
   applyGeoViewportToSearchParams,
   buildGeoClusters,
@@ -67,11 +74,10 @@ import {
 import { resolveActionIntent, toActionErrorMessage } from "~/lib/route-actions";
 import { useSession } from "~/lib/session";
 import {
-  buildDaySectionId,
-  buildProportionalTimeline,
-  buildTimelineGroups,
-  formatDayLabel,
-  type TimelineGroup,
+  buildZoomedTimeline,
+  formatZoomGroupLabel,
+  resolveTimelineZoom,
+  type TimelineZoom,
 } from "~/lib/timeline";
 import type {
   AlbumDto,
@@ -857,127 +863,6 @@ function CreateAlbumDialog(props: {
   );
 }
 
-function LibraryPhotoTile(props: {
-  photo: PhotoDto;
-  isFavorite: boolean;
-  isFavoriteBusy: boolean;
-  isDeleteBusy: boolean;
-  onFavoriteToggle: () => void;
-}) {
-  const { t } = useI18n();
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const previewVariant = selectLibraryTilePreviewVariant(props.photo.variants);
-
-  useEffect(() => {
-    let cancelled = false;
-    let objectUrl: string | null = null;
-
-    getPhotoBlob(props.photo.id, previewVariant)
-      .then((blob) => {
-        if (cancelled) {
-          return;
-        }
-
-        objectUrl = URL.createObjectURL(blob);
-        setPreviewUrl(objectUrl);
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setPreviewUrl(null);
-        }
-      });
-
-    return () => {
-      cancelled = true;
-      if (objectUrl) {
-        URL.revokeObjectURL(objectUrl);
-      }
-    };
-  }, [props.photo.id, previewVariant]);
-
-  const capturedAt = props.photo.takenAt ?? props.photo.createdAt;
-
-  return (
-    <div className="group overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]">
-      <Link
-        aria-label={t("app.library.photoTileAria", {
-          fileName: props.photo.originalFilename,
-        })}
-        className="block"
-        to={`/app/library/photos/${props.photo.id}`}
-      >
-        <div className="preview-frame relative aspect-[4/3] overflow-hidden border-0">
-          {previewUrl ? (
-            <img
-              alt={t("app.library.photoPreviewAlt", {
-                fileName: props.photo.originalFilename,
-              })}
-              className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-105"
-              src={previewUrl}
-            />
-          ) : (
-            <div className="preview-placeholder flex h-full items-center justify-center">
-              <span className="text-xs text-[var(--color-text-muted)]">
-                {props.photo.originalFilename}
-              </span>
-            </div>
-          )}
-        </div>
-      </Link>
-
-      <div className="space-y-1.5 px-3 py-2">
-        <div className="flex items-center justify-between gap-2">
-          <Link
-            className="min-w-0 truncate text-sm font-medium"
-            to={`/app/library/photos/${props.photo.id}`}
-          >
-            {props.photo.originalFilename}
-          </Link>
-          <span className="shrink-0 text-xs text-[var(--color-text-muted)]">
-            {capturedAt.slice(11, 16)}
-          </span>
-        </div>
-
-        <div className="flex items-center gap-2 text-xs">
-          <button
-            aria-label={
-              props.isFavorite
-                ? t("app.library.removePhotoFavoriteAria", {
-                    fileName: props.photo.originalFilename,
-                  })
-                : t("app.library.addPhotoFavoriteAria", {
-                    fileName: props.photo.originalFilename,
-                  })
-            }
-            className="link-accent font-medium"
-            disabled={props.isFavoriteBusy}
-            onClick={props.onFavoriteToggle}
-            type="button"
-          >
-            {props.isFavoriteBusy
-              ? t("common.updating")
-              : props.isFavorite
-                ? t("common.unfavorite")
-                : t("common.favorite")}
-          </button>
-          <button
-            className="text-link-danger font-medium"
-            disabled={props.isDeleteBusy}
-            form={`delete-photo-${props.photo.id}`}
-            type="submit"
-          >
-            {props.isDeleteBusy ? t("common.deleting") : t("common.delete")}
-          </button>
-          <Form id={`delete-photo-${props.photo.id}`} method="post">
-            <input name="intent" type="hidden" value="delete-photo" />
-            <input name="photoId" type="hidden" value={props.photo.id} />
-          </Form>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 async function loadLibraryData(albumSort = DEFAULT_ALBUM_SORT): Promise<{
   photos: PhotoDto[];
   albums: AlbumDto[];
@@ -1200,7 +1085,6 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
 
   const pendingIntent = String(navigation.formData?.get("intent") ?? "");
   const pendingAlbumId = String(navigation.formData?.get("albumId") ?? "");
-  const pendingPhotoId = String(navigation.formData?.get("photoId") ?? "");
   const albumSortSelection = useMemo(
     () => resolveAlbumSort(searchParams.get("sort"), searchParams.get("dir")),
     [searchParams],
@@ -1298,14 +1182,94 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
     [normalizedCreatePhotoFilter, photos],
   );
 
-  const timelineGroups = useMemo<TimelineGroup[]>(
-    () => buildTimelineGroups(filteredPhotos),
-    [filteredPhotos],
+  const zoom = resolveTimelineZoom(searchParams.get("zoom"));
+  const [photoFilters, setPhotoFilters] =
+    useState<PhotoFeedFilters>(EMPTY_PHOTO_FILTERS);
+  const [activeGroupIdx, setActiveGroupIdx] = useState(0);
+  const photoHeadersRef = useRef<(HTMLElement | null)[]>([]);
+
+  const feedPhotos = useMemo(
+    () =>
+      filteredPhotos.filter((photo) => {
+        if (
+          photoFilters.type &&
+          getPhotoMediaKind(photo) !== photoFilters.type
+        ) {
+          return false;
+        }
+        if (photoFilters.favorite && !photoFavorites[photo.id]) {
+          return false;
+        }
+        return true;
+      }),
+    [filteredPhotos, photoFilters, photoFavorites],
   );
-  const timelineMarkers = useMemo(
-    () => buildProportionalTimeline(timelineGroups, locale),
-    [timelineGroups, locale],
+  const zoomGroups = useMemo(
+    () => buildZoomedTimeline(feedPhotos, zoom),
+    [feedPhotos, zoom],
   );
+  const orderedFeedPhotoIds = useMemo(
+    () => zoomGroups.flatMap((group) => group.photos.map((photo) => photo.id)),
+    [zoomGroups],
+  );
+  photoHeadersRef.current = [];
+
+  const setPhotoZoom = (nextZoom: TimelineZoom) => {
+    setSearchParams(
+      (params) => {
+        const next = new URLSearchParams(params);
+        if (nextZoom === "day") {
+          next.delete("zoom");
+        } else {
+          next.set("zoom", nextZoom);
+        }
+        return next;
+      },
+      { replace: true },
+    );
+  };
+
+  const photoHref = (photoId: string) => {
+    const query = searchParams.toString();
+    return `/app/library/photos/${photoId}${query ? `?${query}` : ""}`;
+  };
+
+  const jumpToPhotoGroup = (groupIndex: number) => {
+    const target = photoHeadersRef.current[groupIndex];
+    const scroller = document.querySelector("main");
+    if (!target || !scroller) {
+      return;
+    }
+    const top =
+      target.getBoundingClientRect().top -
+      scroller.getBoundingClientRect().top +
+      scroller.scrollTop -
+      60;
+    scroller.scrollTo({ top, behavior: "smooth" });
+  };
+
+  useEffect(() => {
+    if (libraryView !== "photos") {
+      return;
+    }
+    const scroller = document.querySelector("main");
+    if (!scroller) {
+      return;
+    }
+    const handleScroll = () => {
+      const stop = scroller.getBoundingClientRect().top + 80;
+      let active = 0;
+      photoHeadersRef.current.forEach((element, index) => {
+        if (element && element.getBoundingClientRect().top - 4 <= stop) {
+          active = index;
+        }
+      });
+      setActiveGroupIdx(active);
+    };
+    scroller.addEventListener("scroll", handleScroll, { passive: true });
+    handleScroll();
+    return () => scroller.removeEventListener("scroll", handleScroll);
+  }, [libraryView, zoom, zoomGroups.length]);
   const geoTaggedPhotoCount = useMemo(
     () =>
       photos.filter(
@@ -1356,12 +1320,26 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
     many: t("unit.photo.many"),
     other: t("unit.photo.other"),
   };
-  const dayGroupForms = {
-    one: t("unit.dayGroup.one"),
-    few: t("unit.dayGroup.few"),
-    many: t("unit.dayGroup.many"),
-    other: t("unit.dayGroup.other"),
+  const dayForms = {
+    one: t("unit.day.one"),
+    few: t("unit.day.few"),
+    many: t("unit.day.many"),
+    other: t("unit.day.other"),
   };
+  const monthForms = {
+    one: t("unit.month.one"),
+    few: t("unit.month.few"),
+    many: t("unit.month.many"),
+    other: t("unit.month.other"),
+  };
+  const yearForms = {
+    one: t("unit.year.one"),
+    few: t("unit.year.few"),
+    many: t("unit.year.many"),
+    other: t("unit.year.other"),
+  };
+  const groupForms =
+    zoom === "day" ? dayForms : zoom === "month" ? monthForms : yearForms;
   const geoPhotoForms = {
     one: t("unit.geoPhoto.one"),
     few: t("unit.geoPhoto.few"),
@@ -2260,11 +2238,11 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
             ) : null}
           </div>
         </>
-      ) : (
+      ) : libraryView === "map" ? (
         <div className="sticky top-0 z-10 -mx-4 -mt-4 border-b border-[var(--color-border)] bg-[var(--color-bg)] px-4 py-3 sm:-mx-6 sm:-mt-6 sm:px-6">
           <div className="flex flex-wrap items-center gap-3">
             <h1 className="text-xl font-semibold tracking-tight text-[var(--color-text)]">
-              {t(`app.library.view.${libraryView}` as const)}
+              {t("app.library.view.map")}
             </h1>
             <div className="ml-auto flex items-center gap-2">
               <input
@@ -2275,24 +2253,41 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
                 type="search"
                 value={libraryFilter}
               />
-              {libraryView !== "map" ? (
-                <label className="button-primary cursor-pointer py-1.5 text-sm">
-                  <input
-                    accept="image/jpeg,image/png"
-                    aria-label={t("app.library.uploadPhotos")}
-                    className="hidden"
-                    disabled={uploadingPhoto}
-                    multiple
-                    onChange={handlePhotoUpload}
-                    type="file"
-                  />
-                  {uploadingPhoto
-                    ? t("app.library.uploadingPhotos")
-                    : t("app.library.uploadPhotos")}
-                </label>
-              ) : null}
             </div>
           </div>
+        </div>
+      ) : (
+        <div>
+          <div className="ph-pagehead">
+            <div>
+              <h1 className="ph-h1">{t("app.library.view.photos")}</h1>
+              <p className="ph-h1-sub">
+                {formatRelativeCount(feedPhotos.length, photoForms)} ·{" "}
+                {formatRelativeCount(zoomGroups.length, groupForms)}
+              </p>
+            </div>
+            <div className="ph-pagehead-tools">
+              <ZoomSwitch onZoomChange={setPhotoZoom} zoom={zoom} />
+              <label className="button-primary cursor-pointer py-1.5 text-sm">
+                <input
+                  accept="image/jpeg,image/png"
+                  aria-label={t("app.library.uploadPhotos")}
+                  className="hidden"
+                  disabled={uploadingPhoto}
+                  multiple
+                  onChange={handlePhotoUpload}
+                  type="file"
+                />
+                {uploadingPhoto
+                  ? t("app.library.uploadingPhotos")
+                  : t("app.library.uploadPhotos")}
+              </label>
+            </div>
+          </div>
+          <PhotoFilterBar
+            filters={photoFilters}
+            onFiltersChange={setPhotoFilters}
+          />
         </div>
       )}
 
@@ -2304,7 +2299,7 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
 
       <section
         className={`grid gap-6 ${
-          libraryView === "photos" ? "xl:grid-cols-[minmax(0,1fr)_15rem]" : ""
+          libraryView === "photos" ? "xl:grid-cols-[minmax(0,1fr)_9.5rem]" : ""
         }`}
       >
         {(libraryView === "photos" || libraryView === "map") && (
@@ -2709,47 +2704,42 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
                 description={t("app.library.noPhotosDescription")}
                 title={t("app.library.noPhotosTitle")}
               />
-            ) : libraryView === "map" ? null : filteredPhotos.length === 0 ? (
+            ) : libraryView === "map" ? null : feedPhotos.length === 0 ? (
               <EmptyState
                 description={t("app.library.noPhotosMatchDescription")}
                 title={t("app.library.noPhotosMatchTitle")}
               />
             ) : (
-              <div className="space-y-6" id="library-photo-grid">
-                {timelineGroups.map((group) => (
-                  <section
-                    className="scroll-mt-16"
-                    id={buildDaySectionId(group.dayKey)}
-                    key={group.dayKey}
-                  >
-                    <div className="flex items-baseline justify-between gap-3 pb-2">
-                      <h2 className="text-sm font-semibold">
-                        {formatDayLabel(group.dayKey, locale)}
-                      </h2>
-                      <span className="text-xs text-[var(--color-text-muted)]">
-                        {formatRelativeCount(group.photos.length, photoForms)}
-                      </span>
-                    </div>
-
-                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-                      {group.photos.map((photo) => (
-                        <LibraryPhotoTile
-                          isDeleteBusy={
-                            pendingIntent === "delete-photo" &&
-                            pendingPhotoId === photo.id
-                          }
-                          isFavorite={Boolean(photoFavorites[photo.id])}
-                          isFavoriteBusy={
-                            favoriteBusyKey === `photo:${photo.id}`
-                          }
-                          key={photo.id}
-                          onFavoriteToggle={() => {
-                            void handlePhotoFavoriteToggle(photo.id);
-                          }}
-                          photo={photo}
-                        />
-                      ))}
-                    </div>
+              <div className="ph-stream" id="library-photo-grid">
+                {zoomGroups.map((group, groupIndex) => (
+                  <section className="ph-group" key={group.key}>
+                    <header
+                      className="ph-group-head"
+                      ref={(element) => {
+                        photoHeadersRef.current[groupIndex] = element;
+                      }}
+                    >
+                      <div className="ph-group-head-inner">
+                        <h2 className="ph-group-title">
+                          {formatZoomGroupLabel(group.key, zoom, locale)}
+                        </h2>
+                        <span className="ph-group-sub">
+                          {formatRelativeCount(group.photos.length, photoForms)}
+                        </span>
+                      </div>
+                    </header>
+                    <JustifiedPhotoGrid
+                      gap={zoom === "day" ? 5 : zoom === "month" ? 4 : 3}
+                      isFavorite={(photoId) => Boolean(photoFavorites[photoId])}
+                      onToggleFavorite={(photoId) => {
+                        void handlePhotoFavoriteToggle(photoId);
+                      }}
+                      photoHref={photoHref}
+                      photos={group.photos}
+                      targetHeight={
+                        zoom === "day" ? 200 : zoom === "month" ? 130 : 96
+                      }
+                    />
                   </section>
                 ))}
               </div>
@@ -2758,21 +2748,15 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
         )}
 
         {libraryView === "photos" && (
-          <div className="xl:sticky xl:self-start" style={{ top: "3.5rem" }}>
-            <div style={{ height: "calc(100vh - 6rem)" }}>
-              <ProportionalTimelineRail
-                locale={locale}
-                markers={timelineMarkers}
-                timelineGroups={timelineGroups}
-              />
-            </div>
-            <div className="mt-2 text-xs text-[var(--color-text-muted)]">
-              {countFormatter.format(filteredPhotos.length)}{" "}
-              {formatRelativeCount(filteredPhotos.length, photoForms)} ·{" "}
-              {countFormatter.format(timelineGroups.length)}{" "}
-              {formatRelativeCount(timelineGroups.length, dayGroupForms)}
-            </div>
-          </div>
+          <aside className="ph-rail-wrap hidden xl:block">
+            <PhotoScrubberRail
+              activeIndex={activeGroupIdx}
+              groups={zoomGroups}
+              locale={locale}
+              onJump={jumpToPhotoGroup}
+              zoom={zoom}
+            />
+          </aside>
         )}
 
         {libraryView === "albums" && (
@@ -2962,6 +2946,12 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
           revokeBusyLinkId={shareDialogRevokeBusyId}
         />
       ) : null}
+
+      <Outlet
+        context={
+          { orderedPhotoIds: orderedFeedPhotoIds } satisfies PhotoOverlayContext
+        }
+      />
     </div>
   );
 }
