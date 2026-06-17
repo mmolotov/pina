@@ -1352,21 +1352,6 @@ a {
 }
 
 /* ── GRID WRAP + STREAM ────────────────────────────────────── */
-.ph-grid-wrap {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 9.25rem;
-  gap: 1.5rem;
-  align-items: start;
-}
-
-@media (width <= 1023px) {
-  .ph-grid-wrap {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .ph-rail-wrap {
-    display: none;
-  }
-}
 .ph-stream {
   min-width: 0;
 }

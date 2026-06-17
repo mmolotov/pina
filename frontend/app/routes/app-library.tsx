@@ -2809,15 +2809,59 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
             )}
 
             {photos.length === 0 ? (
-              <EmptyState
-                description={t("app.library.noPhotosDescription")}
-                title={t("app.library.noPhotosTitle")}
-              />
+              libraryView === "photos" ? (
+                <div className="ph-empty">
+                  <div className="ph-empty-stripe" />
+                  <p className="eyebrow">
+                    {t("app.library.photosEmptyEyebrow")}
+                  </p>
+                  <h2 className="ph-empty-title">
+                    {t("app.library.noPhotosTitle")}
+                  </h2>
+                  <p className="ph-empty-sub">
+                    {t("app.library.noPhotosDescription")}
+                  </p>
+                  <div className="ph-empty-cta">
+                    <label className="button-primary cursor-pointer">
+                      <input
+                        accept="image/jpeg,image/png"
+                        aria-label={t("app.library.uploadPhotos")}
+                        className="hidden"
+                        disabled={uploadingPhoto}
+                        multiple
+                        onChange={handlePhotoUpload}
+                        type="file"
+                      />
+                      {uploadingPhoto
+                        ? t("app.library.uploadingPhotos")
+                        : t("app.library.uploadPhotos")}
+                    </label>
+                  </div>
+                </div>
+              ) : (
+                <EmptyState
+                  description={t("app.library.noPhotosDescription")}
+                  title={t("app.library.noPhotosTitle")}
+                />
+              )
             ) : libraryView === "map" ? null : feedPhotos.length === 0 ? (
-              <EmptyState
-                description={t("app.library.noPhotosMatchDescription")}
-                title={t("app.library.noPhotosMatchTitle")}
-              />
+              <div className="ph-empty">
+                <div className="ph-empty-stripe" />
+                <h2 className="ph-empty-title">
+                  {t("app.library.noPhotosMatchTitle")}
+                </h2>
+                <p className="ph-empty-sub">
+                  {t("app.library.noPhotosMatchDescription")}
+                </p>
+                <button
+                  className="button-secondary"
+                  onClick={() => setPhotoFilters(EMPTY_PHOTO_FILTERS)}
+                  style={{ marginTop: "1.25rem" }}
+                  type="button"
+                >
+                  {t("app.library.photoFilterReset")}
+                </button>
+              </div>
             ) : (
               <div className="ph-stream" id="library-photo-grid">
                 {zoomGroups.map((group, groupIndex) => (

@@ -268,6 +268,7 @@ const enMessages = {
   "app.library.bulkDeleteBody":
     "Permanently delete {count}? This can't be undone.",
   "app.library.bulkActionFailed": "Bulk action failed.",
+  "app.library.photosEmptyEyebrow": "No photos yet",
   "unit.dayGroup.one": "day group",
   "unit.dayGroup.few": "day groups",
   "unit.dayGroup.many": "day groups",
@@ -1146,6 +1147,7 @@ const ruMessages: Partial<MessageCatalog> = {
   "app.library.bulkDeleteBody":
     "Удалить {count} безвозвратно? Это действие необратимо.",
   "app.library.bulkActionFailed": "Не удалось выполнить действие.",
+  "app.library.photosEmptyEyebrow": "Здесь пока пусто",
   "unit.dayGroup.one": "группа по дню",
   "unit.dayGroup.few": "группы по дням",
   "unit.dayGroup.many": "групп по дням",
