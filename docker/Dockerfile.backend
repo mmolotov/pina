@@ -1,12 +1,34 @@
+# Build context is the repository root (see docker-compose.yml: build.context: ..).
+
+# ---- build stage: compile the Quarkus fast-jar from source ----
+# glibc base (not alpine): the Quarkus gRPC codegen shells out to a native
+# protoc binary that is glibc-linked and fails to run on alpine/musl.
+FROM eclipse-temurin:25-jdk AS build
+WORKDIR /src
+
+# Build config first so the Gradle distribution + dependencies cache in their own
+# layer and are only re-resolved when these files change, not on every source edit.
+COPY backend/gradlew backend/settings.gradle.kts backend/build.gradle.kts backend/gradle.properties ./
+COPY backend/gradle ./gradle
+RUN chmod +x gradlew && ./gradlew --no-daemon dependencies --quiet || true
+
+# Sources + the shared gRPC contract: build.gradle.kts points grpc codegen at
+# ../proto, which resolves to /proto next to the project at /src. Skip tests:
+# they are @QuarkusTest integration tests that need Dev Services (Docker), which
+# isn't available inside an image build.
+COPY backend/src ./src
+COPY proto /proto
+RUN ./gradlew --no-daemon -x test clean quarkusBuild
+
+# ---- runtime stage ----
 FROM eclipse-temurin:25-jre-alpine
 
 RUN addgroup -S pina && adduser -S pina -G pina
 
 ARG APP_DIR=/app
-
 WORKDIR ${APP_DIR}
 
-COPY backend/build/quarkus-app/ ${APP_DIR}/
+COPY --from=build /src/build/quarkus-app/ ${APP_DIR}/
 
 RUN chown -R pina:pina ${APP_DIR}
 
