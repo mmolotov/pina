@@ -1215,7 +1215,6 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
     () => zoomGroups.flatMap((group) => group.photos.map((photo) => photo.id)),
     [zoomGroups],
   );
-  photoHeadersRef.current = [];
 
   const setPhotoZoom = (nextZoom: TimelineZoom) => {
     setSearchParams(
