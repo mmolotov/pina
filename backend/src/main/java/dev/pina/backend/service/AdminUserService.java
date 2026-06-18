@@ -99,7 +99,7 @@ public class AdminUserService {
 				.map(la -> ((LinkedAccount) la).provider.name()).toList();
 
 		Object[] stats = (Object[]) em.createQuery(
-				"SELECT COUNT(p), COALESCE(SUM(pv.sizeBytes), 0) FROM Photo p LEFT JOIN PhotoVariant pv ON pv.photo = p WHERE p.uploader.id = :uid")
+				"SELECT COUNT(DISTINCT p.id), COALESCE(SUM(pv.sizeBytes), 0) FROM Photo p LEFT JOIN PhotoVariant pv ON pv.photo = p WHERE p.uploader.id = :uid")
 				.setParameter("uid", user.id).getSingleResult();
 		long photoCount = (Long) stats[0];
 		long storageBytesUsed = (Long) stats[1];

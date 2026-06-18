@@ -1,5 +1,6 @@
 package dev.pina.backend.api;
 
+import dev.pina.backend.service.PhotoService;
 import dev.pina.backend.storage.StorageProvider;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.GET;
@@ -17,14 +18,19 @@ public class HealthResource {
 	@Inject
 	StorageProvider storage;
 
+	@Inject
+	PhotoService photoService;
+
 	@GET
 	public Response health() {
 		var body = new LinkedHashMap<String, Object>();
 		try {
 			var stats = storage.stats();
 			body.put("status", "ok");
-			body.put("storage", Map.of("type", storage.type(), "usedBytes", stats.usedBytes(), "availableBytes",
-					stats.availableBytes()));
+			// usedBytes is PINA's stored media (sum of variant sizes), not the whole
+			// filesystem; availableBytes stays the backing store's free space.
+			body.put("storage", Map.of("type", storage.type(), "usedBytes", photoService.totalStoredBytes(),
+					"availableBytes", stats.availableBytes()));
 			return Response.ok(body).build();
 		} catch (Exception _) {
 			body.put("status", "down");
