@@ -1,5 +1,5 @@
 import type { Route } from "./+types/app-admin-settings";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Form,
   Link,
@@ -127,12 +127,18 @@ export default function AppAdminSettingsRoute({
     loaderData.settings,
   );
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  // Adopt revalidated loader settings only right after a successful save, so an
+  // in-flight revalidation never clobbers the edits the user is making.
+  const adoptLoaderSettings = useRef(false);
   const isSaving = navigation.state !== "idle";
   const errorMessage =
     actionData && !actionData.ok ? actionData.errorMessage : null;
 
   useEffect(() => {
-    setDraft(loaderData.settings);
+    if (adoptLoaderSettings.current) {
+      adoptLoaderSettings.current = false;
+      setDraft(loaderData.settings);
+    }
   }, [loaderData.settings]);
 
   useEffect(() => {
@@ -142,6 +148,7 @@ export default function AppAdminSettingsRoute({
 
     if (actionData.ok) {
       setSuccessMessage(actionData.successMessage);
+      adoptLoaderSettings.current = true;
       revalidator.revalidate();
       return;
     }
