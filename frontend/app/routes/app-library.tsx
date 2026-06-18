@@ -51,6 +51,7 @@ import {
   updateAlbum,
   uploadPhoto,
 } from "~/lib/api";
+import { triggerBlobDownload } from "~/lib/download";
 import { formatRelativeCount } from "~/lib/format";
 import { getPhotoMediaKind, type PhotoOverlayContext } from "~/lib/photo-media";
 import {
@@ -1356,12 +1357,7 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
     await runBulkAction(async () => {
       for (const photo of targets) {
         const blob = await getPhotoBlob(photo.id, "ORIGINAL");
-        const objectUrl = URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        link.href = objectUrl;
-        link.download = photo.originalFilename;
-        link.click();
-        URL.revokeObjectURL(objectUrl);
+        triggerBlobDownload(blob, photo.originalFilename);
       }
     });
   }

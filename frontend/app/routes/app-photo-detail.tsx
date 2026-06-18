@@ -23,6 +23,7 @@ import {
   listFavorites,
   removeFavorite,
 } from "~/lib/api";
+import { triggerBlobDownload } from "~/lib/download";
 import { formatBytes, formatDateTime } from "~/lib/format";
 import {
   getActiveLocale,
@@ -192,14 +193,11 @@ export default function AppPhotoDetailRoute({
     setErrorMessage(null);
     try {
       const blob = await getPhotoBlob(photoId, "ORIGINAL");
-      const objectUrl = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = objectUrl;
-      link.download =
+      triggerBlobDownload(
+        blob,
         photo.originalFilename ??
-        translateMessage(getActiveLocale(), "app.photoDetail.loadingTitle");
-      link.click();
-      URL.revokeObjectURL(objectUrl);
+          translateMessage(getActiveLocale(), "app.photoDetail.loadingTitle"),
+      );
     } catch (error) {
       setErrorMessage(
         error instanceof ApiError
