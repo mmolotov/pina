@@ -58,6 +58,11 @@ services:
       #   openssl genrsa -out dev-keys/privateKey.pem 2048
       #   openssl rsa -in dev-keys/privateKey.pem -pubout -out dev-keys/publicKey.pem
       - ../backend/dev-keys:/app/dev-keys:ro
+      # Uploaded media (originals, compressed, thumbnails) live under
+      # pina.storage.local.base-path=data, i.e. /app/data. Without this volume
+      # the files sit in the container's writable layer and are lost on rebuild,
+      # leaving the DB referencing photos whose files no longer exist.
+      - pinadata:/app/data
     ports:
       - "8080:8080"
     depends_on:
@@ -76,3 +81,4 @@ services:
 volumes:
   pgdata:
   mlmodels:
+  pinadata:
