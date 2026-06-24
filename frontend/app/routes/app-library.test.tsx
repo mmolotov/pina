@@ -212,14 +212,69 @@ describe("AppLibraryRoute", () => {
   it("adds a photo to favorites from the library grid", async () => {
     renderRoute();
 
-    expect(await screen.findByText("beach.jpg")).toBeInTheDocument();
-
     fireEvent.click(
-      screen.getByRole("button", { name: "Add beach.jpg to favorites" }),
+      await screen.findByRole("button", {
+        name: "Add beach.jpg to favorites",
+      }),
     );
 
     await waitFor(() => {
       expect(apiMocks.addFavorite).toHaveBeenCalledWith("PHOTO", "photo-1");
+    });
+  });
+
+  it("selects photos and bulk-favorites them", async () => {
+    apiMocks.listAllPhotos.mockResolvedValue([
+      {
+        id: "photo-1",
+        uploaderId: "user-1",
+        originalFilename: "beach.jpg",
+        mimeType: "image/jpeg",
+        width: 1600,
+        height: 1000,
+        sizeBytes: 100,
+        personalLibraryId: "library-1",
+        exifData: null,
+        takenAt: null,
+        latitude: null,
+        longitude: null,
+        createdAt: "2026-04-02T10:05:00Z",
+        variants: [],
+      },
+      {
+        id: "photo-2",
+        uploaderId: "user-1",
+        originalFilename: "dinner.jpg",
+        mimeType: "image/jpeg",
+        width: 1600,
+        height: 900,
+        sizeBytes: 100,
+        personalLibraryId: "library-1",
+        exifData: null,
+        takenAt: null,
+        latitude: null,
+        longitude: null,
+        createdAt: "2026-04-01T20:15:00Z",
+        variants: [],
+      },
+    ]);
+
+    renderRoute();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Select beach.jpg" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Select dinner.jpg" }));
+
+    expect(
+      screen.getByRole("region", { name: /2 selected/i }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /^favorite$/i }));
+
+    await waitFor(() => {
+      expect(apiMocks.addFavorite).toHaveBeenCalledWith("PHOTO", "photo-1");
+      expect(apiMocks.addFavorite).toHaveBeenCalledWith("PHOTO", "photo-2");
     });
   });
 
@@ -743,13 +798,20 @@ describe("AppLibraryRoute", () => {
 
     renderRoute();
 
-    expect(await screen.findByText("beach.jpg")).toBeInTheDocument();
-    expect(screen.getByText("dinner.jpg")).toBeInTheDocument();
+    expect(
+      await screen.findByRole("link", { name: "Open photo beach.jpg" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "Open photo dinner.jpg" }),
+    ).toBeInTheDocument();
     expect(
       screen.getByRole("heading", { level: 1, name: /photos|фото/i }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: /Apr 2026/i }),
+      screen.getByRole("heading", { level: 2, name: /April 2, 2026/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { level: 2, name: /April 1, 2026/i }),
     ).toBeInTheDocument();
   });
 
@@ -1289,7 +1351,7 @@ describe("AppLibraryRoute", () => {
     ).toBeInTheDocument();
   });
 
-  it("filters photos in the library view", async () => {
+  it("filters photos by media type in the photos view", async () => {
     apiMocks.listAllPhotos.mockResolvedValue([
       {
         id: "photo-1",
@@ -1308,8 +1370,8 @@ describe("AppLibraryRoute", () => {
       {
         id: "photo-2",
         uploaderId: "user-1",
-        originalFilename: "forest.png",
-        mimeType: "image/png",
+        originalFilename: "forest.mp4",
+        mimeType: "video/mp4",
         width: 1600,
         height: 900,
         sizeBytes: 256000,
@@ -1324,18 +1386,20 @@ describe("AppLibraryRoute", () => {
     renderRoute();
 
     expect(
-      await screen.findByRole("link", { name: "forest.png" }),
+      await screen.findByRole("link", { name: "Open photo beach.jpg" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "Open photo forest.mp4" }),
     ).toBeInTheDocument();
 
-    fireEvent.change(
-      screen.getByLabelText(/filter library|фильтр библиотеки/i),
-      {
-        target: { value: "beach" },
-      },
-    );
+    fireEvent.click(screen.getByRole("button", { name: /^videos$|^видео$/i }));
 
-    expect(screen.getByText("beach.jpg")).toBeInTheDocument();
-    expect(screen.queryByText("forest.png")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "Open photo forest.mp4" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: "Open photo beach.jpg" }),
+    ).not.toBeInTheDocument();
   });
 
   it("renders empty album tiles with placeholder copy instead of inline photo controls", async () => {

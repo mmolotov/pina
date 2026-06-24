@@ -285,6 +285,13 @@ public class PhotoService {
 		return new PageResult<>(orderedPhotos, pageRequest.page(), effectiveSize, hasNext, totalItems, totalPages);
 	}
 
+	/** Total bytes stored across all photo variants — PINA's actual media usage. */
+	@Transactional
+	public long totalStoredBytes() {
+		return em.createQuery("SELECT COALESCE(SUM(pv.sizeBytes), 0) FROM PhotoVariant pv", Long.class)
+				.getSingleResult();
+	}
+
 	@Transactional
 	public PageResult<PhotoGeoProjection> findInBoundingBox(UUID uploaderId, double swLat, double swLng, double neLat,
 			double neLng, PageRequest pageRequest) {

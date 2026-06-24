@@ -76,7 +76,9 @@ test("library route keeps upload and view controls reachable", async ({
   await expect(
     page.getByRole("heading", { level: 1, name: "Photos" }),
   ).toBeVisible();
-  await expect(page.getByLabel("Filter library")).toBeVisible();
+  await expect(
+    page.getByRole("tablist", { name: "Timeline granularity" }),
+  ).toBeVisible();
   await expect(page.getByText("Upload photos")).toBeVisible();
   await expectNoHorizontalOverflow(page);
   await expect(page).toHaveScreenshot("library-route.png", {

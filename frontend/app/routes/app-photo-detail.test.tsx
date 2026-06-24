@@ -83,13 +83,14 @@ describe("AppPhotoDetailRoute", () => {
     renderRoute();
 
     expect(await screen.findByText("beach.jpg")).toBeInTheDocument();
-    expect(screen.getByText('{"camera":"Phone"}')).toBeInTheDocument();
-    expect(
-      screen.getByRole("link", { name: /favorites|избранное/i }),
-    ).toHaveAttribute("href", "/app/favorites");
+    expect(screen.getByText("1920 × 1080")).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /download|скачать/i }),
     ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("tab", { name: /^exif$/i }));
+    expect(await screen.findByText("camera")).toBeInTheDocument();
+    expect(screen.getByText("Phone")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /favorite|избран/i }));
 

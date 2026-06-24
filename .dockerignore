@@ -1,0 +1,15 @@
+# Build context is the repo root (backend + ml images). Exclude heavy or
+# generated paths neither build needs, to keep the context small.
+.git
+**/node_modules
+**/.gradle
+backend/build
+frontend/build
+frontend/test-results
+frontend/playwright-report
+**/__pycache__
+ml/.venv
+ml/models
+**/*.log
+.idea
+.DS_Store

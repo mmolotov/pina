@@ -49,6 +49,134 @@ export function buildDaySectionId(dayKey: string) {
   return `library-day-${dayKey}`;
 }
 
+export type TimelineZoom = "day" | "month" | "year";
+
+export const TIMELINE_ZOOMS: readonly TimelineZoom[] = ["day", "month", "year"];
+
+export function resolveTimelineZoom(value: string | null): TimelineZoom {
+  return value === "month" || value === "year" ? value : "day";
+}
+
+/**
+ * A timeline group at an arbitrary zoom level. `key` is always a canonical
+ * `YYYY-MM-DD` string (the day itself for day-zoom, the 1st of the month for
+ * month-zoom, the 1st of January for year-zoom) so groups and the scrubber rail
+ * sort and bucket uniformly regardless of zoom.
+ */
+export interface ZoomTimelineGroup {
+  key: string;
+  photos: PhotoDto[];
+}
+
+function zoomKeyForDay(dayKey: string, zoom: TimelineZoom): string {
+  if (zoom === "month") return `${dayKey.slice(0, 7)}-01`;
+  if (zoom === "year") return `${dayKey.slice(0, 4)}-01-01`;
+  return dayKey;
+}
+
+export function buildZoomedTimeline(
+  photos: PhotoDto[],
+  zoom: TimelineZoom,
+): ZoomTimelineGroup[] {
+  if (zoom === "day") {
+    return buildTimelineGroups(photos).map((group) => ({
+      key: group.dayKey,
+      photos: group.photos,
+    }));
+  }
+
+  const groups = new Map<string, PhotoDto[]>();
+  for (const photo of photos) {
+    const key = zoomKeyForDay(dayKeyForPhoto(photo), zoom);
+    const bucket = groups.get(key);
+    if (bucket) {
+      bucket.push(photo);
+    } else {
+      groups.set(key, [photo]);
+    }
+  }
+
+  return Array.from(groups.entries())
+    .sort(([left], [right]) => right.localeCompare(left))
+    .map(([key, groupPhotos]) => ({
+      key,
+      photos: groupPhotos.sort((left, right) => {
+        const leftDate = left.takenAt ?? left.createdAt;
+        const rightDate = right.takenAt ?? right.createdAt;
+        return rightDate.localeCompare(leftDate);
+      }),
+    }));
+}
+
+/** Localized header label for a zoom group, matching the Photos prototype. */
+export function formatZoomGroupLabel(
+  key: string,
+  zoom: TimelineZoom,
+  locale: Locale,
+): string {
+  const date = new Date(`${key}T00:00:00Z`);
+  if (zoom === "year") {
+    return String(date.getUTCFullYear());
+  }
+  if (zoom === "month") {
+    const label = new Intl.DateTimeFormat(locale, {
+      month: "long",
+      year: "numeric",
+      timeZone: "UTC",
+    }).format(date);
+    return label.charAt(0).toUpperCase() + label.slice(1);
+  }
+  return new Intl.DateTimeFormat(locale, {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(date);
+}
+
+export interface RailDay {
+  groupIdx: number;
+  key: string;
+  count: number;
+}
+
+export interface RailMonth {
+  year: number;
+  /** 1-12 */
+  month: number;
+  total: number;
+  days: RailDay[];
+}
+
+/**
+ * Collapse zoom groups into a month-granular index for the scrubber rail:
+ * months sorted newest-first, each carrying its day buckets (with the source
+ * group index, for scroll-to-jump) and a photo total.
+ */
+export function buildRailMonths(groups: ZoomTimelineGroup[]): RailMonth[] {
+  const months = new Map<string, RailMonth>();
+  groups.forEach((group, index) => {
+    const year = Number(group.key.slice(0, 4));
+    const month = Number(group.key.slice(5, 7));
+    const monthKey = `${year}-${month}`;
+    let record = months.get(monthKey);
+    if (!record) {
+      record = { year, month, total: 0, days: [] };
+      months.set(monthKey, record);
+    }
+    record.days.push({
+      groupIdx: index,
+      key: group.key,
+      count: group.photos.length,
+    });
+    record.total += group.photos.length;
+  });
+
+  return Array.from(months.values()).sort(
+    (left, right) => right.year - left.year || right.month - left.month,
+  );
+}
+
 export function formatDayLabel(dayKey: string, locale: Locale) {
   return new Intl.DateTimeFormat(locale, {
     weekday: "short",

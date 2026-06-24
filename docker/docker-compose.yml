@@ -42,7 +42,13 @@ services:
       QUARKUS_DATASOURCE_JDBC_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-pina}
       QUARKUS_DATASOURCE_USERNAME: ${POSTGRES_USER:-pina}
       QUARKUS_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-pina}
-      QUARKUS_HTTP_CORS_ORIGINS: http://localhost:*,https://localhost:*
+      # CORS origins. Safe default = explicit localhost only, so a stray copy of
+      # this file to a server never opens CORS to the world. For LAN / any-origin
+      # dev convenience, set QUARKUS_HTTP_CORS_ORIGINS in a local, gitignored
+      # docker/.env (see docker/.env.example). Production must set an explicit
+      # allow-list of the real frontend origin(s); never `/.*/` — with
+      # allow-credentials=true it would let any site call the API as the user.
+      QUARKUS_HTTP_CORS_ORIGINS: ${QUARKUS_HTTP_CORS_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
       PINA_ML_HOST: ml
       PINA_ML_PORT: 50051
       PINA_ALBUM_DOWNLOAD_TOKEN_SIGNING_KEY: ${PINA_ALBUM_DOWNLOAD_TOKEN_SIGNING_KEY:-compose-dev-album-signing-key}
@@ -52,6 +58,11 @@ services:
       #   openssl genrsa -out dev-keys/privateKey.pem 2048
       #   openssl rsa -in dev-keys/privateKey.pem -pubout -out dev-keys/publicKey.pem
       - ../backend/dev-keys:/app/dev-keys:ro
+      # Uploaded media (originals, compressed, thumbnails) live under
+      # pina.storage.local.base-path=data, i.e. /app/data. Without this volume
+      # the files sit in the container's writable layer and are lost on rebuild,
+      # leaving the DB referencing photos whose files no longer exist.
+      - pinadata:/app/data
     ports:
       - "8080:8080"
     depends_on:
@@ -70,3 +81,4 @@ services:
 volumes:
   pgdata:
   mlmodels:
+  pinadata:
