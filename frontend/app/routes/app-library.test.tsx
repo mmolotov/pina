@@ -8,6 +8,7 @@ import {
 import { createRoutesStub } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "~/lib/i18n";
+import { ThemeProvider } from "~/lib/theme";
 import AppLibraryRoute, {
   clientAction as appLibraryClientAction,
   clientLoader as appLibraryClientLoader,
@@ -48,6 +49,48 @@ vi.mock("~/lib/api", () => ({
     }
   },
 }));
+
+// Deterministic Leaflet stub: jsdom lacks layout, so we fake the few map methods
+// LibraryMap calls. project() maps lng/lat to pixels so proximity clustering is
+// predictable; getBounds().contains() keeps every marker "in view".
+vi.mock("leaflet", () => {
+  const point = (x: number, y: number) => ({
+    x,
+    y,
+    distanceTo: (other: { x: number; y: number }) =>
+      Math.hypot(x - other.x, y - other.y),
+  });
+  const createMap = () => ({
+    fitBounds: vi.fn(),
+    setView: vi.fn(),
+    flyTo: vi.fn(),
+    zoomIn: vi.fn(),
+    zoomOut: vi.fn(),
+    invalidateSize: vi.fn(),
+    removeLayer: vi.fn(),
+    remove: vi.fn(),
+    on: vi.fn(),
+    off: vi.fn(),
+    getZoom: () => 5,
+    getBounds: () => ({
+      getSouth: () => -85,
+      getWest: () => -180,
+      getNorth: () => 85,
+      getEast: () => 180,
+      contains: () => true,
+    }),
+    project: ([lat, lng]: [number, number]) => point(lng * 1000, lat * 1000),
+    latLngToContainerPoint: ([lat, lng]: [number, number]) =>
+      point(lng + 400, lat + 300),
+  });
+  return {
+    default: {
+      map: vi.fn(() => createMap()),
+      tileLayer: vi.fn(() => ({ addTo: vi.fn() })),
+      latLngBounds: vi.fn(() => ({})),
+    },
+  };
+});
 
 describe("AppLibraryRoute", () => {
   beforeEach(() => {
@@ -151,13 +194,51 @@ describe("AppLibraryRoute", () => {
         path: "/app/library/albums/:albumId",
         Component: () => <div>Album detail target</div>,
       },
+      {
+        path: "/app/library/photos/:photoId",
+        Component: () => <div>Photo detail target</div>,
+      },
     ]);
 
     return render(
       <I18nProvider>
-        <Stub initialEntries={[initialEntry]} />
+        <ThemeProvider>
+          <Stub initialEntries={[initialEntry]} />
+        </ThemeProvider>
       </I18nProvider>,
     );
+  }
+
+  function makeGeoPhoto(overrides: Record<string, unknown> = {}) {
+    return {
+      id: "geo-photo-1",
+      uploaderId: "user-1",
+      originalFilename: "geo.jpg",
+      mimeType: "image/jpeg",
+      width: 1600,
+      height: 900,
+      sizeBytes: 256000,
+      personalLibraryId: "library-1",
+      exifData: null,
+      takenAt: "2026-04-03T09:15:00Z",
+      latitude: 44.8176,
+      longitude: 20.4633,
+      createdAt: "2026-04-03T09:15:00Z",
+      variants: [],
+      albums: [],
+      ...overrides,
+    };
+  }
+
+  function geoPage(items: unknown[]) {
+    return {
+      items,
+      page: 0,
+      size: 100,
+      hasNext: false,
+      totalItems: items.length,
+      totalPages: 1,
+    };
   }
 
   function makeAlbum(overrides: Record<string, unknown> = {}) {
@@ -815,36 +896,17 @@ describe("AppLibraryRoute", () => {
     ).toBeInTheDocument();
   });
 
-  it("loads geo markers from URL viewport state in map view", async () => {
-    apiMocks.listGeoPhotos.mockResolvedValue({
-      items: [
-        {
-          id: "photo-map-1",
-          uploaderId: "user-1",
-          originalFilename: "belgrade.jpg",
-          mimeType: "image/jpeg",
-          width: 1600,
-          height: 900,
-          sizeBytes: 256000,
-          personalLibraryId: "library-1",
-          exifData: null,
-          takenAt: "2026-04-03T09:15:00Z",
-          latitude: 44.8176,
-          longitude: 20.4633,
-          createdAt: "2026-04-03T09:15:00Z",
-          variants: [],
-        },
-      ],
-      page: 0,
-      size: 100,
-      hasNext: false,
-      totalItems: 1,
-      totalPages: 1,
-    });
+  it("loads geo markers for the URL viewport and opens photo detail", async () => {
+    apiMocks.listAllPhotos.mockResolvedValue([
+      makeGeoPhoto({ id: "photo-map-1", originalFilename: "belgrade.jpg" }),
+    ]);
+    apiMocks.listGeoPhotos.mockResolvedValue(
+      geoPage([
+        makeGeoPhoto({ id: "photo-map-1", originalFilename: "belgrade.jpg" }),
+      ]),
+    );
 
     renderRoute("/app/library?view=map&swLat=44&swLng=20&neLat=45&neLng=21");
-
-    expect(await screen.findByText("belgrade.jpg")).toBeInTheDocument();
 
     await waitFor(() => {
       expect(apiMocks.listGeoPhotos).toHaveBeenCalledWith({
@@ -864,303 +926,98 @@ describe("AppLibraryRoute", () => {
       }),
     );
 
-    expect(screen.getByText(/photo selected/i)).toBeInTheDocument();
-    expect(
-      screen.getByRole("link", { name: "Open photo detail" }),
-    ).toHaveAttribute("href", "/app/library/photos/photo-map-1");
+    const openButton = await screen.findByRole("button", {
+      name: /open photo detail/i,
+    });
+    fireEvent.click(openButton);
+
+    expect(await screen.findByText("Photo detail target")).toBeInTheDocument();
   });
 
-  it("renders dense geo markers as a cluster and supports zooming in", async () => {
-    apiMocks.listGeoPhotos
-      .mockResolvedValueOnce({
-        items: [
+  it("filters map markers by favorites", async () => {
+    const belgrade = makeGeoPhoto({
+      id: "photo-map-1",
+      originalFilename: "belgrade.jpg",
+      latitude: 44.8,
+      longitude: 20.46,
+    });
+    const sydney = makeGeoPhoto({
+      id: "photo-map-2",
+      originalFilename: "sydney.jpg",
+      latitude: -33.87,
+      longitude: 151.2,
+    });
+    apiMocks.listAllPhotos.mockResolvedValue([belgrade, sydney]);
+    apiMocks.listGeoPhotos.mockResolvedValue(geoPage([belgrade, sydney]));
+    apiMocks.listFavorites.mockImplementation(async (targetType?: string) => {
+      if (targetType === "PHOTO") {
+        return [
           {
-            id: "photo-map-1",
-            uploaderId: "user-1",
-            originalFilename: "cluster-a.jpg",
-            mimeType: "image/jpeg",
-            width: 1600,
-            height: 900,
-            sizeBytes: 256000,
-            personalLibraryId: "library-1",
-            exifData: null,
-            takenAt: "2026-04-03T09:15:00Z",
-            latitude: 44.8176,
-            longitude: 20.4633,
+            id: "fav-1",
+            userId: "user-1",
+            targetType: "PHOTO",
+            targetId: "photo-map-1",
             createdAt: "2026-04-03T09:15:00Z",
-            variants: [],
           },
-          {
-            id: "photo-map-2",
-            uploaderId: "user-1",
-            originalFilename: "cluster-b.jpg",
-            mimeType: "image/jpeg",
-            width: 1600,
-            height: 900,
-            sizeBytes: 256000,
-            personalLibraryId: "library-1",
-            exifData: null,
-            takenAt: "2026-04-03T09:17:00Z",
-            latitude: 44.8179,
-            longitude: 20.4636,
-            createdAt: "2026-04-03T09:17:00Z",
-            variants: [],
-          },
-        ],
-        page: 0,
-        size: 100,
-        hasNext: false,
-        totalItems: 2,
-        totalPages: 1,
-      })
-      .mockResolvedValue({
-        items: [
-          {
-            id: "photo-map-1",
-            uploaderId: "user-1",
-            originalFilename: "cluster-a.jpg",
-            mimeType: "image/jpeg",
-            width: 1600,
-            height: 900,
-            sizeBytes: 256000,
-            personalLibraryId: "library-1",
-            exifData: null,
-            takenAt: "2026-04-03T09:15:00Z",
-            latitude: 44.8176,
-            longitude: 20.4633,
-            createdAt: "2026-04-03T09:15:00Z",
-            variants: [],
-          },
-        ],
-        page: 0,
-        size: 100,
-        hasNext: false,
-        totalItems: 1,
-        totalPages: 1,
-      });
-
-    renderRoute("/app/library?view=map&swLat=44&swLng=20&neLat=45&neLng=21");
-
-    const clusterButton = await screen.findByRole("button", {
-      name: /cluster.*2/i,
-    });
-    fireEvent.click(clusterButton);
-
-    expect(await screen.findByText(/cluster.*2/i)).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: /zoom.*cluster/i }));
-
-    await waitFor(() => {
-      expect(apiMocks.listGeoPhotos).toHaveBeenCalledTimes(2);
-    });
-  });
-
-  it("updates the viewport query when panning the map", async () => {
-    apiMocks.listGeoPhotos.mockResolvedValue({
-      items: [],
-      page: 0,
-      size: 100,
-      hasNext: false,
-      totalItems: 0,
-      totalPages: 0,
-    });
-
-    renderRoute("/app/library?view=map&swLat=10&swLng=20&neLat=30&neLng=40");
-
-    expect(
-      await screen.findByRole("button", { name: /east|восток/i }),
-    ).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: /east|восток/i }));
-
-    await waitFor(() => {
-      expect(apiMocks.listGeoPhotos).toHaveBeenLastCalledWith({
-        swLat: 10,
-        swLng: 25,
-        neLat: 30,
-        neLng: 45,
-        page: 0,
-        size: 100,
-        needsTotal: true,
-      });
-    });
-  });
-
-  it("shows a clear map error state when geo loading fails", async () => {
-    apiMocks.listGeoPhotos.mockRejectedValue(new Error("Geo endpoint failed"));
-
-    renderRoute("/app/library?view=map");
-    expect(await screen.findByText("Geo endpoint failed")).toBeInTheDocument();
-  });
-
-  it("applies the current library filter to map markers and empty states", async () => {
-    apiMocks.listAllPhotos.mockResolvedValue([
-      {
-        id: "photo-map-1",
-        uploaderId: "user-1",
-        originalFilename: "belgrade.jpg",
-        mimeType: "image/jpeg",
-        width: 1600,
-        height: 900,
-        sizeBytes: 256000,
-        personalLibraryId: "library-1",
-        exifData: null,
-        takenAt: "2026-04-03T09:15:00Z",
-        latitude: 44.8176,
-        longitude: 20.4633,
-        createdAt: "2026-04-03T09:15:00Z",
-        variants: [],
-      },
-      {
-        id: "photo-map-2",
-        uploaderId: "user-1",
-        originalFilename: "forest.png",
-        mimeType: "image/png",
-        width: 1600,
-        height: 900,
-        sizeBytes: 256000,
-        personalLibraryId: "library-1",
-        exifData: null,
-        takenAt: "2026-04-03T10:15:00Z",
-        latitude: -33.8688,
-        longitude: 151.2093,
-        createdAt: "2026-04-03T10:15:00Z",
-        variants: [],
-      },
-    ]);
-    apiMocks.listGeoPhotos.mockResolvedValue({
-      items: [
-        {
-          id: "photo-map-1",
-          uploaderId: "user-1",
-          originalFilename: "belgrade.jpg",
-          mimeType: "image/jpeg",
-          width: 1600,
-          height: 900,
-          sizeBytes: 256000,
-          personalLibraryId: "library-1",
-          exifData: null,
-          takenAt: "2026-04-03T09:15:00Z",
-          latitude: 44.8176,
-          longitude: 20.4633,
-          createdAt: "2026-04-03T09:15:00Z",
-          variants: [],
-        },
-        {
-          id: "photo-map-2",
-          uploaderId: "user-1",
-          originalFilename: "forest.png",
-          mimeType: "image/png",
-          width: 1600,
-          height: 900,
-          sizeBytes: 256000,
-          personalLibraryId: "library-1",
-          exifData: null,
-          takenAt: "2026-04-03T10:15:00Z",
-          latitude: -33.8688,
-          longitude: 151.2093,
-          createdAt: "2026-04-03T10:15:00Z",
-          variants: [],
-        },
-      ],
-      page: 0,
-      size: 100,
-      hasNext: false,
-      totalItems: 2,
-      totalPages: 1,
+        ];
+      }
+      return [];
     });
 
     renderRoute("/app/library?view=map");
+
     expect(
       await screen.findByRole("button", {
-        name: /belgrade\.jpg/i,
+        name: "Open map marker for belgrade.jpg",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", {
+        name: "Open map marker for sydney.jpg",
       }),
     ).toBeInTheDocument();
 
-    fireEvent.change(
-      screen.getByLabelText(/filter library|фильтр библиотеки/i),
-      {
-        target: { value: "forest" },
-      },
+    fireEvent.click(
+      screen.getByRole("button", { name: /favorites|избранное/i }),
     );
 
     await waitFor(() => {
       expect(
         screen.queryByRole("button", {
-          name: /belgrade\.jpg/i,
+          name: "Open map marker for sydney.jpg",
         }),
       ).not.toBeInTheDocument();
     });
     expect(
-      screen.getByRole("button", { name: /forest\.png/i }),
-    ).toBeInTheDocument();
-
-    fireEvent.change(
-      screen.getByLabelText(/filter library|фильтр библиотеки/i),
-      {
-        target: { value: "desert" },
-      },
-    );
-
-    expect(
-      await screen.findByRole("heading", {
-        name: /geo-tagged photos match|фото с геотегами/i,
+      screen.getByRole("button", {
+        name: "Open map marker for belgrade.jpg",
       }),
     ).toBeInTheDocument();
-    expect(
-      screen.getAllByRole("button", { name: /clear filter|сбросить фильтр/i })
-        .length,
-    ).toBeGreaterThan(0);
   });
 
-  it("supports clearing the current map selection", async () => {
-    apiMocks.listGeoPhotos.mockResolvedValue({
-      items: [
-        {
-          id: "photo-map-1",
-          uploaderId: "user-1",
-          originalFilename: "belgrade.jpg",
-          mimeType: "image/jpeg",
-          width: 1600,
-          height: 900,
-          sizeBytes: 256000,
-          personalLibraryId: "library-1",
-          exifData: null,
-          takenAt: "2026-04-03T09:15:00Z",
-          latitude: 44.8176,
-          longitude: 20.4633,
-          createdAt: "2026-04-03T09:15:00Z",
-          variants: [],
-        },
-      ],
-      page: 0,
-      size: 100,
-      hasNext: false,
-      totalItems: 1,
-      totalPages: 1,
-    });
+  it("shows the map error state with a retry action", async () => {
+    apiMocks.listAllPhotos.mockResolvedValue([
+      makeGeoPhoto({ id: "photo-map-1", originalFilename: "belgrade.jpg" }),
+    ]);
+    apiMocks.listGeoPhotos.mockRejectedValue(new Error("Geo endpoint failed"));
 
     renderRoute("/app/library?view=map");
 
-    fireEvent.click(
-      await screen.findByRole("button", {
-        name: /belgrade\.jpg/i,
-      }),
-    );
+    expect(await screen.findByText("Geo endpoint failed")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /retry|повторить/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("shows the no-GPS empty state when no photos have coordinates", async () => {
+    // The default listAllPhotos fixture has a photo without latitude/longitude.
+    renderRoute("/app/library?view=map");
 
     expect(
-      await screen.findByText(/photo selected|фото выбрано/i),
+      await screen.findByRole("heading", {
+        name: /no geo-tagged photos yet|пока нет фото с геотегами/i,
+      }),
     ).toBeInTheDocument();
-
-    fireEvent.click(
-      screen.getByRole("button", { name: /clear selection|снять выделение/i }),
-    );
-
-    await waitFor(() => {
-      expect(
-        screen.getByText(/nothing selected|ничего не выбрано/i),
-      ).toBeInTheDocument();
-    });
   });
 
   it("dispatches uploads in parallel up to the concurrency limit and reports partial failures", async () => {

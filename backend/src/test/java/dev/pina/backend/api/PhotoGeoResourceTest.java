@@ -230,7 +230,28 @@ class PhotoGeoResourceTest {
 
 		authAs(token).when().get("/api/v1/photos/geo?swLat=44.70&swLng=20.30&neLat=44.90&neLng=20.60").then()
 				.statusCode(200).body("items", hasSize(1)).body("items[0].exifData", equalTo(null))
-				.body("items[0].variants", hasSize(0)).body("items[0].personalLibraryId", notNullValue());
+				.body("items[0].variants", hasSize(0)).body("items[0].personalLibraryId", notNullValue())
+				.body("items[0].albums", hasSize(0));
+	}
+
+	@Test
+	void geoListIncludesPersonalAlbumMembership() throws IOException {
+		String token = registerUserToken("geo-album-membership");
+		Path image = createJpegImage("geo-album", 100, 100, 0x118844);
+
+		when(exifExtractor.extract(any(Path.class))).thenReturn(
+				new ExifExtractor.ExifResult("{\"latitude\":44.8176,\"longitude\":20.4633}", null, 44.8176, 20.4633));
+
+		String photoId = authAs(token).multiPart("file", image.toFile(), "image/jpeg").when().post("/api/v1/photos")
+				.then().statusCode(201).extract().path("id");
+		String albumId = authAs(token).contentType(ContentType.JSON).body("{\"name\":\"Summer trip\"}").when()
+				.post("/api/v1/albums").then().statusCode(201).extract().path("id");
+		authAs(token).when().post("/api/v1/albums/" + albumId + "/photos/" + photoId).then().statusCode(201);
+
+		authAs(token).when().get("/api/v1/photos/geo?swLat=44.70&swLng=20.30&neLat=44.90&neLng=20.60").then()
+				.statusCode(200).body("items", hasSize(1)).body("items[0].id", equalTo(photoId))
+				.body("items[0].albums", hasSize(1)).body("items[0].albums[0].id", equalTo(albumId))
+				.body("items[0].albums[0].name", equalTo("Summer trip"));
 	}
 
 	private static Path createJpegImage(String prefix, int width, int height, int rgb) throws IOException {

@@ -4,6 +4,7 @@ import { axe } from "jest-axe";
 import { createRoutesStub } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "~/lib/i18n";
+import { ThemeProvider } from "~/lib/theme";
 import AppHomeRoute, {
   clientLoader as appHomeClientLoader,
 } from "~/routes/app-home";
@@ -171,7 +172,11 @@ describe("frontend accessibility smoke", () => {
   }
 
   function renderWithI18n(element: ReactElement) {
-    return render(<I18nProvider>{element}</I18nProvider>);
+    return render(
+      <I18nProvider>
+        <ThemeProvider>{element}</ThemeProvider>
+      </I18nProvider>,
+    );
   }
 
   it("keeps the login route free from basic accessibility violations", async () => {

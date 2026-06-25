@@ -5,6 +5,7 @@ import {
 } from "~/lib/session";
 import type {
   AlbumDto,
+  AlbumRefDto,
   AlbumDownloadUrlDto,
   AlbumShareLinkCreatedDto,
   AlbumShareLinkDto,
@@ -24,6 +25,7 @@ import type {
   FavoriteDto,
   FavoriteStatusDto,
   FavoriteTargetType,
+  GeoPhotoDto,
   HealthResponse,
   InviteLinkDto,
   InviteLinkInfoDto,
@@ -133,6 +135,39 @@ function validatePhotoPageResponse(
   return (
     Array.isArray(candidate.items) &&
     candidate.items.every(validatePhotoDto) &&
+    typeof candidate.page === "number" &&
+    typeof candidate.size === "number" &&
+    typeof candidate.hasNext === "boolean"
+  );
+}
+
+function validateAlbumRefDto(value: unknown): value is AlbumRefDto {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const candidate = value as Record<string, unknown>;
+  return typeof candidate.id === "string" && typeof candidate.name === "string";
+}
+
+function validateGeoPhotoDto(value: unknown): value is GeoPhotoDto {
+  if (!validatePhotoDto(value)) {
+    return false;
+  }
+  const albums = (value as { albums?: unknown }).albums;
+  return Array.isArray(albums) && albums.every(validateAlbumRefDto);
+}
+
+function validateGeoPhotoPageResponse(
+  value: unknown,
+): value is PageResponse<GeoPhotoDto> {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const candidate = value as Record<string, unknown>;
+  return (
+    Array.isArray(candidate.items) &&
+    candidate.items.every(validateGeoPhotoDto) &&
     typeof candidate.page === "number" &&
     typeof candidate.size === "number" &&
     typeof candidate.hasNext === "boolean"
@@ -547,7 +582,7 @@ export async function listGeoPhotos(params: PhotoGeoSearchParams) {
     { auth: true },
   );
 
-  if (!validatePhotoPageResponse(payload)) {
+  if (!validateGeoPhotoPageResponse(payload)) {
     throw new ApiError(
       500,
       "invalid_response",

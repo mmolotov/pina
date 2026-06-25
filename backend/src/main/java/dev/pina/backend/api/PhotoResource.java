@@ -1,11 +1,13 @@
 package dev.pina.backend.api;
 
+import dev.pina.backend.api.dto.GeoPhotoDto;
 import dev.pina.backend.api.dto.PageResponse;
 import dev.pina.backend.api.dto.PhotoDto;
 import dev.pina.backend.api.error.ApiErrors;
 import dev.pina.backend.domain.VariantType;
 import dev.pina.backend.pagination.PageRequest;
 import dev.pina.backend.service.MimeTypes;
+import dev.pina.backend.service.PhotoGeoProjection;
 import dev.pina.backend.service.PhotoService;
 import dev.pina.backend.service.UserResolver;
 import jakarta.inject.Inject;
@@ -26,6 +28,7 @@ import jakarta.ws.rs.core.StreamingOutput;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
+import java.util.List;
 import java.util.UUID;
 import org.jboss.resteasy.reactive.RestForm;
 import org.jboss.resteasy.reactive.multipart.FileUpload;
@@ -87,7 +90,11 @@ public class PhotoResource {
 		var user = userResolver.currentUser();
 		var photos = photoService.findInBoundingBox(user.id, swLat, swLng, neLat, neLng,
 				new PageRequest(page, size, needsTotal));
-		return Response.ok(PageResponse.from(photos, PhotoDto::from)).build();
+		var photoIds = photos.items().stream().map(PhotoGeoProjection::id).toList();
+		var albumsByPhoto = photoService.albumsForPhotos(user.id, photoIds);
+		return Response.ok(PageResponse.from(photos,
+				projection -> GeoPhotoDto.from(projection, albumsByPhoto.getOrDefault(projection.id(), List.of()))))
+				.build();
 	}
 
 	@GET
