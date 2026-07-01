@@ -5,7 +5,7 @@ description = "PINA ML service: photo analysis over gRPC with a FastAPI admin su
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "fastapi>=0.138.0",
+    "fastapi>=0.138.1",
     "uvicorn>=0.30",
     "grpcio>=1.66",
     "grpcio-health-checking>=1.66",
