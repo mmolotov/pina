@@ -15,6 +15,8 @@ import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
 import jakarta.persistence.PersistenceException;
 import jakarta.transaction.Transactional;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -357,6 +359,80 @@ public class SpaceService {
 
 		targetMembership.get().delete();
 		return RemoveMemberResult.REMOVED;
+	}
+
+	// ── Enriched reads (effective role + counts) ──────────────────────────
+
+	public record SpaceWithMeta(Space space, SpaceRole myRole, long memberCount, long albumCount) {
+	}
+
+	public List<SpaceWithMeta> listByUserWithMeta(UUID userId) {
+		return enrich(listByUser(userId), userId);
+	}
+
+	public Optional<SpaceWithMeta> findByIdWithMeta(UUID id, UUID userId) {
+		Optional<SpaceRole> role = getEffectiveRole(id, userId);
+		if (role.isEmpty()) {
+			return Optional.empty();
+		}
+		return findById(id).map(
+				space -> new SpaceWithMeta(space, role.get(), countMembersBySpace(List.of(id)).getOrDefault(id, 0L),
+						countAlbumsBySpace(List.of(id)).getOrDefault(id, 0L)));
+	}
+
+	public List<SpaceWithMeta> listAccessibleSubspacesWithMeta(UUID parentId, UUID userId) {
+		return enrich(listAccessibleSubspaces(parentId, userId), userId);
+	}
+
+	private List<SpaceWithMeta> enrich(List<Space> spaces, UUID userId) {
+		if (spaces.isEmpty()) {
+			return List.of();
+		}
+		List<UUID> ids = spaces.stream().map(s -> s.id).toList();
+		Map<UUID, Long> memberCounts = countMembersBySpace(ids);
+		Map<UUID, Long> albumCounts = countAlbumsBySpace(ids);
+		// One batch query for direct roles; inheritance-only spaces fall back to
+		// getEffectiveRole.
+		Map<UUID, SpaceRole> directRoles = loadRolesBySpaceId(userId, ids);
+		List<SpaceWithMeta> result = new ArrayList<>(spaces.size());
+		for (Space space : spaces) {
+			SpaceRole role = directRoles.get(space.id);
+			if (role == null) {
+				role = getEffectiveRole(space.id, userId).orElse(null);
+			}
+			result.add(new SpaceWithMeta(space, role, memberCounts.getOrDefault(space.id, 0L),
+					albumCounts.getOrDefault(space.id, 0L)));
+		}
+		return result;
+	}
+
+	private Map<UUID, Long> countMembersBySpace(List<UUID> spaceIds) {
+		if (spaceIds.isEmpty()) {
+			return Map.of();
+		}
+		Map<UUID, Long> counts = new HashMap<>();
+		List<Object[]> rows = em.createQuery(
+				"SELECT sm.space.id, COUNT(sm) FROM SpaceMembership sm WHERE sm.space.id IN :ids GROUP BY sm.space.id",
+				Object[].class).setParameter("ids", spaceIds).getResultList();
+		for (Object[] row : rows) {
+			counts.put((UUID) row[0], (Long) row[1]);
+		}
+		return counts;
+	}
+
+	private Map<UUID, Long> countAlbumsBySpace(List<UUID> spaceIds) {
+		if (spaceIds.isEmpty()) {
+			return Map.of();
+		}
+		Map<UUID, Long> counts = new HashMap<>();
+		List<Object[]> rows = em
+				.createQuery("SELECT a.space.id, COUNT(a) FROM Album a WHERE a.space.id IN :ids GROUP BY a.space.id",
+						Object[].class)
+				.setParameter("ids", spaceIds).getResultList();
+		for (Object[] row : rows) {
+			counts.put((UUID) row[0], (Long) row[1]);
+		}
+		return counts;
 	}
 
 	// ── Helpers ───────────────────────────────────────────────────────────

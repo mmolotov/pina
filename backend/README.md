@@ -373,6 +373,9 @@ Photo geo search notes:
 - Geo list endpoints return a marker-oriented `PhotoDto` subset for map browsing: `exifData` is
   `null` and `variants` is an empty list, while identity, filename, dimensions, coordinates,
   timestamps, and `personalLibraryId` remain present.
+- `GET /api/v1/photos/geo` additionally returns an `albums` array on each item (`[{ id, name }]`)
+  with the personal albums (Space albums excluded) the photo belongs to, powering the map's album
+  filter; `/api/v1/photos/geo/nearby` keeps the lean subset above.
 - `GET /api/v1/photos/geo/nearby` applies a bounding-box prefilter and then keeps only photos within
   the requested radius, ordered by actual distance with deterministic `takenAt` / `id` tie-breakers.
 - The current frontend uses these endpoints for personal-library map browsing with URL-driven

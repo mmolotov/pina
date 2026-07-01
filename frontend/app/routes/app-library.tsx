@@ -20,6 +20,7 @@ import {
 import { EmptyHint, EmptyState, InlineMessage, Panel } from "~/components/ui";
 import { AlbumShareDialog } from "~/components/album-share-dialog";
 import { AlbumTile } from "~/components/album-tile";
+import { LibraryMap } from "~/components/library-map";
 import {
   EMPTY_PHOTO_FILTERS,
   JustifiedPhotoGrid,
@@ -56,12 +57,7 @@ import { formatRelativeCount } from "~/lib/format";
 import { getPhotoMediaKind, type PhotoOverlayContext } from "~/lib/photo-media";
 import {
   applyGeoViewportToSearchParams,
-  buildGeoClusters,
-  DEFAULT_GEO_VIEWPORT,
-  panGeoViewport,
   parseGeoViewportFromSearchParams,
-  zoomToClusterBounds,
-  zoomGeoViewport,
 } from "~/lib/geo";
 import {
   getActiveLocale,
@@ -76,6 +72,7 @@ import {
 } from "~/lib/concurrency";
 import { resolveActionIntent, toActionErrorMessage } from "~/lib/route-actions";
 import { useSession } from "~/lib/session";
+import { useTheme } from "~/lib/theme";
 import {
   buildZoomedTimeline,
   formatZoomGroupLabel,
@@ -88,6 +85,7 @@ import type {
   AlbumSortDirection,
   AlbumSortField,
   FavoriteDto,
+  GeoPhotoDto,
   PhotoDto,
   PhotoGeoBounds,
 } from "~/types/api";
@@ -105,15 +103,10 @@ function resolveAlbumScope(value: string | null): AlbumScope {
 }
 
 interface GeoMapState {
-  items: PhotoDto[];
+  items: GeoPhotoDto[];
   loading: boolean;
   errorMessage: string | null;
 }
-
-type GeoSelectionTarget = {
-  id: string;
-  kind: "cluster" | "photo";
-};
 
 interface UploadProgressState {
   total: number;
@@ -234,10 +227,6 @@ function formatUploadSummary(
 
 function resolveLibraryView(value: string | null): LibraryView {
   return value === "albums" || value === "map" ? value : "photos";
-}
-
-function formatCoordinate(value: number | null) {
-  return value == null ? "—" : value.toFixed(4);
 }
 
 function buildAlbumDetailPath(albumId: string) {
@@ -985,6 +974,7 @@ export async function clientAction({
 
 export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
   const { locale, t } = useI18n();
+  const { theme } = useTheme();
   const actionData = useActionData<typeof clientAction>();
   const navigate = useNavigate();
   const navigation = useNavigation();
@@ -1083,8 +1073,7 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
     loading: false,
     errorMessage: null,
   });
-  const [selectedGeoTarget, setSelectedGeoTarget] =
-    useState<GeoSelectionTarget | null>(null);
+  const [geoReloadKey, setGeoReloadKey] = useState(0);
 
   const pendingIntent = String(navigation.formData?.get("intent") ?? "");
   const pendingAlbumId = String(navigation.formData?.get("albumId") ?? "");
@@ -1152,21 +1141,6 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
       currentUserId,
       normalizedLibraryFilter,
     ],
-  );
-  const filteredGeoItems = useMemo(
-    () =>
-      geoMapState.items.filter((photo) => {
-        if (normalizedLibraryFilter.length === 0) {
-          return true;
-        }
-        return (
-          photo.originalFilename
-            .toLowerCase()
-            .includes(normalizedLibraryFilter) ||
-          photo.mimeType.toLowerCase().includes(normalizedLibraryFilter)
-        );
-      }),
-    [geoMapState.items, normalizedLibraryFilter],
   );
   const normalizedCreatePhotoFilter = createAlbumDraft.existingFilter
     .trim()
@@ -1381,34 +1355,10 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
       ).length,
     [photos],
   );
-  const geoClusters = useMemo(
-    () => buildGeoClusters(filteredGeoItems, geoViewport),
-    [filteredGeoItems, geoViewport],
+  const favoritePhotoIdSet = useMemo(
+    () => new Set(Object.keys(photoFavorites)),
+    [photoFavorites],
   );
-  const selectedGeoCluster = useMemo(() => {
-    if (selectedGeoTarget?.kind !== "cluster") {
-      return null;
-    }
-
-    return (
-      geoClusters.find((cluster) => cluster.id === selectedGeoTarget.id) ?? null
-    );
-  }, [geoClusters, selectedGeoTarget]);
-  const selectedGeoPhoto = useMemo(() => {
-    if (selectedGeoTarget?.kind === "photo") {
-      return (
-        filteredGeoItems.find((photo) => photo.id === selectedGeoTarget.id) ??
-        null
-      );
-    }
-
-    if (selectedGeoCluster?.photos.length === 1) {
-      return selectedGeoCluster.photos[0] ?? null;
-    }
-
-    return null;
-  }, [filteredGeoItems, selectedGeoCluster, selectedGeoTarget]);
-  const selectedGeoClusterPhotos = selectedGeoCluster?.photos ?? [];
   const editingAlbum =
     editingAlbumId == null
       ? null
@@ -1444,13 +1394,6 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
   };
   const groupForms =
     zoom === "day" ? dayForms : zoom === "month" ? monthForms : yearForms;
-  const geoPhotoForms = {
-    one: t("unit.geoPhoto.one"),
-    few: t("unit.geoPhoto.few"),
-    many: t("unit.geoPhoto.many"),
-    other: t("unit.geoPhoto.other"),
-  };
-
   useEffect(() => {
     setLibraryView(resolveLibraryView(searchParams.get("view")));
     setLibraryFilter(searchParams.get("filter") ?? "");
@@ -1525,20 +1468,6 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
             loading: false,
             errorMessage: null,
           });
-          setSelectedGeoTarget((current) => {
-            if (
-              current?.kind === "photo" &&
-              response.items.some((photo) => photo.id === current.id)
-            ) {
-              return current;
-            }
-            return response.items[0]
-              ? {
-                  id: response.items[0].id,
-                  kind: "photo",
-                }
-              : null;
-          });
         });
       })
       .catch((error: unknown) => {
@@ -1559,31 +1488,7 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
     return () => {
       cancelled = true;
     };
-  }, [deferredGeoViewport, libraryView, t]);
-
-  useEffect(() => {
-    if (libraryView !== "map") {
-      return;
-    }
-
-    setSelectedGeoTarget((current) => {
-      if (current == null) {
-        return null;
-      }
-
-      if (current?.kind === "photo") {
-        if (filteredGeoItems.some((photo) => photo.id === current.id)) {
-          return current;
-        }
-      } else if (current?.kind === "cluster") {
-        if (geoClusters.some((cluster) => cluster.id === current.id)) {
-          return current;
-        }
-      }
-
-      return null;
-    });
-  }, [filteredGeoItems, geoClusters, libraryView]);
+  }, [deferredGeoViewport, libraryView, t, geoReloadKey]);
 
   useEffect(() => {
     if (!actionData) {
@@ -2193,6 +2098,23 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
     { value: "list", icon: Rows3, labelKey: "app.library.tileStyle.list" },
   ];
 
+  if (libraryView === "map") {
+    return (
+      <LibraryMap
+        photos={geoMapState.items}
+        favoritePhotoIds={favoritePhotoIdSet}
+        loading={geoMapState.loading}
+        errorMessage={geoMapState.errorMessage}
+        hasGeoTaggedPhotos={geoTaggedPhotoCount > 0}
+        theme={theme}
+        initialBounds={geoViewport}
+        onBoundsChange={setMapViewport}
+        onOpenPhoto={(photoId) => navigate(photoHref(photoId))}
+        onRetry={() => setGeoReloadKey((key) => key + 1)}
+      />
+    );
+  }
+
   return (
     <div className="space-y-6">
       {libraryView === "albums" ? (
@@ -2342,24 +2264,6 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
             ) : null}
           </div>
         </>
-      ) : libraryView === "map" ? (
-        <div className="sticky top-0 z-10 -mx-4 -mt-4 border-b border-[var(--color-border)] bg-[var(--color-bg)] px-4 py-3 sm:-mx-6 sm:-mt-6 sm:px-6">
-          <div className="flex flex-wrap items-center gap-3">
-            <h1 className="text-xl font-semibold tracking-tight text-[var(--color-text)]">
-              {t("app.library.view.map")}
-            </h1>
-            <div className="ml-auto flex items-center gap-2">
-              <input
-                aria-label={t("app.library.filterLabel")}
-                className="field w-48 py-1.5 text-sm lg:w-64"
-                onChange={(event) => updateLibraryFilter(event.target.value)}
-                placeholder={t("app.library.filterPlaceholder")}
-                type="search"
-                value={libraryFilter}
-              />
-            </div>
-          </div>
-        </div>
       ) : (
         <div>
           <div className="ph-pagehead">
@@ -2406,402 +2310,85 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
           libraryView === "photos" ? "xl:grid-cols-[minmax(0,1fr)_9.5rem]" : ""
         }`}
       >
-        {(libraryView === "photos" || libraryView === "map") && (
+        {libraryView === "photos" && (
           <div>
-            {libraryView === "map" ? (
-              <div className="mb-3 flex flex-wrap items-center gap-2">
-                <span className="text-sm text-[var(--color-text-muted)]">
-                  {countFormatter.format(filteredGeoItems.length)}{" "}
-                  {formatRelativeCount(filteredGeoItems.length, geoPhotoForms)}
-                </span>
-                <div className="ml-auto flex flex-wrap gap-1">
-                  <button
-                    className="button-secondary py-1 text-sm"
-                    disabled={selectedGeoTarget == null}
-                    onClick={() => setSelectedGeoTarget(null)}
-                    type="button"
-                  >
-                    {t("app.library.clearSelection")}
-                  </button>
-                  <button
-                    className="button-secondary py-1 text-sm"
-                    onClick={() => setMapViewport(DEFAULT_GEO_VIEWPORT)}
-                    type="button"
-                  >
-                    {t("app.library.worldView")}
-                  </button>
-                  <button
-                    className="button-secondary py-1 text-sm"
-                    onClick={() =>
-                      setMapViewport(zoomGeoViewport(geoViewport, "in"))
-                    }
-                    type="button"
-                  >
-                    {t("app.library.zoomIn")}
-                  </button>
-                  <button
-                    className="button-secondary py-1 text-sm"
-                    onClick={() =>
-                      setMapViewport(zoomGeoViewport(geoViewport, "out"))
-                    }
-                    type="button"
-                  >
-                    {t("app.library.zoomOut")}
-                  </button>
-                </div>
-              </div>
-            ) : null}
-
-            {libraryView === "map" ? (
-              <>
-                <div className="grid gap-3 lg:grid-cols-[0.72fr_0.28fr]">
+            <>
+              <div
+                className={`surface-dashed rounded-lg px-4 py-3 text-center transition ${
+                  isUploadTargetActive
+                    ? "dropzone-active"
+                    : "bg-[var(--color-panel)]"
+                }`}
+                onDragEnter={(event) => {
+                  event.preventDefault();
+                  setIsUploadTargetActive(true);
+                }}
+                onDragLeave={(event) => {
+                  event.preventDefault();
+                  if (
+                    event.currentTarget.contains(
+                      event.relatedTarget as Node | null,
+                    )
+                  ) {
+                    return;
+                  }
+                  setIsUploadTargetActive(false);
+                }}
+                onDragOver={(event) => {
+                  event.preventDefault();
+                  setIsUploadTargetActive(true);
+                }}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  setIsUploadTargetActive(false);
+                  if (uploadBatchActiveRef.current) {
+                    return;
+                  }
+                  void uploadSelectedFiles(
+                    Array.from(event.dataTransfer.files),
+                  );
+                }}
+              >
+                {uploadProgress ? (
                   <div className="space-y-2">
-                    <div className="flex flex-wrap items-center gap-1">
-                      <button
-                        className="button-secondary py-1 text-sm"
-                        onClick={() =>
-                          setMapViewport(panGeoViewport(geoViewport, "west"))
-                        }
-                        type="button"
-                      >
-                        {t("app.library.panWest")}
-                      </button>
-                      <button
-                        className="button-secondary py-1 text-sm"
-                        onClick={() =>
-                          setMapViewport(panGeoViewport(geoViewport, "east"))
-                        }
-                        type="button"
-                      >
-                        {t("app.library.panEast")}
-                      </button>
-                      <button
-                        className="button-secondary py-1 text-sm"
-                        onClick={() =>
-                          setMapViewport(panGeoViewport(geoViewport, "north"))
-                        }
-                        type="button"
-                      >
-                        {t("app.library.panNorth")}
-                      </button>
-                      <button
-                        className="button-secondary py-1 text-sm"
-                        onClick={() =>
-                          setMapViewport(panGeoViewport(geoViewport, "south"))
-                        }
-                        type="button"
-                      >
-                        {t("app.library.panSouth")}
-                      </button>
-                    </div>
-                    <div className="map-shell rounded-lg p-2">
-                      <div className="map-canvas relative min-h-[28rem] overflow-hidden rounded-[1.25rem]">
-                        {geoMapState.loading ? (
-                          <div className="map-overlay absolute inset-0 flex items-center justify-center text-sm font-semibold">
-                            {t("app.library.loadingMarkers")}
-                          </div>
-                        ) : null}
-                        {geoClusters.map((cluster) => {
-                          const isCluster = cluster.photos.length > 1;
-                          const leadPhoto = cluster.photos[0];
-                          const isSelected = isCluster
-                            ? selectedGeoTarget?.kind === "cluster" &&
-                              selectedGeoTarget.id === cluster.id
-                            : selectedGeoTarget?.kind === "photo" &&
-                              selectedGeoTarget.id === leadPhoto?.id;
-
-                          if (!leadPhoto) {
-                            return null;
-                          }
-
-                          return (
-                            <button
-                              aria-label={
-                                isCluster
-                                  ? t("app.library.openClusterAria", {
-                                      count: countFormatter.format(
-                                        cluster.photos.length,
-                                      ),
-                                    })
-                                  : t("app.library.openMarkerAria", {
-                                      fileName: leadPhoto.originalFilename,
-                                    })
-                              }
-                              className={`absolute -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow-sm transition ${
-                                isCluster
-                                  ? "min-h-8 min-w-8 px-2 text-xs font-semibold"
-                                  : "h-4 w-4"
-                              } ${
-                                isSelected
-                                  ? "bg-[var(--color-primary-strong)] text-white ring-4 ring-[var(--map-selected-ring)]"
-                                  : "bg-[var(--color-accent-strong)] text-[var(--color-text)] hover:bg-[var(--color-primary-strong)] hover:text-white"
-                              }`}
-                              key={cluster.id}
-                              onClick={() => {
-                                if (isCluster) {
-                                  setSelectedGeoTarget({
-                                    id: cluster.id,
-                                    kind: "cluster",
-                                  });
-                                  return;
-                                }
-
-                                setSelectedGeoTarget({
-                                  id: leadPhoto.id,
-                                  kind: "photo",
-                                });
-                              }}
-                              style={{
-                                left: `${cluster.position.left}%`,
-                                top: `${cluster.position.top}%`,
-                              }}
-                              type="button"
-                            >
-                              {isCluster ? cluster.photos.length : null}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="space-y-3">
-                    <dl className="space-y-1 text-xs text-[var(--color-text-muted)]">
-                      <div className="flex justify-between gap-4">
-                        <dt>{t("app.library.viewportMarkers")}</dt>
-                        <dd>{geoClusters.length}</dd>
-                      </div>
-                      <div className="flex justify-between gap-4">
-                        <dt>{t("app.library.viewportPhotosInView")}</dt>
-                        <dd>{filteredGeoItems.length}</dd>
-                      </div>
-                      <div className="flex justify-between gap-4">
-                        <dt>{t("app.library.viewportSelection")}</dt>
-                        <dd>
-                          {selectedGeoCluster &&
-                          selectedGeoCluster.photos.length > 1
-                            ? t("app.library.selectionCluster", {
-                                count: countFormatter.format(
-                                  selectedGeoCluster.photos.length,
-                                ),
-                              })
-                            : selectedGeoPhoto
-                              ? t("app.library.selectionSinglePhoto")
-                              : t("app.library.selectionNone")}
-                        </dd>
-                      </div>
-                    </dl>
-
-                    {geoMapState.errorMessage ? (
-                      <InlineMessage className="mt-4" tone="danger">
-                        {geoMapState.errorMessage}
-                      </InlineMessage>
-                    ) : null}
-
-                    {selectedGeoCluster &&
-                    selectedGeoCluster.photos.length > 1 ? (
-                      <div className="space-y-2">
-                        <p className="text-sm font-medium">
-                          {t("app.library.clusterTitle", {
-                            count: countFormatter.format(
-                              selectedGeoCluster.photos.length,
-                            ),
-                          })}
-                        </p>
-                        <button
-                          className="button-secondary w-full py-1 text-sm"
-                          onClick={() =>
-                            setMapViewport(
-                              zoomToClusterBounds(selectedGeoCluster.bounds),
-                            )
-                          }
-                          type="button"
-                        >
-                          {t("app.library.zoomIntoCluster")}
-                        </button>
-                        <div className="space-y-1">
-                          {selectedGeoClusterPhotos.slice(0, 6).map((photo) => (
-                            <button
-                              className="flex w-full items-center justify-between gap-3 rounded-lg border border-[var(--color-border)] px-2 py-1.5 text-left text-sm hover:border-[var(--color-accent-strong)]"
-                              key={photo.id}
-                              onClick={() =>
-                                setSelectedGeoTarget({
-                                  id: photo.id,
-                                  kind: "photo",
-                                })
-                              }
-                              type="button"
-                            >
-                              <span className="font-medium text-[var(--color-text)]">
-                                {photo.originalFilename}
-                              </span>
-                              <span className="text-xs text-[var(--color-text-muted)]">
-                                {formatCoordinate(photo.latitude)},{" "}
-                                {formatCoordinate(photo.longitude)}
-                              </span>
-                            </button>
-                          ))}
-                        </div>
-                        {selectedGeoClusterPhotos.length > 6 ? (
-                          <p className="text-xs text-[var(--color-text-muted)]">
-                            {t("app.library.clusterMore", {
-                              count: countFormatter.format(
-                                selectedGeoClusterPhotos.length - 6,
-                              ),
-                            })}
-                          </p>
-                        ) : null}
-                      </div>
-                    ) : selectedGeoPhoto ? (
-                      <div className="space-y-2">
-                        <p className="text-sm font-medium">
-                          {selectedGeoPhoto.originalFilename}
-                        </p>
-                        <p className="text-xs text-[var(--color-text-muted)]">
-                          {t("app.library.photoSelected")} ·{" "}
-                          {formatCoordinate(selectedGeoPhoto.latitude)},{" "}
-                          {formatCoordinate(selectedGeoPhoto.longitude)}
-                        </p>
-                        <Link
-                          className="button-secondary inline-flex py-1 text-sm"
-                          to={`/app/library/photos/${selectedGeoPhoto.id}`}
-                        >
-                          {t("app.library.openPhotoDetail")}
-                        </Link>
-                      </div>
-                    ) : (
-                      <p className="text-xs text-[var(--color-text-muted)]">
-                        {geoMapState.loading
-                          ? t("app.library.loadingViewport")
-                          : t("app.library.selectMarkerHint")}
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="min-w-0 truncate text-sm font-medium text-[var(--color-text)]">
+                        {uploadProgress.currentFileName ??
+                          t("app.library.uploadingPhotos")}
                       </p>
-                    )}
-                  </div>
-                </div>
-
-                {!geoMapState.loading &&
-                filteredGeoItems.length === 0 &&
-                !geoMapState.errorMessage ? (
-                  <div className="mt-4">
-                    <EmptyState
-                      action={
-                        <div className="flex flex-wrap justify-center gap-3">
-                          {normalizedLibraryFilter.length > 0 ? (
-                            <button
-                              className="button-secondary"
-                              onClick={() => updateLibraryFilter("")}
-                              type="button"
-                            >
-                              {t("common.clearFilter")}
-                            </button>
-                          ) : null}
-                          <button
-                            className="button-secondary"
-                            onClick={() => setMapViewport(DEFAULT_GEO_VIEWPORT)}
-                            type="button"
-                          >
-                            {t("app.library.resetWorldView")}
-                          </button>
-                        </div>
-                      }
-                      description={
-                        geoTaggedPhotoCount === 0
-                          ? t("app.library.noGeoPhotosDescription")
-                          : normalizedLibraryFilter.length > 0
-                            ? t("app.library.noGeoPhotosMatchDescription", {
-                                filter: libraryFilter,
-                              })
-                            : t("app.library.noGeoPhotosViewportDescription")
-                      }
-                      title={
-                        geoTaggedPhotoCount === 0
-                          ? t("app.library.noGeoPhotosTitle")
-                          : normalizedLibraryFilter.length > 0
-                            ? t("app.library.noGeoPhotosMatchTitle")
-                            : t("app.library.noGeoPhotosViewportTitle")
-                      }
-                    />
-                  </div>
-                ) : null}
-              </>
-            ) : (
-              <>
-                <div
-                  className={`surface-dashed rounded-lg px-4 py-3 text-center transition ${
-                    isUploadTargetActive
-                      ? "dropzone-active"
-                      : "bg-[var(--color-panel)]"
-                  }`}
-                  onDragEnter={(event) => {
-                    event.preventDefault();
-                    setIsUploadTargetActive(true);
-                  }}
-                  onDragLeave={(event) => {
-                    event.preventDefault();
-                    if (
-                      event.currentTarget.contains(
-                        event.relatedTarget as Node | null,
-                      )
-                    ) {
-                      return;
-                    }
-                    setIsUploadTargetActive(false);
-                  }}
-                  onDragOver={(event) => {
-                    event.preventDefault();
-                    setIsUploadTargetActive(true);
-                  }}
-                  onDrop={(event) => {
-                    event.preventDefault();
-                    setIsUploadTargetActive(false);
-                    if (uploadBatchActiveRef.current) {
-                      return;
-                    }
-                    void uploadSelectedFiles(
-                      Array.from(event.dataTransfer.files),
-                    );
-                  }}
-                >
-                  {uploadProgress ? (
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between gap-3">
-                        <p className="min-w-0 truncate text-sm font-medium text-[var(--color-text)]">
-                          {uploadProgress.currentFileName ??
-                            t("app.library.uploadingPhotos")}
-                        </p>
-                        <span className="shrink-0 text-xs tabular-nums text-[var(--color-text-muted)]">
-                          {countFormatter.format(uploadProgress.completed)}/
-                          {countFormatter.format(uploadProgress.total)}
-                        </span>
-                      </div>
-                      <div className="upload-progress-track">
-                        <div
-                          className="upload-progress-bar"
-                          style={{
-                            width: `${Math.round((uploadProgress.completed / uploadProgress.total) * 100)}%`,
-                          }}
-                        />
-                      </div>
+                      <span className="shrink-0 text-xs tabular-nums text-[var(--color-text-muted)]">
+                        {countFormatter.format(uploadProgress.completed)}/
+                        {countFormatter.format(uploadProgress.total)}
+                      </span>
                     </div>
-                  ) : (
-                    <p className="text-sm text-[var(--color-text-muted)]">
-                      {t("app.library.dropzoneTitle")}
-                    </p>
-                  )}
-                </div>
+                    <div className="upload-progress-track">
+                      <div
+                        className="upload-progress-bar"
+                        style={{
+                          width: `${Math.round((uploadProgress.completed / uploadProgress.total) * 100)}%`,
+                        }}
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-sm text-[var(--color-text-muted)]">
+                    {t("app.library.dropzoneTitle")}
+                  </p>
+                )}
+              </div>
 
-                {uploadError ? (
-                  <InlineMessage className="mt-2" tone="danger">
-                    {uploadError}
-                  </InlineMessage>
-                ) : null}
+              {uploadError ? (
+                <InlineMessage className="mt-2" tone="danger">
+                  {uploadError}
+                </InlineMessage>
+              ) : null}
 
-                {uploadSuccessMessage ? (
-                  <InlineMessage className="mt-2" tone="success">
-                    {uploadSuccessMessage}
-                  </InlineMessage>
-                ) : null}
-              </>
-            )}
+              {uploadSuccessMessage ? (
+                <InlineMessage className="mt-2" tone="success">
+                  {uploadSuccessMessage}
+                </InlineMessage>
+              ) : null}
+            </>
 
             {photos.length === 0 ? (
               libraryView === "photos" ? (
@@ -2839,7 +2426,7 @@ export default function AppLibraryRoute({ loaderData }: Route.ComponentProps) {
                   title={t("app.library.noPhotosTitle")}
                 />
               )
-            ) : libraryView === "map" ? null : feedPhotos.length === 0 ? (
+            ) : feedPhotos.length === 0 ? (
               <div className="ph-empty">
                 <div className="ph-empty-stripe" />
                 <h2 className="ph-empty-title">

@@ -1,48 +1,60 @@
 import type { Route } from "./+types/app-space-detail";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
+import { Link, useFetcher } from "react-router";
 import {
-  Form,
-  Link,
-  useActionData,
-  useNavigation,
-  useParams,
-  useRevalidator,
-} from "react-router";
+  ChevronRight,
+  FolderOpen,
+  Image as ImageIcon,
+  Layers,
+  Link2,
+  Plus,
+  Search,
+  Share2,
+  Users,
+} from "lucide-react";
 import {
-  EmptyHint,
-  FilterToolbar,
-  InlineMessage,
-  PageHeader,
-  Panel,
-  SurfaceCard,
-} from "~/components/ui";
+  RoleBadge,
+  SpaceCard,
+  spaceInitials,
+  VisBadge,
+} from "~/components/space-card";
 import {
-  addPhotoToSpaceAlbum,
+  AddMemberDialog,
+  ConfirmDialog,
+  CreateAlbumDialog,
+  CreateInviteDialog,
+  CreateSubspaceDialog,
+} from "~/components/space-dialogs";
+import {
   addSpaceMember,
-  ApiError,
   changeSpaceMemberRole,
   createSpaceAlbum,
   createSpaceInvite,
   createSubspace,
-  deleteSpaceAlbum,
   getSpace,
-  listAllPhotos,
-  listAllSpaceAlbumPhotos,
   listSpaceAlbums,
   listSpaceInvites,
   listSpaceMembers,
   listSubspaces,
-  removePhotoFromSpaceAlbum,
   removeSpaceMember,
   revokeSpaceInvite,
-  updateSpaceAlbum,
 } from "~/lib/api";
-import { formatDateTime } from "~/lib/format";
+import {
+  albumPhotoSwatchClass,
+  getAlbumPaletteIndex,
+} from "~/lib/album-view-prefs";
+import { formatDateRange, formatRelativeCount } from "~/lib/format";
+import {
+  getActiveLocale,
+  translateMessage,
+  useI18n,
+  type MessageKey,
+} from "~/lib/i18n";
 import { resolveActionIntent, toActionErrorMessage } from "~/lib/route-actions";
+import { useSession } from "~/lib/session";
 import type {
   AlbumDto,
   InviteLinkDto,
-  PhotoDto,
   SpaceDto,
   SpaceMemberDto,
   SpaceRole,
@@ -50,83 +62,66 @@ import type {
 } from "~/types/api";
 
 interface SpaceDetailState {
-  space: SpaceDto | null;
+  space: SpaceDto;
   members: SpaceMemberDto[];
   subspaces: SpaceDto[];
   invites: InviteLinkDto[];
   albums: AlbumDto[];
 }
 
-const emptyAlbumDraft = {
-  name: "",
-  description: "",
-};
-
 interface SpaceDetailLoaderData {
   state: SpaceDetailState;
+  ancestors: SpaceDto[];
   spaceId: string;
 }
 
-type SpaceDetailActionIntent =
-  | "add-member"
-  | "change-member-role"
-  | "remove-member"
-  | "create-subspace"
-  | "create-invite"
-  | "revoke-invite"
-  | "create-album"
-  | "update-album"
-  | "delete-album"
-  | "add-album-photo"
-  | "remove-album-photo";
-
-type SpaceDetailActionResult =
-  | {
-      ok: true;
-      intent: SpaceDetailActionIntent;
-      albumId?: string;
-      photoId?: string;
-      userId?: string;
-      inviteId?: string;
-    }
-  | { ok: false; intent: SpaceDetailActionIntent; errorMessage: string };
-
-async function loadSpaceDetailData(spaceId: string): Promise<SpaceDetailState> {
-  const [space, members, subspaces, invites, albums] = await Promise.all([
-    getSpace(spaceId),
-    listSpaceMembers(spaceId),
-    listSubspaces(spaceId),
-    listSpaceInvites(spaceId),
-    listSpaceAlbums(spaceId),
-  ]);
-
-  return {
-    space,
-    members,
-    subspaces,
-    invites,
-    albums,
-  };
+const MANAGE_ROLES: SpaceRole[] = ["OWNER", "ADMIN"];
+function canManage(role: SpaceRole | null): boolean {
+  return role != null && MANAGE_ROLES.includes(role);
 }
 
-async function loadLibraryPhotosForSpace(): Promise<PhotoDto[]> {
-  return listAllPhotos();
+async function loadSpaceDetailData(spaceId: string): Promise<SpaceDetailState> {
+  const space = await getSpace(spaceId);
+  const manage = canManage(space.myRole);
+  const [members, subspaces, albums, invites] = await Promise.all([
+    listSpaceMembers(spaceId),
+    listSubspaces(spaceId),
+    listSpaceAlbums(spaceId),
+    manage ? listSpaceInvites(spaceId) : Promise.resolve<InviteLinkDto[]>([]),
+  ]);
+  return { space, members, subspaces, invites, albums };
+}
+
+async function loadAncestors(space: SpaceDto): Promise<SpaceDto[]> {
+  const chain: SpaceDto[] = [];
+  let parentId = space.parentId;
+  let guard = 0;
+  while (parentId && guard < 5) {
+    try {
+      const parent = await getSpace(parentId);
+      chain.unshift(parent);
+      parentId = parent.parentId;
+    } catch {
+      break;
+    }
+    guard += 1;
+  }
+  return chain;
 }
 
 export async function clientLoader({ params }: Route.ClientLoaderArgs) {
   const spaceId = params.spaceId ?? "";
   const state = await loadSpaceDetailData(spaceId);
-
-  return {
-    state,
-    spaceId,
-  } satisfies SpaceDetailLoaderData;
+  const ancestors = await loadAncestors(state.space);
+  return { state, ancestors, spaceId } satisfies SpaceDetailLoaderData;
 }
+
+type DetailActionResult = { ok: true } | { ok: false; errorMessage: string };
 
 export async function clientAction({
   request,
   params,
-}: Route.ClientActionArgs): Promise<SpaceDetailActionResult> {
+}: Route.ClientActionArgs): Promise<DetailActionResult> {
   const spaceId = params.spaceId ?? "";
   const formData = await request.formData();
   const intent = resolveActionIntent(
@@ -139,12 +134,8 @@ export async function clientAction({
       "create-invite",
       "revoke-invite",
       "create-album",
-      "update-album",
-      "delete-album",
-      "add-album-photo",
-      "remove-album-photo",
     ] as const,
-    "create-invite",
+    "create-album",
   );
 
   try {
@@ -154,21 +145,20 @@ export async function clientAction({
           userId: String(formData.get("userId") ?? "").trim(),
           role: String(formData.get("role") ?? "VIEWER") as SpaceRole,
         });
-        return { ok: true, intent };
-      case "change-member-role": {
-        const userId = String(formData.get("userId") ?? "").trim();
+        break;
+      case "change-member-role":
         await changeSpaceMemberRole(
           spaceId,
-          userId,
+          String(formData.get("userId") ?? "").trim(),
           String(formData.get("role") ?? "VIEWER") as SpaceRole,
         );
-        return { ok: true, intent, userId };
-      }
-      case "remove-member": {
-        const userId = String(formData.get("userId") ?? "").trim();
-        await removeSpaceMember(spaceId, userId);
-        return { ok: true, intent, userId };
-      }
+        break;
+      case "remove-member":
+        await removeSpaceMember(
+          spaceId,
+          String(formData.get("userId") ?? "").trim(),
+        );
+        break;
       case "create-subspace":
         await createSubspace(spaceId, {
           name: String(formData.get("name") ?? "").trim(),
@@ -177,7 +167,7 @@ export async function clientAction({
             formData.get("visibility") ?? "PRIVATE",
           ) as SpaceVisibility,
         });
-        return { ok: true, intent };
+        break;
       case "create-invite":
         await createSpaceInvite(spaceId, {
           defaultRole: String(
@@ -188,1140 +178,937 @@ export async function clientAction({
             ? Number(formData.get("usageLimit"))
             : null,
         });
-        return { ok: true, intent };
-      case "revoke-invite": {
-        const inviteId = String(formData.get("inviteId") ?? "").trim();
-        await revokeSpaceInvite(spaceId, inviteId);
-        return { ok: true, intent, inviteId };
-      }
+        break;
+      case "revoke-invite":
+        await revokeSpaceInvite(
+          spaceId,
+          String(formData.get("inviteId") ?? "").trim(),
+        );
+        break;
       case "create-album":
         await createSpaceAlbum(spaceId, {
           name: String(formData.get("name") ?? "").trim(),
           description: String(formData.get("description") ?? "").trim(),
         });
-        return { ok: true, intent };
-      case "update-album": {
-        const albumId = String(formData.get("albumId") ?? "");
-        await updateSpaceAlbum(spaceId, albumId, {
-          name: String(formData.get("name") ?? "").trim(),
-          description: String(formData.get("description") ?? "").trim(),
-        });
-        return { ok: true, intent, albumId };
-      }
-      case "delete-album": {
-        const albumId = String(formData.get("albumId") ?? "");
-        await deleteSpaceAlbum(spaceId, albumId);
-        return { ok: true, intent, albumId };
-      }
-      case "add-album-photo": {
-        const albumId = String(formData.get("albumId") ?? "");
-        const photoId = String(formData.get("photoId") ?? "");
-        await addPhotoToSpaceAlbum(spaceId, albumId, photoId);
-        return { ok: true, intent, albumId, photoId };
-      }
-      case "remove-album-photo": {
-        const albumId = String(formData.get("albumId") ?? "");
-        const photoId = String(formData.get("photoId") ?? "");
-        await removePhotoFromSpaceAlbum(spaceId, albumId, photoId);
-        return { ok: true, intent, albumId, photoId };
-      }
-      default:
-        return {
-          ok: false,
-          intent: "create-invite",
-          errorMessage: "Unknown Space action.",
-        };
+        break;
     }
+    return { ok: true };
   } catch (error) {
     return {
       ok: false,
-      intent,
-      errorMessage: toActionErrorMessage(error, "Space action failed."),
+      errorMessage: toActionErrorMessage(
+        error,
+        translateMessage(getActiveLocale(), "app.spaceDetail.actionFailed"),
+      ),
     };
   }
 }
 
+// ─── Helpers ───────────────────────────────────────────────────────────
+
+const ROLE_KEY: Record<SpaceRole, MessageKey> = {
+  OWNER: "app.spaces.roleOwner",
+  ADMIN: "app.spaces.roleAdmin",
+  MEMBER: "app.spaces.roleMember",
+  VIEWER: "app.spaces.roleViewer",
+};
+type TFunc = ReturnType<typeof useI18n>["t"];
+function buildForms(
+  t: TFunc,
+  one: MessageKey,
+  few: MessageKey,
+  many: MessageKey,
+  other: MessageKey,
+) {
+  return { one: t(one), few: t(few), many: t(many), other: t(other) };
+}
+const memberForms = (t: TFunc) =>
+  buildForms(
+    t,
+    "app.spaceDetail.membersUnitOne",
+    "app.spaceDetail.membersUnitFew",
+    "app.spaceDetail.membersUnitMany",
+    "app.spaceDetail.membersUnitOther",
+  );
+const subForms = (t: TFunc) =>
+  buildForms(
+    t,
+    "app.spaceDetail.subUnitOne",
+    "app.spaceDetail.subUnitFew",
+    "app.spaceDetail.subUnitMany",
+    "app.spaceDetail.subUnitOther",
+  );
+const linkForms = (t: TFunc) =>
+  buildForms(
+    t,
+    "app.spaceDetail.linkUnitOne",
+    "app.spaceDetail.linkUnitFew",
+    "app.spaceDetail.linkUnitMany",
+    "app.spaceDetail.linkUnitOther",
+  );
+
+function EmptyHint({
+  icon,
+  title,
+  text,
+  cta,
+}: {
+  icon: ReactNode;
+  title: string;
+  text: string;
+  cta?: ReactNode;
+}) {
+  return (
+    <div className="spd-empty">
+      <div className="spd-empty-ico">{icon}</div>
+      <h3 className="spd-empty-title">{title}</h3>
+      <p className="spd-empty-text">{text}</p>
+      {cta}
+    </div>
+  );
+}
+
+function QRMock({ value }: { value: string }) {
+  const size = 21;
+  let hash = 5381;
+  for (let i = 0; i < value.length; i++) {
+    hash = ((hash * 33) ^ value.charCodeAt(i)) >>> 0;
+  }
+  const next = () => {
+    hash = (hash * 1664525 + 1013904223) >>> 0;
+    return hash / 4294967296;
+  };
+  const isFinder = (r: number, c: number) =>
+    (r < 7 && c < 7) || (r < 7 && c >= size - 7) || (r >= size - 7 && c < 7);
+  const cells: ReactNode[] = [];
+  for (let r = 0; r < size; r++) {
+    for (let c = 0; c < size; c++) {
+      if (!isFinder(r, c) && next() > 0.52) {
+        cells.push(<rect height="1" key={`${r}-${c}`} width="1" x={c} y={r} />);
+      }
+    }
+  }
+  const finder = (x: number, y: number) => (
+    <g key={`f${x}-${y}`}>
+      <rect height="7" width="7" x={x} y={y} />
+      <rect className="spd-qr-bg" height="5" width="5" x={x + 1} y={y + 1} />
+      <rect height="3" width="3" x={x + 2} y={y + 2} />
+    </g>
+  );
+  return (
+    <svg
+      aria-hidden
+      className="spd-qr-svg"
+      shapeRendering="crispEdges"
+      viewBox={`0 0 ${size} ${size}`}
+    >
+      {cells}
+      {finder(0, 0)}
+      {finder(size - 7, 0)}
+      {finder(0, size - 7)}
+    </svg>
+  );
+}
+
+function SpaceAlbumCard({
+  album,
+  spaceId,
+}: {
+  album: AlbumDto;
+  spaceId: string;
+}) {
+  const { t } = useI18n();
+  const paletteIdx = getAlbumPaletteIndex(album.id);
+  return (
+    <Link
+      aria-label={t("app.spaceDetail.openAlbumAria", { name: album.name })}
+      className="block overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] transition-colors hover:border-[var(--color-border-strong)]"
+      to={`/app/spaces/${spaceId}/albums/${album.id}`}
+    >
+      <div
+        className={`album-palette-${paletteIdx} relative flex h-28 items-end p-3`}
+      >
+        <span className="badge badge-glass">
+          {t("app.spaceDetail.albumPhotoCount", { count: album.photoCount })}
+        </span>
+      </div>
+      <div className="p-3">
+        <h3
+          className="truncate text-sm font-semibold tracking-tight"
+          title={album.name}
+        >
+          {album.name}
+        </h3>
+        {album.description ? (
+          <p className="mt-1 line-clamp-2 text-xs text-[var(--color-text-muted)]">
+            {album.description}
+          </p>
+        ) : null}
+      </div>
+    </Link>
+  );
+}
+
+function MemberRoleControl({ member }: { member: SpaceMemberDto }) {
+  const { t } = useI18n();
+  const fetcher = useFetcher();
+  const busy = fetcher.state !== "idle";
+  return (
+    <fetcher.Form method="post">
+      <input name="intent" type="hidden" value="change-member-role" />
+      <input name="userId" type="hidden" value={member.userId} />
+      <select
+        aria-label={t("app.spaceDetail.role")}
+        className="field spd-role-select"
+        defaultValue={member.role}
+        disabled={busy}
+        key={member.role}
+        name="role"
+        onChange={(event) => event.currentTarget.form?.requestSubmit()}
+      >
+        {(["ADMIN", "MEMBER", "VIEWER"] as SpaceRole[]).map((role) => (
+          <option key={role} value={role}>
+            {t(ROLE_KEY[role])}
+          </option>
+        ))}
+      </select>
+    </fetcher.Form>
+  );
+}
+
+// ─── Sections ──────────────────────────────────────────────────────────
+
+function AlbumsSection({
+  spaceId,
+  albums,
+  albumCount,
+  manage,
+}: {
+  spaceId: string;
+  albums: AlbumDto[];
+  albumCount: number;
+  manage: boolean;
+}) {
+  const { t } = useI18n();
+  const [createOpen, setCreateOpen] = useState(false);
+  const subtitle = `${formatRelativeCount(albumCount, {
+    one: t("app.spaceDetail.albumsUnitOne"),
+    few: t("app.spaceDetail.albumsUnitFew"),
+    many: t("app.spaceDetail.albumsUnitMany"),
+    other: t("app.spaceDetail.albumsUnitOther"),
+  })} ${t("app.spaceDetail.albumsInThisSpace")}`;
+
+  return (
+    <div>
+      <div className="spd-sec-head">
+        <div>
+          <h2 className="spd-sec-title">{t("app.spaceDetail.albumsTitle")}</h2>
+          <p className="spd-sec-sub">{subtitle}</p>
+        </div>
+        {manage && albums.length > 0 ? (
+          <button
+            className="button-primary btn-sm"
+            onClick={() => setCreateOpen(true)}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: ".375rem",
+            }}
+            type="button"
+          >
+            <Plus size={15} /> {t("app.spaceDetail.createAlbum")}
+          </button>
+        ) : null}
+      </div>
+
+      {albums.length === 0 ? (
+        <EmptyHint
+          cta={
+            manage ? (
+              <button
+                className="button-primary"
+                onClick={() => setCreateOpen(true)}
+                style={{
+                  marginTop: ".4rem",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: ".375rem",
+                }}
+                type="button"
+              >
+                <Plus size={16} /> {t("app.spaceDetail.createAlbum")}
+              </button>
+            ) : undefined
+          }
+          icon={<FolderOpen size={22} />}
+          text={t("app.spaceDetail.emptyAlbumsBody")}
+          title={t("app.spaceDetail.emptyAlbumsTitle")}
+        />
+      ) : (
+        <div className="spd-grid">
+          {albums.map((album) => (
+            <SpaceAlbumCard album={album} key={album.id} spaceId={spaceId} />
+          ))}
+        </div>
+      )}
+
+      {createOpen ? (
+        <CreateAlbumDialog onClose={() => setCreateOpen(false)} />
+      ) : null}
+    </div>
+  );
+}
+
+function MemberRow({
+  member,
+  manage,
+  isYou,
+  onRemove,
+}: {
+  member: SpaceMemberDto;
+  manage: boolean;
+  isYou: boolean;
+  onRemove: () => void;
+}) {
+  const { t, locale } = useI18n();
+  const paletteIdx = getAlbumPaletteIndex(member.userId);
+  return (
+    <div className="spd-member">
+      <div className={`spd-avatar-token album-palette-${paletteIdx}`}>
+        {spaceInitials(member.userName)}
+      </div>
+      <div className="spd-member-main">
+        <div className="spd-member-name">
+          {member.userName}
+          {isYou ? (
+            <span className="spd-member-you">{t("app.spaceDetail.you")}</span>
+          ) : null}
+        </div>
+        <div className="spd-member-sub">
+          {t("app.spaceDetail.joinedPrefix")}{" "}
+          {formatDateRange(member.joinedAt, member.joinedAt, locale)}
+        </div>
+      </div>
+      <div className="spd-member-actions">
+        {manage && member.role !== "OWNER" ? (
+          <MemberRoleControl member={member} />
+        ) : (
+          <RoleBadge role={member.role} />
+        )}
+        {manage && !isYou && member.role !== "OWNER" ? (
+          <button className="text-link-danger" onClick={onRemove} type="button">
+            {t("common.remove")}
+          </button>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function MembersSection({
+  members,
+  memberCount,
+  manage,
+  currentUserId,
+}: {
+  members: SpaceMemberDto[];
+  memberCount: number;
+  manage: boolean;
+  currentUserId: string;
+}) {
+  const { t } = useI18n();
+  const [addOpen, setAddOpen] = useState(false);
+  const [removing, setRemoving] = useState<SpaceMemberDto | null>(null);
+  const [query, setQuery] = useState("");
+  const onlyMe = members.length <= 1;
+  const normalized = query.trim().toLowerCase();
+  const filtered = normalized
+    ? members.filter((member) =>
+        member.userName.toLowerCase().includes(normalized),
+      )
+    : members;
+
+  return (
+    <div>
+      <div className="spd-sec-head">
+        <div>
+          <h2 className="spd-sec-title">{t("app.spaceDetail.membersTitle")}</h2>
+          <p className="spd-sec-sub">
+            {formatRelativeCount(memberCount, memberForms(t))}
+          </p>
+        </div>
+        {manage && !onlyMe ? (
+          <button
+            className="button-primary btn-sm"
+            onClick={() => setAddOpen(true)}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: ".375rem",
+            }}
+            type="button"
+          >
+            <Plus size={15} /> {t("app.spaceDetail.addMember")}
+          </button>
+        ) : null}
+      </div>
+
+      {onlyMe ? (
+        <EmptyHint
+          cta={
+            manage ? (
+              <button
+                className="button-primary"
+                onClick={() => setAddOpen(true)}
+                style={{
+                  marginTop: ".4rem",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: ".375rem",
+                }}
+                type="button"
+              >
+                <Plus size={16} /> {t("app.spaceDetail.addMember")}
+              </button>
+            ) : undefined
+          }
+          icon={<Users size={22} />}
+          text={t("app.spaceDetail.emptyMembersBody")}
+          title={t("app.spaceDetail.emptyMembersTitle")}
+        />
+      ) : (
+        <>
+          {members.length > 6 ? (
+            <div
+              className="sp-toolbar-search"
+              style={{ maxWidth: "22rem", marginBottom: "1rem" }}
+            >
+              <span className="ico">
+                <Search size={15} />
+              </span>
+              <input
+                aria-label={t("app.spaceDetail.searchMembers")}
+                className="field"
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder={t("app.spaceDetail.searchMembers")}
+                type="search"
+                value={query}
+              />
+            </div>
+          ) : null}
+          <div className="spd-members">
+            {filtered.map((member) => (
+              <MemberRow
+                isYou={member.userId === currentUserId}
+                key={member.userId}
+                manage={manage}
+                member={member}
+                onRemove={() => setRemoving(member)}
+              />
+            ))}
+          </div>
+        </>
+      )}
+
+      {addOpen ? <AddMemberDialog onClose={() => setAddOpen(false)} /> : null}
+      {removing ? (
+        <ConfirmDialog
+          body={t("app.spaceDetail.confirmRemoveBody", {
+            name: removing.userName,
+          })}
+          confirmLabel={t("common.remove")}
+          fields={{ intent: "remove-member", userId: removing.userId }}
+          onClose={() => setRemoving(null)}
+          title={t("app.spaceDetail.confirmRemoveTitle")}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function SubspacesSection({
+  space,
+  subspaces,
+  manage,
+}: {
+  space: SpaceDto;
+  subspaces: SpaceDto[];
+  manage: boolean;
+}) {
+  const { t } = useI18n();
+  const [createOpen, setCreateOpen] = useState(false);
+  const atLimit = space.depth >= 5;
+
+  const createButton = manage ? (
+    <button
+      className="button-primary btn-sm"
+      disabled={atLimit}
+      onClick={() => setCreateOpen(true)}
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: ".375rem",
+        opacity: atLimit ? 0.5 : 1,
+      }}
+      title={atLimit ? t("app.spaceDetail.depthLimitTitle") : undefined}
+      type="button"
+    >
+      <Plus size={15} /> {t("app.spaceDetail.createSub")}
+    </button>
+  ) : null;
+
+  return (
+    <div>
+      <div className="spd-sec-head">
+        <div>
+          <h2 className="spd-sec-title">{t("app.spaceDetail.subTitle")}</h2>
+          <p className="spd-sec-sub">
+            {formatRelativeCount(subspaces.length, subForms(t))}
+          </p>
+        </div>
+        {subspaces.length > 0 ? createButton : null}
+      </div>
+
+      {manage && atLimit ? (
+        <div className="inline-msg info" style={{ marginBottom: "1rem" }}>
+          <Layers size={16} />
+          <span>{t("app.spaceDetail.depthLimitBody")}</span>
+        </div>
+      ) : null}
+
+      {subspaces.length === 0 ? (
+        <EmptyHint
+          cta={
+            manage && !atLimit ? (
+              <button
+                className="button-primary"
+                onClick={() => setCreateOpen(true)}
+                style={{
+                  marginTop: ".4rem",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: ".375rem",
+                }}
+                type="button"
+              >
+                <Plus size={16} /> {t("app.spaceDetail.createSub")}
+              </button>
+            ) : undefined
+          }
+          icon={<Layers size={22} />}
+          text={
+            atLimit
+              ? t("app.spaceDetail.depthLimitBody")
+              : t("app.spaceDetail.emptySubBody")
+          }
+          title={t("app.spaceDetail.emptySubTitle")}
+        />
+      ) : (
+        <div className="spd-grid">
+          {subspaces.map((child) => (
+            <SpaceCard childCount={0} key={child.id} space={child} />
+          ))}
+        </div>
+      )}
+
+      {createOpen ? (
+        <CreateSubspaceDialog onClose={() => setCreateOpen(false)} />
+      ) : null}
+    </div>
+  );
+}
+
+function InviteRow({
+  invite,
+  copied,
+  onCopy,
+  onRevoke,
+}: {
+  invite: InviteLinkDto;
+  copied: boolean;
+  onCopy: () => void;
+  onRevoke: () => void;
+}) {
+  const { t, locale } = useI18n();
+  return (
+    <div className="spd-invite">
+      <div className="spd-qr">
+        <QRMock value={invite.code} />
+      </div>
+      <div className="spd-invite-main">
+        <div className="spd-invite-codeline">
+          <span className="spd-invite-code">{invite.code}</span>
+          <button
+            className={`spd-copy ${copied ? "done" : ""}`}
+            onClick={onCopy}
+            type="button"
+          >
+            <Share2 size={13} />
+            {copied ? t("app.spaceDetail.copied") : t("app.spaceDetail.copy")}
+          </button>
+          <RoleBadge role={invite.defaultRole} />
+        </div>
+        <div className="spd-invite-meta">
+          <span>
+            {t("app.spaceDetail.usage")}{" "}
+            <b>
+              {invite.usageCount}
+              {invite.usageLimit != null
+                ? ` / ${invite.usageLimit}`
+                : ` (${t("app.spaceDetail.noLimit")})`}
+            </b>
+          </span>
+          <span>
+            {t("app.spaceDetail.expires")}{" "}
+            <b>
+              {invite.expiration
+                ? formatDateRange(invite.expiration, invite.expiration, locale)
+                : t("app.spaceDetail.noExpiry")}
+            </b>
+          </span>
+          <span className={`spd-status ${invite.active ? "on" : "off"}`}>
+            <span className="dot" />
+            {invite.active
+              ? t("app.spaceDetail.active")
+              : t("app.spaceDetail.inactive")}
+          </span>
+        </div>
+      </div>
+      <div className="spd-invite-actions">
+        {invite.active ? (
+          <button className="text-link-danger" onClick={onRevoke} type="button">
+            {t("app.spaceDetail.revoke")}
+          </button>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function InvitesSection({ invites }: { invites: InviteLinkDto[] }) {
+  const { t } = useI18n();
+  const [createOpen, setCreateOpen] = useState(false);
+  const [revoking, setRevoking] = useState<InviteLinkDto | null>(null);
+  const [copied, setCopied] = useState<string | null>(null);
+  const activeCount = invites.filter((invite) => invite.active).length;
+
+  const copy = (code: string) => {
+    const origin =
+      typeof window !== "undefined"
+        ? window.location.origin
+        : "https://pina.app";
+    navigator.clipboard?.writeText(`${origin}/join/${code}`).catch(() => {});
+    setCopied(code);
+    window.setTimeout(() => {
+      setCopied((current) => (current === code ? null : current));
+    }, 1600);
+  };
+
+  return (
+    <div>
+      <div className="spd-sec-head">
+        <div>
+          <h2 className="spd-sec-title">{t("app.spaceDetail.invTitle")}</h2>
+          <p className="spd-sec-sub">
+            {formatRelativeCount(activeCount, linkForms(t))}
+          </p>
+        </div>
+        {invites.length > 0 ? (
+          <button
+            className="button-primary btn-sm"
+            onClick={() => setCreateOpen(true)}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: ".375rem",
+            }}
+            type="button"
+          >
+            <Plus size={15} /> {t("app.spaceDetail.createInvite")}
+          </button>
+        ) : null}
+      </div>
+
+      {invites.length === 0 ? (
+        <EmptyHint
+          cta={
+            <button
+              className="button-primary"
+              onClick={() => setCreateOpen(true)}
+              style={{
+                marginTop: ".4rem",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: ".375rem",
+              }}
+              type="button"
+            >
+              <Plus size={16} /> {t("app.spaceDetail.createInvite")}
+            </button>
+          }
+          icon={<Link2 size={22} />}
+          text={t("app.spaceDetail.emptyInvBody")}
+          title={t("app.spaceDetail.emptyInvTitle")}
+        />
+      ) : (
+        <div className="spd-invites">
+          {invites.map((invite) => (
+            <InviteRow
+              copied={copied === invite.code}
+              invite={invite}
+              key={invite.id}
+              onCopy={() => copy(invite.code)}
+              onRevoke={() => setRevoking(invite)}
+            />
+          ))}
+        </div>
+      )}
+
+      {createOpen ? (
+        <CreateInviteDialog onClose={() => setCreateOpen(false)} />
+      ) : null}
+      {revoking ? (
+        <ConfirmDialog
+          body={t("app.spaceDetail.confirmRevokeBody")}
+          confirmLabel={t("app.spaceDetail.confirmRevokeBtn")}
+          fields={{ intent: "revoke-invite", inviteId: revoking.id }}
+          onClose={() => setRevoking(null)}
+          title={t("app.spaceDetail.confirmRevokeTitle")}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+// ─── Screen ────────────────────────────────────────────────────────────
+
+type TabId = "albums" | "members" | "subspaces" | "invites";
+
 export default function AppSpaceDetailRoute({
   loaderData,
 }: Route.ComponentProps) {
-  const actionData = useActionData<typeof clientAction>();
-  const navigation = useNavigation();
-  const revalidator = useRevalidator();
-  const params = useParams();
-  const spaceId = loaderData.spaceId || params.spaceId || "";
-  const [state, setState] = useState<SpaceDetailState>(loaderData.state);
-  const [libraryPhotos, setLibraryPhotos] = useState<PhotoDto[] | null>(null);
-  const [isLibraryPhotosLoading, setIsLibraryPhotosLoading] = useState(false);
-  const [libraryPhotosError, setLibraryPhotosError] = useState<string | null>(
-    null,
-  );
-  const [selectedAlbumId, setSelectedAlbumId] = useState<string | null>(null);
-  const [selectedAlbumPhotos, setSelectedAlbumPhotos] = useState<PhotoDto[]>(
-    [],
-  );
-  const [selectedAlbumDraft, setSelectedAlbumDraft] = useState(emptyAlbumDraft);
-  const [albumCreateDraft, setAlbumCreateDraft] = useState(emptyAlbumDraft);
-  const [albumPhotoDraft, setAlbumPhotoDraft] = useState("");
-  const [detailFilter, setDetailFilter] = useState("");
-  const [memberError, setMemberError] = useState<string | null>(null);
-  const [inviteError, setInviteError] = useState<string | null>(null);
-  const [subspaceError, setSubspaceError] = useState<string | null>(null);
-  const [albumError, setAlbumError] = useState<string | null>(null);
-  const [memberDraft, setMemberDraft] = useState({
-    userId: "",
-    role: "VIEWER" as SpaceRole,
-  });
-  const [subspaceDraft, setSubspaceDraft] = useState({
-    name: "",
-    description: "",
-    visibility: "PRIVATE" as SpaceVisibility,
-  });
-  const [inviteDraft, setInviteDraft] = useState({
-    defaultRole: "VIEWER" as SpaceRole,
-    expiration: "",
-    usageLimit: "",
-  });
-  const pendingIntent = String(navigation.formData?.get("intent") ?? "");
-  const pendingAlbumId = String(navigation.formData?.get("albumId") ?? "");
-  const pendingUserId = String(navigation.formData?.get("userId") ?? "");
-  const pendingInviteId = String(navigation.formData?.get("inviteId") ?? "");
-  const pendingPhotoId = String(navigation.formData?.get("photoId") ?? "");
-  const normalizedDetailFilter = detailFilter.trim().toLowerCase();
-  const filteredMembers = useMemo(
-    () =>
-      state.members.filter((member) => {
-        if (normalizedDetailFilter.length === 0) {
-          return true;
-        }
-        return (
-          member.userName.toLowerCase().includes(normalizedDetailFilter) ||
-          member.userId.toLowerCase().includes(normalizedDetailFilter) ||
-          member.role.toLowerCase().includes(normalizedDetailFilter)
-        );
-      }),
-    [normalizedDetailFilter, state.members],
-  );
-  const filteredSubspaces = useMemo(
-    () =>
-      state.subspaces.filter((subspace) => {
-        if (normalizedDetailFilter.length === 0) {
-          return true;
-        }
-        return (
-          subspace.name.toLowerCase().includes(normalizedDetailFilter) ||
-          (subspace.description ?? "")
-            .toLowerCase()
-            .includes(normalizedDetailFilter) ||
-          subspace.visibility.toLowerCase().includes(normalizedDetailFilter)
-        );
-      }),
-    [normalizedDetailFilter, state.subspaces],
-  );
-  const filteredAlbums = useMemo(
-    () =>
-      state.albums.filter((album) => {
-        if (normalizedDetailFilter.length === 0) {
-          return true;
-        }
-        return (
-          album.name.toLowerCase().includes(normalizedDetailFilter) ||
-          (album.description ?? "")
-            .toLowerCase()
-            .includes(normalizedDetailFilter)
-        );
-      }),
-    [normalizedDetailFilter, state.albums],
-  );
-  const filteredInvites = useMemo(
-    () =>
-      state.invites.filter((invite) => {
-        if (normalizedDetailFilter.length === 0) {
-          return true;
-        }
-        return (
-          invite.code.toLowerCase().includes(normalizedDetailFilter) ||
-          invite.defaultRole.toLowerCase().includes(normalizedDetailFilter)
-        );
-      }),
-    [normalizedDetailFilter, state.invites],
-  );
+  const { t, locale } = useI18n();
+  const session = useSession();
+  const currentUserId = session?.user.id ?? "";
+  const { state, ancestors } = loaderData;
+  const space = state.space;
+  const manage = canManage(space.myRole);
+  const paletteIdx = getAlbumPaletteIndex(space.id);
+  const countFormatter = new Intl.NumberFormat(locale);
 
-  const selectedAlbum =
-    state.albums.find((album) => album.id === selectedAlbumId) ?? null;
-  const availableLibraryPhotos = useMemo(
-    () =>
-      (libraryPhotos ?? []).filter(
-        (photo) =>
-          !selectedAlbumPhotos.some((albumPhoto) => albumPhoto.id === photo.id),
-      ),
-    [libraryPhotos, selectedAlbumPhotos],
-  );
-
-  const reloadSelectedAlbumPhotos = useCallback(
-    async (albumId: string) => {
-      try {
-        setAlbumError(null);
-        const items = await listAllSpaceAlbumPhotos(spaceId, albumId);
-        setSelectedAlbumPhotos(items);
-        setAlbumPhotoDraft("");
-      } catch (error) {
-        if (error instanceof ApiError) {
-          setAlbumError(error.message);
-        } else {
-          setAlbumError("Failed to load album photos.");
-        }
-      }
-    },
-    [spaceId],
-  );
-
-  const ensureLibraryPhotosLoaded = useCallback(async () => {
-    if (libraryPhotos !== null || isLibraryPhotosLoading) {
-      return;
-    }
-
-    try {
-      setLibraryPhotosError(null);
-      setIsLibraryPhotosLoading(true);
-      const items = await loadLibraryPhotosForSpace();
-      setLibraryPhotos(items);
-    } catch (error) {
-      if (error instanceof ApiError) {
-        setLibraryPhotosError(error.message);
-      } else {
-        setLibraryPhotosError("Failed to load personal library photos.");
-      }
-    } finally {
-      setIsLibraryPhotosLoading(false);
-    }
-  }, [isLibraryPhotosLoading, libraryPhotos]);
+  const [tab, setTab] = useState<TabId>("albums");
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [createAlbumOpen, setCreateAlbumOpen] = useState(false);
 
   useEffect(() => {
-    setState(loaderData.state);
-  }, [loaderData]);
+    if (tab === "invites" && !manage) {
+      setTab("albums");
+    }
+  }, [manage, tab]);
 
-  useEffect(() => {
-    const currentAlbum = state.albums.find(
-      (album) => album.id === selectedAlbumId,
-    );
-    if (currentAlbum) {
-      setSelectedAlbumDraft({
-        name: currentAlbum.name,
-        description: currentAlbum.description ?? "",
+  const tabs = useMemo(() => {
+    const base: Array<{ id: TabId; label: string; count: number }> = [
+      {
+        id: "albums",
+        label: t("app.spaceDetail.tabAlbums"),
+        count: space.albumCount,
+      },
+      {
+        id: "members",
+        label: t("app.spaceDetail.tabMembers"),
+        count: space.memberCount,
+      },
+      {
+        id: "subspaces",
+        label: t("app.spaceDetail.tabSub"),
+        count: state.subspaces.length,
+      },
+    ];
+    if (manage) {
+      base.push({
+        id: "invites",
+        label: t("app.spaceDetail.tabInvites"),
+        count: state.invites.filter((invite) => invite.active).length,
       });
-      return;
     }
+    return base;
+  }, [
+    manage,
+    space.albumCount,
+    space.memberCount,
+    state.subspaces,
+    state.invites,
+    t,
+  ]);
 
-    if (state.albums.length > 0) {
-      const firstAlbum = state.albums[0];
-      setSelectedAlbumId(firstAlbum.id);
-      setSelectedAlbumDraft({
-        name: firstAlbum.name,
-        description: firstAlbum.description ?? "",
-      });
-      return;
-    }
-
-    if (selectedAlbumId !== null) {
-      setSelectedAlbumId(null);
-    }
-    setSelectedAlbumDraft(emptyAlbumDraft);
-    setSelectedAlbumPhotos([]);
-    setAlbumPhotoDraft("");
-  }, [state.albums, selectedAlbumId]);
-
-  useEffect(() => {
-    if (!spaceId || !selectedAlbumId) {
-      setSelectedAlbumPhotos([]);
-      setAlbumPhotoDraft("");
-      return;
-    }
-
-    void reloadSelectedAlbumPhotos(selectedAlbumId);
-  }, [reloadSelectedAlbumPhotos, selectedAlbumId, spaceId]);
-
-  useEffect(() => {
-    if (!selectedAlbumId) {
-      return;
-    }
-
-    void ensureLibraryPhotosLoaded();
-  }, [ensureLibraryPhotosLoaded, selectedAlbumId]);
-
-  useEffect(() => {
-    if (!actionData) {
-      return;
-    }
-
-    if (actionData.ok) {
-      setMemberError(null);
-      setInviteError(null);
-      setSubspaceError(null);
-      setAlbumError(null);
-
-      if (actionData.intent === "add-member") {
-        setMemberDraft({ userId: "", role: "VIEWER" });
-      }
-      if (actionData.intent === "create-subspace") {
-        setSubspaceDraft({ name: "", description: "", visibility: "PRIVATE" });
-      }
-      if (actionData.intent === "create-invite") {
-        setInviteDraft({
-          defaultRole: "VIEWER",
-          expiration: "",
-          usageLimit: "",
-        });
-      }
-      if (actionData.intent === "create-album") {
-        setAlbumCreateDraft(emptyAlbumDraft);
-      }
-      if (
-        actionData.intent === "add-album-photo" ||
-        actionData.intent === "remove-album-photo"
-      ) {
-        if (selectedAlbumId && actionData.albumId === selectedAlbumId) {
-          void reloadSelectedAlbumPhotos(selectedAlbumId);
-          setAlbumPhotoDraft("");
-        }
-        return;
-      }
-      if (
-        actionData.intent === "delete-album" &&
-        actionData.albumId === selectedAlbumId
-      ) {
-        setSelectedAlbumId(null);
-      }
-
-      revalidator.revalidate();
-      return;
-    }
-
-    if (
-      actionData.intent === "add-member" ||
-      actionData.intent === "change-member-role" ||
-      actionData.intent === "remove-member"
-    ) {
-      setMemberError(actionData.errorMessage);
-      return;
-    }
-    if (actionData.intent === "create-subspace") {
-      setSubspaceError(actionData.errorMessage);
-      return;
-    }
-    if (
-      actionData.intent === "create-invite" ||
-      actionData.intent === "revoke-invite"
-    ) {
-      setInviteError(actionData.errorMessage);
-      return;
-    }
-    setAlbumError(actionData.errorMessage);
-  }, [actionData, reloadSelectedAlbumPhotos, revalidator, selectedAlbumId]);
-
-  if (!spaceId) {
-    return (
-      <Panel className="p-6">
-        <p className="text-sm text-[var(--color-danger-strong)]">
-          Space id is missing.
-        </p>
-      </Panel>
-    );
-  }
+  const crumbs = [...ancestors, space];
 
   return (
-    <div className="space-y-8">
-      <PageHeader
-        actions={
-          <Link className="button-secondary" to="/app/spaces">
-            Back to Spaces
-          </Link>
-        }
-        description={
-          state.space?.description ||
-          "Manage members, subspaces, albums, and invites from a single route."
-        }
-        eyebrow="Space Detail"
-        title={state.space?.name || "Loading Space"}
-      />
+    <div className="spd-page" data-screen-label="Space Detail">
+      <nav
+        aria-label={t("app.spaceDetail.breadcrumbAria")}
+        className="spd-crumbs"
+      >
+        <Link className="spd-crumb spd-crumb-link" to="/app/spaces">
+          <Users size={14} /> {t("app.spaceDetail.backToSpaces")}
+        </Link>
+        {crumbs.map((crumb, index) => {
+          const last = index === crumbs.length - 1;
+          return (
+            <Fragment key={crumb.id}>
+              <span className="spd-crumb-sep">
+                <ChevronRight size={13} />
+              </span>
+              {last ? (
+                <span aria-current="page" className="spd-crumb spd-crumb-cur">
+                  {crumb.name}
+                </span>
+              ) : (
+                <Link
+                  className="spd-crumb spd-crumb-link"
+                  to={`/app/spaces/${crumb.id}`}
+                >
+                  {crumb.name}
+                </Link>
+              )}
+            </Fragment>
+          );
+        })}
+      </nav>
 
-      {state.space ? (
-        <section className="grid gap-4 md:grid-cols-5">
-          <Panel className="p-5">
-            <p className="eyebrow">Visibility</p>
-            <p className="mt-3 text-2xl font-semibold tracking-tight">
-              {state.space.visibility.toLowerCase()}
-            </p>
-          </Panel>
-          <Panel className="p-5">
-            <p className="eyebrow">Members</p>
-            <p className="mt-3 text-2xl font-semibold tracking-tight">
-              {state.members.length}
-            </p>
-          </Panel>
-          <Panel className="p-5">
-            <p className="eyebrow">Subspaces</p>
-            <p className="mt-3 text-2xl font-semibold tracking-tight">
-              {state.subspaces.length}
-            </p>
-          </Panel>
-          <Panel className="p-5">
-            <p className="eyebrow">Albums</p>
-            <p className="mt-3 text-2xl font-semibold tracking-tight">
-              {state.albums.length}
-            </p>
-          </Panel>
-          <Panel className="p-5">
-            <p className="eyebrow">Invites</p>
-            <p className="mt-3 text-2xl font-semibold tracking-tight">
-              {state.invites.length}
-            </p>
-          </Panel>
-        </section>
-      ) : null}
-
-      <FilterToolbar
-        controls={
-          <div className="flex w-full flex-col gap-3 md:w-auto md:flex-row">
-            <input
-              aria-label="Filter Space detail"
-              className="field min-w-0 md:min-w-80"
-              onChange={(event) => setDetailFilter(event.target.value)}
-              placeholder="Filter by name, role, code, or description"
-              type="search"
-              value={detailFilter}
-            />
+      <header className={`spd-hero album-palette-${paletteIdx}`}>
+        <div className="spd-hero-grad" />
+        <div aria-hidden className="spd-hero-mosaic">
+          {[0, 1, 2, 3, 4, 5].map((i) => (
+            <i className={albumPhotoSwatchClass(paletteIdx + i)} key={i} />
+          ))}
+        </div>
+        {manage ? (
+          <div className="spd-hero-actions">
             <button
-              className="button-secondary"
-              disabled={normalizedDetailFilter.length === 0}
-              onClick={() => setDetailFilter("")}
+              className="btn-glass"
+              onClick={() => setInviteOpen(true)}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: ".4rem",
+              }}
               type="button"
             >
-              Clear filter
+              <Link2 size={15} /> {t("app.spaceDetail.invite")}
             </button>
-          </div>
-        }
-        description="Narrow members, subspaces, albums, and invites without leaving the current Space."
-        title="Local filter"
-      />
-
-      <section className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
-        <div className="space-y-6">
-          <Panel className="p-6">
-            <div className="flex items-end justify-between gap-4">
-              <div>
-                <p className="eyebrow">Members</p>
-                <h2 className="mt-2 text-2xl font-semibold tracking-tight">
-                  Current membership
-                </h2>
-              </div>
-            </div>
-
-            {memberError ? (
-              <InlineMessage className="mt-4" tone="danger">
-                {memberError}
-              </InlineMessage>
-            ) : null}
-
-            <Form
-              className="mt-5 grid gap-3 md:grid-cols-[1fr_180px_auto]"
-              method="post"
-            >
-              <input name="intent" type="hidden" value="add-member" />
-              <input
-                className="field"
-                name="userId"
-                onChange={(event) =>
-                  setMemberDraft((current) => ({
-                    ...current,
-                    userId: event.target.value,
-                  }))
-                }
-                placeholder="User UUID"
-                required
-                value={memberDraft.userId}
-              />
-              <select
-                aria-label="Add member role"
-                className="field"
-                name="role"
-                onChange={(event) =>
-                  setMemberDraft((current) => ({
-                    ...current,
-                    role: event.target.value as SpaceRole,
-                  }))
-                }
-                value={memberDraft.role}
-              >
-                <option value="VIEWER">Viewer</option>
-                <option value="MEMBER">Member</option>
-                <option value="ADMIN">Admin</option>
-              </select>
-              <button
-                className="button-primary"
-                disabled={pendingIntent === "add-member"}
-                type="submit"
-              >
-                {pendingIntent === "add-member" ? "Adding..." : "Add member"}
-              </button>
-            </Form>
-
-            <div className="mt-5 space-y-3">
-              {filteredMembers.length === 0 ? (
-                <EmptyHint>No members match the current filter.</EmptyHint>
-              ) : (
-                filteredMembers.map((member) => (
-                  <SurfaceCard className="rounded-2xl p-4" key={member.userId}>
-                    <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                      <div>
-                        <h3 className="text-lg font-semibold tracking-tight">
-                          {member.userName}
-                        </h3>
-                        <p className="mt-1 break-all text-sm text-[var(--color-text-muted)]">
-                          {member.userId}
-                        </p>
-                      </div>
-                      <div className="flex flex-col gap-3 sm:flex-row">
-                        <Form method="post">
-                          <input
-                            name="intent"
-                            type="hidden"
-                            value="change-member-role"
-                          />
-                          <input
-                            name="userId"
-                            type="hidden"
-                            value={member.userId}
-                          />
-                          <select
-                            aria-label={`Role for ${member.userName}`}
-                            className="field min-w-36"
-                            disabled={
-                              pendingIntent === "change-member-role" &&
-                              pendingUserId === member.userId
-                            }
-                            name="role"
-                            onChange={(event) => {
-                              event.currentTarget.form?.requestSubmit();
-                            }}
-                            value={member.role}
-                          >
-                            <option value="OWNER">Owner</option>
-                            <option value="ADMIN">Admin</option>
-                            <option value="MEMBER">Member</option>
-                            <option value="VIEWER">Viewer</option>
-                          </select>
-                        </Form>
-                        <Form method="post">
-                          <input
-                            name="intent"
-                            type="hidden"
-                            value="remove-member"
-                          />
-                          <input
-                            name="userId"
-                            type="hidden"
-                            value={member.userId}
-                          />
-                          <button
-                            className="button-secondary"
-                            disabled={
-                              pendingIntent === "remove-member" &&
-                              pendingUserId === member.userId
-                            }
-                            type="submit"
-                          >
-                            {pendingIntent === "remove-member" &&
-                            pendingUserId === member.userId
-                              ? "Removing..."
-                              : "Remove"}
-                          </button>
-                        </Form>
-                      </div>
-                    </div>
-                  </SurfaceCard>
-                ))
-              )}
-            </div>
-          </Panel>
-
-          <Panel className="p-6">
-            <p className="eyebrow">Subspaces</p>
-            <h2 className="mt-2 text-2xl font-semibold tracking-tight">
-              Hierarchy
-            </h2>
-
-            {subspaceError ? (
-              <InlineMessage className="mt-4" tone="danger">
-                {subspaceError}
-              </InlineMessage>
-            ) : null}
-
-            <Form className="mt-5 space-y-3" method="post">
-              <input name="intent" type="hidden" value="create-subspace" />
-              <input
-                className="field"
-                name="name"
-                onChange={(event) =>
-                  setSubspaceDraft((current) => ({
-                    ...current,
-                    name: event.target.value,
-                  }))
-                }
-                placeholder="Subspace name"
-                required
-                value={subspaceDraft.name}
-              />
-              <textarea
-                className="field min-h-24 resize-y"
-                name="description"
-                onChange={(event) =>
-                  setSubspaceDraft((current) => ({
-                    ...current,
-                    description: event.target.value,
-                  }))
-                }
-                placeholder="Description"
-                value={subspaceDraft.description}
-              />
-              <div className="flex gap-3">
-                <select
-                  aria-label="Subspace visibility"
-                  className="field"
-                  name="visibility"
-                  onChange={(event) =>
-                    setSubspaceDraft((current) => ({
-                      ...current,
-                      visibility: event.target.value as SpaceVisibility,
-                    }))
-                  }
-                  value={subspaceDraft.visibility}
-                >
-                  <option value="PRIVATE">Private</option>
-                  <option value="PUBLIC">Public</option>
-                </select>
-                <button
-                  className="button-primary"
-                  disabled={pendingIntent === "create-subspace"}
-                  type="submit"
-                >
-                  {pendingIntent === "create-subspace"
-                    ? "Creating..."
-                    : "Create subspace"}
-                </button>
-              </div>
-            </Form>
-
-            <div className="mt-5 space-y-3">
-              {state.subspaces.length === 0 ? (
-                <p className="text-sm text-[var(--color-text-muted)]">
-                  No subspaces yet.
-                </p>
-              ) : filteredSubspaces.length === 0 ? (
-                <EmptyHint>No subspaces match the current filter.</EmptyHint>
-              ) : (
-                filteredSubspaces.map((subspace) => (
-                  <SurfaceCard className="rounded-2xl p-4" key={subspace.id}>
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <h3 className="text-lg font-semibold tracking-tight">
-                          {subspace.name}
-                        </h3>
-                        <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-                          {subspace.visibility.toLowerCase()} · depth{" "}
-                          {subspace.depth}
-                        </p>
-                      </div>
-                      <Link
-                        className="button-secondary"
-                        to={`/app/spaces/${subspace.id}`}
-                      >
-                        Open
-                      </Link>
-                    </div>
-                  </SurfaceCard>
-                ))
-              )}
-            </div>
-          </Panel>
-
-          <Panel className="p-6">
-            <p className="eyebrow">Albums</p>
-            <h2 className="mt-2 text-2xl font-semibold tracking-tight">
-              Shared Space albums
-            </h2>
-
-            {albumError ? (
-              <InlineMessage className="mt-4" tone="danger">
-                {albumError}
-              </InlineMessage>
-            ) : null}
-
-            <Form className="mt-5 space-y-3" method="post">
-              <input name="intent" type="hidden" value="create-album" />
-              <input
-                aria-label="New album name"
-                className="field"
-                name="name"
-                onChange={(event) =>
-                  setAlbumCreateDraft((current) => ({
-                    ...current,
-                    name: event.target.value,
-                  }))
-                }
-                placeholder="Album name"
-                required
-                value={albumCreateDraft.name}
-              />
-              <textarea
-                aria-label="New album description"
-                className="field min-h-24 resize-y"
-                name="description"
-                onChange={(event) =>
-                  setAlbumCreateDraft((current) => ({
-                    ...current,
-                    description: event.target.value,
-                  }))
-                }
-                placeholder="Album description"
-                value={albumCreateDraft.description}
-              />
-              <button
-                className="button-primary"
-                disabled={pendingIntent === "create-album"}
-                type="submit"
-              >
-                {pendingIntent === "create-album"
-                  ? "Creating..."
-                  : "Create album"}
-              </button>
-            </Form>
-
-            <div className="mt-6 grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
-              <div className="space-y-3">
-                {state.albums.length === 0 ? (
-                  <p className="text-sm text-[var(--color-text-muted)]">
-                    No shared albums yet.
-                  </p>
-                ) : filteredAlbums.length === 0 ? (
-                  <EmptyHint>No albums match the current filter.</EmptyHint>
-                ) : (
-                  filteredAlbums.map((album) => (
-                    <article
-                      className={`rounded-2xl border p-4 ${
-                        album.id === selectedAlbumId
-                          ? "border-[var(--color-accent)] bg-[var(--color-accent-soft)]"
-                          : "surface-card"
-                      }`}
-                      key={album.id}
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <h3 className="text-lg font-semibold tracking-tight">
-                            {album.name}
-                          </h3>
-                          <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-                            {album.description || "No description yet."}
-                          </p>
-                        </div>
-                        <button
-                          className="button-secondary"
-                          onClick={() => {
-                            setSelectedAlbumId(album.id);
-                          }}
-                          type="button"
-                        >
-                          {album.id === selectedAlbumId ? "Selected" : "Open"}
-                        </button>
-                      </div>
-                    </article>
-                  ))
-                )}
-              </div>
-
-              <SurfaceCard className="rounded-3xl p-5">
-                {selectedAlbum ? (
-                  <div className="space-y-5">
-                    <div>
-                      <p className="eyebrow">Selected album</p>
-                      <h3 className="mt-2 text-xl font-semibold tracking-tight">
-                        {selectedAlbum.name}
-                      </h3>
-                    </div>
-
-                    <div className="space-y-3">
-                      <Form className="space-y-3" method="post">
-                        <input
-                          name="intent"
-                          type="hidden"
-                          value="update-album"
-                        />
-                        <input
-                          name="albumId"
-                          type="hidden"
-                          value={selectedAlbumId ?? ""}
-                        />
-                        <input
-                          aria-label="Selected album name"
-                          className="field"
-                          name="name"
-                          onChange={(event) =>
-                            setSelectedAlbumDraft((current) => ({
-                              ...current,
-                              name: event.target.value,
-                            }))
-                          }
-                          placeholder="Album name"
-                          required
-                          value={selectedAlbumDraft.name}
-                        />
-                        <textarea
-                          aria-label="Selected album description"
-                          className="field min-h-24 resize-y"
-                          name="description"
-                          onChange={(event) =>
-                            setSelectedAlbumDraft((current) => ({
-                              ...current,
-                              description: event.target.value,
-                            }))
-                          }
-                          placeholder="Album description"
-                          value={selectedAlbumDraft.description}
-                        />
-                        <button
-                          className="button-primary"
-                          disabled={
-                            pendingIntent === "update-album" &&
-                            pendingAlbumId === selectedAlbumId
-                          }
-                          type="submit"
-                        >
-                          {pendingIntent === "update-album" &&
-                          pendingAlbumId === selectedAlbumId
-                            ? "Saving..."
-                            : "Save album"}
-                        </button>
-                      </Form>
-
-                      <Form method="post">
-                        <input
-                          name="intent"
-                          type="hidden"
-                          value="delete-album"
-                        />
-                        <input
-                          name="albumId"
-                          type="hidden"
-                          value={selectedAlbumId ?? ""}
-                        />
-                        <button
-                          className="button-secondary"
-                          disabled={
-                            pendingIntent === "delete-album" &&
-                            pendingAlbumId === selectedAlbumId
-                          }
-                          type="submit"
-                        >
-                          {pendingIntent === "delete-album" &&
-                          pendingAlbumId === selectedAlbumId
-                            ? "Deleting..."
-                            : "Delete album"}
-                        </button>
-                      </Form>
-                    </div>
-
-                    <Form className="space-y-3" method="post">
-                      <input
-                        name="intent"
-                        type="hidden"
-                        value="add-album-photo"
-                      />
-                      <input
-                        name="albumId"
-                        type="hidden"
-                        value={selectedAlbumId ?? ""}
-                      />
-                      <select
-                        aria-label="Photo for album"
-                        className="field"
-                        disabled={
-                          isLibraryPhotosLoading ||
-                          availableLibraryPhotos.length === 0
-                        }
-                        name="photoId"
-                        onChange={(event) => {
-                          setAlbumPhotoDraft(event.target.value);
-                        }}
-                        value={albumPhotoDraft}
-                      >
-                        <option value="">
-                          {isLibraryPhotosLoading
-                            ? "Loading your photos..."
-                            : "Select one of your photos"}
-                        </option>
-                        {availableLibraryPhotos.map((photo) => (
-                          <option key={photo.id} value={photo.id}>
-                            {photo.originalFilename}
-                          </option>
-                        ))}
-                      </select>
-                      {libraryPhotosError ? (
-                        <p className="text-sm text-[var(--color-danger-strong)]">
-                          {libraryPhotosError}
-                        </p>
-                      ) : null}
-                      {!isLibraryPhotosLoading &&
-                      !libraryPhotosError &&
-                      availableLibraryPhotos.length === 0 ? (
-                        <p className="text-sm text-[var(--color-text-muted)]">
-                          All available personal photos are already present in
-                          this shared album.
-                        </p>
-                      ) : null}
-                      <button
-                        className="button-primary"
-                        disabled={
-                          !albumPhotoDraft ||
-                          (pendingIntent === "add-album-photo" &&
-                            pendingAlbumId === selectedAlbumId)
-                        }
-                        type="submit"
-                      >
-                        {pendingIntent === "add-album-photo" &&
-                        pendingAlbumId === selectedAlbumId
-                          ? "Adding..."
-                          : "Add photo"}
-                      </button>
-                    </Form>
-
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between gap-3">
-                        <p className="eyebrow">Album photos</p>
-                        <p className="text-sm text-[var(--color-text-muted)]">
-                          {selectedAlbumPhotos.length} items
-                        </p>
-                      </div>
-                      {selectedAlbumPhotos.length === 0 ? (
-                        <p className="text-sm text-[var(--color-text-muted)]">
-                          No photos in this album.
-                        </p>
-                      ) : (
-                        selectedAlbumPhotos.map((photo) => (
-                          <SurfaceCard
-                            className="rounded-2xl p-4"
-                            key={photo.id}
-                            tone="subtle"
-                          >
-                            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                              <div>
-                                <Link
-                                  className="link-accent text-base font-semibold tracking-tight"
-                                  to={`/app/spaces/${spaceId}/albums/${selectedAlbumId}/photos/${photo.id}`}
-                                >
-                                  {photo.originalFilename}
-                                </Link>
-                                <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-                                  Added from uploader {photo.uploaderId}
-                                </p>
-                                <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-                                  {photo.width && photo.height
-                                    ? `${photo.width} × ${photo.height}`
-                                    : "Unknown size"}{" "}
-                                  · {Math.round(photo.sizeBytes / 1024)} KB ·{" "}
-                                  {formatDateTime(photo.createdAt)}
-                                </p>
-                              </div>
-                              <div className="flex flex-col gap-2 sm:items-end">
-                                <Link
-                                  className="button-secondary"
-                                  to={`/app/spaces/${spaceId}/albums/${selectedAlbumId}/photos/${photo.id}`}
-                                >
-                                  Preview
-                                </Link>
-                                <Form method="post">
-                                  <input
-                                    name="intent"
-                                    type="hidden"
-                                    value="remove-album-photo"
-                                  />
-                                  <input
-                                    name="albumId"
-                                    type="hidden"
-                                    value={selectedAlbumId ?? ""}
-                                  />
-                                  <input
-                                    name="photoId"
-                                    type="hidden"
-                                    value={photo.id}
-                                  />
-                                  <button
-                                    className="button-secondary"
-                                    disabled={
-                                      pendingIntent === "remove-album-photo" &&
-                                      pendingAlbumId === selectedAlbumId &&
-                                      pendingPhotoId === photo.id
-                                    }
-                                    type="submit"
-                                  >
-                                    {pendingIntent === "remove-album-photo" &&
-                                    pendingAlbumId === selectedAlbumId &&
-                                    pendingPhotoId === photo.id
-                                      ? "Removing..."
-                                      : `Remove ${photo.originalFilename}`}
-                                  </button>
-                                </Form>
-                              </div>
-                            </div>
-                          </SurfaceCard>
-                        ))
-                      )}
-                    </div>
-                  </div>
-                ) : (
-                  <p className="text-sm text-[var(--color-text-muted)]">
-                    Create a Space album or select an existing one to manage
-                    shared photos.
-                  </p>
-                )}
-              </SurfaceCard>
-            </div>
-          </Panel>
-        </div>
-
-        <Panel className="p-6">
-          <p className="eyebrow">Invites</p>
-          <h2 className="mt-2 text-2xl font-semibold tracking-tight">
-            Join flows
-          </h2>
-
-          {inviteError ? (
-            <InlineMessage className="mt-4" tone="danger">
-              {inviteError}
-            </InlineMessage>
-          ) : null}
-
-          <Form className="mt-5 space-y-3" method="post">
-            <input name="intent" type="hidden" value="create-invite" />
-            <select
-              aria-label="Invite default role"
-              className="field"
-              name="defaultRole"
-              onChange={(event) =>
-                setInviteDraft((current) => ({
-                  ...current,
-                  defaultRole: event.target.value as SpaceRole,
-                }))
-              }
-              value={inviteDraft.defaultRole}
-            >
-              <option value="VIEWER">Viewer</option>
-              <option value="MEMBER">Member</option>
-              <option value="ADMIN">Admin</option>
-            </select>
-            <input
-              className="field"
-              name="expiration"
-              onChange={(event) =>
-                setInviteDraft((current) => ({
-                  ...current,
-                  expiration: event.target.value,
-                }))
-              }
-              type="datetime-local"
-              value={inviteDraft.expiration}
-            />
-            <input
-              className="field"
-              min="1"
-              name="usageLimit"
-              onChange={(event) =>
-                setInviteDraft((current) => ({
-                  ...current,
-                  usageLimit: event.target.value,
-                }))
-              }
-              placeholder="Usage limit"
-              type="number"
-              value={inviteDraft.usageLimit}
-            />
             <button
-              className="button-primary w-full"
-              disabled={pendingIntent === "create-invite"}
-              type="submit"
+              className="btn-glass"
+              onClick={() => setCreateAlbumOpen(true)}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: ".4rem",
+              }}
+              type="button"
             >
-              {pendingIntent === "create-invite"
-                ? "Creating..."
-                : "Create invite"}
+              <Plus size={15} /> {t("app.spaceDetail.createAlbum")}
             </button>
-          </Form>
-
-          <div className="mt-6 space-y-3">
-            {state.invites.length === 0 ? (
-              <p className="text-sm text-[var(--color-text-muted)]">
-                No active invites.
-              </p>
-            ) : filteredInvites.length === 0 ? (
-              <EmptyHint>No invites match the current filter.</EmptyHint>
-            ) : (
-              filteredInvites.map((invite) => (
-                <SurfaceCard className="rounded-2xl p-4" key={invite.id}>
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="eyebrow">Invite code</p>
-                      <h3 className="mt-1 break-all text-lg font-semibold tracking-tight">
-                        {invite.code}
-                      </h3>
-                    </div>
-                    <Form method="post">
-                      <input
-                        name="intent"
-                        type="hidden"
-                        value="revoke-invite"
-                      />
-                      <input name="inviteId" type="hidden" value={invite.id} />
-                      <button
-                        className="text-link-danger text-sm font-semibold"
-                        disabled={
-                          pendingIntent === "revoke-invite" &&
-                          pendingInviteId === invite.id
-                        }
-                        type="submit"
-                      >
-                        {pendingIntent === "revoke-invite" &&
-                        pendingInviteId === invite.id
-                          ? "Revoking..."
-                          : "Revoke"}
-                      </button>
-                    </Form>
-                  </div>
-                  <dl className="mt-4 space-y-2 text-sm text-[var(--color-text-muted)]">
-                    <div className="flex justify-between gap-4">
-                      <dt>Default role</dt>
-                      <dd>{invite.defaultRole}</dd>
-                    </div>
-                    <div className="flex justify-between gap-4">
-                      <dt>Usage</dt>
-                      <dd>
-                        {invite.usageCount}
-                        {invite.usageLimit ? ` / ${invite.usageLimit}` : ""}
-                      </dd>
-                    </div>
-                    <div className="flex justify-between gap-4">
-                      <dt>Expiration</dt>
-                      <dd>{formatDateTime(invite.expiration)}</dd>
-                    </div>
-                  </dl>
-                  <Link
-                    className="button-secondary mt-4 w-full"
-                    to={`/join/${invite.code}`}
-                  >
-                    Open join page
-                  </Link>
-                </SurfaceCard>
-              ))
-            )}
           </div>
-        </Panel>
-      </section>
+        ) : null}
+        <div className="spd-hero-body">
+          <div
+            className={`spd-hero-avatar album-palette-${(paletteIdx + 1) % 8}`}
+          >
+            {spaceInitials(space.name)}
+          </div>
+          <div className="spd-hero-info">
+            <div className="spd-hero-badges">
+              <VisBadge glass visibility={space.visibility} />
+              {space.myRole ? <RoleBadge glass role={space.myRole} /> : null}
+              <span className="badge badge-glass">
+                {space.depth === 0
+                  ? t("app.spaces.chipRoot")
+                  : t("app.spaces.chipLevel", { count: space.depth })}
+              </span>
+            </div>
+            <h1 className="spd-hero-name">{space.name}</h1>
+            {space.description ? (
+              <p className="spd-hero-desc">{space.description}</p>
+            ) : null}
+            <div className="spd-hero-metrics">
+              <div className="spd-hero-metric">
+                <b>
+                  <Users size={16} />
+                  {countFormatter.format(space.memberCount)}
+                </b>
+                <span>{t("app.spaceDetail.metaMembers")}</span>
+              </div>
+              <div className="spd-hero-metric">
+                <b>
+                  <ImageIcon size={16} />
+                  {countFormatter.format(space.albumCount)}
+                </b>
+                <span>{t("app.spaceDetail.metaAlbums")}</span>
+              </div>
+              <div className="spd-hero-metric">
+                <b>
+                  <Layers size={16} />
+                  {state.subspaces.length}
+                </b>
+                <span>{t("app.spaceDetail.metaSub")}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <div aria-label={space.name} className="spd-tabs" role="tablist">
+        {tabs.map((entry) => (
+          <button
+            aria-selected={tab === entry.id}
+            className={`spd-tab ${tab === entry.id ? "spd-tab-active" : ""}`}
+            key={entry.id}
+            onClick={() => setTab(entry.id)}
+            role="tab"
+            type="button"
+          >
+            {entry.label}
+            <span className="spd-tab-count">{entry.count}</span>
+          </button>
+        ))}
+      </div>
+
+      <div>
+        {tab === "albums" ? (
+          <AlbumsSection
+            albumCount={space.albumCount}
+            albums={state.albums}
+            manage={manage}
+            spaceId={space.id}
+          />
+        ) : null}
+        {tab === "members" ? (
+          <MembersSection
+            currentUserId={currentUserId}
+            manage={manage}
+            memberCount={space.memberCount}
+            members={state.members}
+          />
+        ) : null}
+        {tab === "subspaces" ? (
+          <SubspacesSection
+            manage={manage}
+            space={space}
+            subspaces={state.subspaces}
+          />
+        ) : null}
+        {tab === "invites" && manage ? (
+          <InvitesSection invites={state.invites} />
+        ) : null}
+      </div>
+
+      {inviteOpen ? (
+        <CreateInviteDialog onClose={() => setInviteOpen(false)} />
+      ) : null}
+      {createAlbumOpen ? (
+        <CreateAlbumDialog onClose={() => setCreateAlbumOpen(false)} />
+      ) : null}
     </div>
   );
 }

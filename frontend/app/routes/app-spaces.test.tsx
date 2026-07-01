@@ -1,4 +1,10 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { createRoutesStub } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "~/lib/i18n";
@@ -17,7 +23,6 @@ vi.mock("~/lib/api", () => ({
   ApiError: class ApiError extends Error {
     status: number;
     code: string;
-
     constructor(status: number, code: string, message: string) {
       super(message);
       this.status = status;
@@ -26,23 +31,29 @@ vi.mock("~/lib/api", () => ({
   },
 }));
 
+function makeSpace(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "space-1",
+    name: "Family Space",
+    description: "Shared family media",
+    avatarUrl: null,
+    visibility: "PRIVATE",
+    parentId: null,
+    depth: 0,
+    inheritMembers: true,
+    creatorId: "user-1",
+    myRole: "OWNER",
+    memberCount: 3,
+    albumCount: 2,
+    createdAt: "2026-04-02T10:00:00Z",
+    updatedAt: "2026-04-02T10:00:00Z",
+    ...overrides,
+  };
+}
+
 describe("AppSpacesRoute", () => {
   beforeEach(() => {
-    apiMocks.listSpaces.mockResolvedValue([
-      {
-        id: "space-1",
-        name: "Family Space",
-        description: "Shared family media",
-        avatarUrl: null,
-        visibility: "PRIVATE",
-        parentId: null,
-        depth: 0,
-        inheritMembers: true,
-        creatorId: "user-1",
-        createdAt: "2026-04-02T10:00:00Z",
-        updatedAt: "2026-04-02T10:00:00Z",
-      },
-    ]);
+    apiMocks.listSpaces.mockResolvedValue([makeSpace()]);
     apiMocks.createSpace.mockResolvedValue(undefined);
   });
 
@@ -85,62 +96,55 @@ describe("AppSpacesRoute", () => {
     });
   });
 
-  it("filters spaces by text and visibility", async () => {
+  it("filters spaces by search text and visibility tab", async () => {
     apiMocks.listSpaces.mockResolvedValue([
-      {
-        id: "space-1",
-        name: "Family Space",
-        description: "Shared family media",
-        avatarUrl: null,
-        visibility: "PRIVATE",
-        parentId: null,
-        depth: 0,
-        inheritMembers: true,
-        creatorId: "user-1",
-        createdAt: "2026-04-02T10:00:00Z",
-        updatedAt: "2026-04-02T10:00:00Z",
-      },
-      {
+      makeSpace(),
+      makeSpace({
         id: "space-2",
         name: "Club Archive",
         description: "Public race highlights",
-        avatarUrl: null,
         visibility: "PUBLIC",
-        parentId: null,
-        depth: 0,
-        inheritMembers: true,
-        creatorId: "user-1",
-        createdAt: "2026-04-03T10:00:00Z",
-        updatedAt: "2026-04-03T10:00:00Z",
-      },
+        myRole: "ADMIN",
+      }),
     ]);
 
     renderRoute();
 
     expect(await screen.findByText("Family Space")).toBeInTheDocument();
     expect(screen.getByText("Club Archive")).toBeInTheDocument();
-    expect(
-      screen
-        .getAllByRole("link")
-        .find(
-          (link) => link.getAttribute("href") === "/app/library?view=albums",
-        ),
-    ).toBeTruthy();
 
-    fireEvent.change(screen.getByLabelText(/filter spaces|фильтр spaces/i), {
+    fireEvent.change(screen.getByLabelText(/Search by name or description/), {
       target: { value: "club" },
     });
 
     expect(screen.queryByText("Family Space")).not.toBeInTheDocument();
     expect(screen.getByText("Club Archive")).toBeInTheDocument();
 
-    fireEvent.change(
-      screen.getByLabelText(/filter visibility|фильтр видимости/i),
-      {
-        target: { value: "PRIVATE" },
-      },
+    fireEvent.click(screen.getByRole("tab", { name: "Private" }));
+
+    expect(screen.getByText("Nothing found")).toBeInTheDocument();
+  });
+
+  it("creates a Space from the create dialog", async () => {
+    renderRoute();
+    await screen.findByText("Family Space");
+
+    fireEvent.click(screen.getByRole("button", { name: /Create space/ }));
+
+    const dialog = screen.getByRole("dialog");
+    fireEvent.change(within(dialog).getByPlaceholderText(/Orlov Family/), {
+      target: { value: "Roadtrip" },
+    });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Create space" }),
     );
 
-    expect(screen.getByText(/no spaces match|нет spaces/i)).toBeInTheDocument();
+    await waitFor(() => {
+      expect(apiMocks.createSpace).toHaveBeenCalledWith({
+        name: "Roadtrip",
+        description: "",
+        visibility: "PRIVATE",
+      });
+    });
   });
 });

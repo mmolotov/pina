@@ -60,6 +60,19 @@ export interface PhotoDto {
   variants: PhotoVariantDto[];
 }
 
+export interface AlbumRefDto {
+  id: string;
+  name: string;
+}
+
+/**
+ * A geo-tagged photo as returned by `/photos/geo`: the regular marker photo
+ * fields plus the personal albums it belongs to (for the map's album filter).
+ */
+export interface GeoPhotoDto extends PhotoDto {
+  albums: AlbumRefDto[];
+}
+
 export interface PhotoGeoBounds {
   swLat: number;
   swLng: number;
@@ -175,6 +188,9 @@ export interface SpaceDto {
   depth: number;
   inheritMembers: boolean;
   creatorId: string;
+  myRole: SpaceRole | null;
+  memberCount: number;
+  albumCount: number;
   createdAt: string;
   updatedAt: string;
 }

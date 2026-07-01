@@ -44,6 +44,17 @@ and the machine's LAN IP. It proxies `/api` requests to the backend at `http://l
 In backend dev mode, CORS accepts arbitrary origins so login and API calls also work when the
 frontend is opened through the machine's LAN IP.
 
+### Map tiles
+
+The library map (`/app/library?view=map`) renders a Leaflet base map. Tiles default to CARTO
+light/dark basemaps and are overridable at build time so the provider can be swapped or self-hosted
+without code changes:
+
+- `VITE_MAP_TILE_URL_LIGHT` / `VITE_MAP_TILE_URL_DARK` — Leaflet raster XYZ templates (`{s}/{z}/{x}/{y}{r}`)
+- `VITE_MAP_TILE_ATTRIBUTION` — attribution HTML shown on the map
+
+Defaults live in `app/lib/map-config.ts`.
+
 ## Project Structure
 
 ```

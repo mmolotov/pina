@@ -34,6 +34,10 @@ export default [
     route("spaces", "routes/app-spaces.tsx"),
     route("spaces/:spaceId", "routes/app-space-detail.tsx"),
     route(
+      "spaces/:spaceId/albums/:albumId",
+      "routes/app-space-album-detail.tsx",
+    ),
+    route(
       "spaces/:spaceId/albums/:albumId/photos/:photoId",
       "routes/app-space-photo-detail.tsx",
     ),

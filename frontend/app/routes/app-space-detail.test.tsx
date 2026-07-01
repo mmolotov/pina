@@ -1,6 +1,13 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { createRoutesStub } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { I18nProvider } from "~/lib/i18n";
 import AppSpaceDetailRoute, {
   clientAction as appSpaceDetailClientAction,
   clientLoader as appSpaceDetailClientLoader,
@@ -12,17 +19,11 @@ const apiMocks = vi.hoisted(() => ({
   listSubspaces: vi.fn(),
   listSpaceInvites: vi.fn(),
   listSpaceAlbums: vi.fn(),
-  listAllSpaceAlbumPhotos: vi.fn(),
-  listAllPhotos: vi.fn(),
   addSpaceMember: vi.fn(),
   changeSpaceMemberRole: vi.fn(),
   removeSpaceMember: vi.fn(),
   createSubspace: vi.fn(),
   createSpaceAlbum: vi.fn(),
-  updateSpaceAlbum: vi.fn(),
-  deleteSpaceAlbum: vi.fn(),
-  addPhotoToSpaceAlbum: vi.fn(),
-  removePhotoFromSpaceAlbum: vi.fn(),
   createSpaceInvite: vi.fn(),
   revokeSpaceInvite: vi.fn(),
 }));
@@ -32,7 +33,6 @@ vi.mock("~/lib/api", () => ({
   ApiError: class ApiError extends Error {
     status: number;
     code: string;
-
     constructor(status: number, code: string, message: string) {
       super(message);
       this.status = status;
@@ -40,6 +40,32 @@ vi.mock("~/lib/api", () => ({
     }
   },
 }));
+
+const OWNER = {
+  userId: "user-1",
+  userName: "Owner User",
+  userAvatarUrl: null,
+  role: "OWNER",
+  joinedAt: "2026-04-02T10:00:00Z",
+};
+
+function renderDetail() {
+  const Stub = createRoutesStub([
+    {
+      path: "/app/spaces/:spaceId",
+      Component: AppSpaceDetailRoute,
+      action: async ({ params, request }) =>
+        appSpaceDetailClientAction({ params, request } as never),
+      loader: async ({ params }) =>
+        appSpaceDetailClientLoader({ params } as never),
+    },
+  ]);
+  return render(
+    <I18nProvider>
+      <Stub initialEntries={["/app/spaces/space-1"]} />
+    </I18nProvider>,
+  );
+}
 
 describe("AppSpaceDetailRoute", () => {
   beforeEach(() => {
@@ -53,18 +79,13 @@ describe("AppSpaceDetailRoute", () => {
       depth: 0,
       inheritMembers: true,
       creatorId: "user-1",
+      myRole: "OWNER",
+      memberCount: 1,
+      albumCount: 1,
       createdAt: "2026-04-02T10:00:00Z",
       updatedAt: "2026-04-02T10:00:00Z",
     });
-    apiMocks.listSpaceMembers.mockResolvedValue([
-      {
-        userId: "user-1",
-        userName: "Owner User",
-        userAvatarUrl: null,
-        role: "OWNER",
-        joinedAt: "2026-04-02T10:00:00Z",
-      },
-    ]);
+    apiMocks.listSpaceMembers.mockResolvedValue([OWNER]);
     apiMocks.listSubspaces.mockResolvedValue([]);
     apiMocks.listSpaceInvites.mockResolvedValue([
       {
@@ -89,78 +110,46 @@ describe("AppSpaceDetailRoute", () => {
         spaceId: "space-1",
         createdAt: "2026-04-02T10:00:00Z",
         updatedAt: "2026-04-02T10:00:00Z",
+        coverPhotoId: null,
+        coverVariants: [],
+        photoCount: 4,
+        mediaRangeStart: null,
+        mediaRangeEnd: null,
+        latestPhotoAddedAt: null,
+        previewPhotos: [],
       },
     ]);
-    apiMocks.listAllSpaceAlbumPhotos.mockResolvedValue([
-      {
-        id: "photo-2",
-        uploaderId: "user-2",
-        originalFilename: "campfire.jpg",
-        mimeType: "image/jpeg",
-        width: 1400,
-        height: 900,
-        sizeBytes: 220000,
-        personalLibraryId: "library-2",
-        exifData: null,
-        takenAt: null,
-        createdAt: "2026-04-02T10:10:00Z",
-        variants: [],
-      },
-    ]);
-    apiMocks.listAllPhotos.mockResolvedValue([
-      {
-        id: "photo-1",
-        uploaderId: "user-1",
-        originalFilename: "sunset.jpg",
-        mimeType: "image/jpeg",
-        width: 1600,
-        height: 900,
-        sizeBytes: 320000,
-        personalLibraryId: "library-1",
-        exifData: null,
-        takenAt: null,
-        createdAt: "2026-04-02T10:00:00Z",
-        variants: [],
-      },
-    ]);
-    apiMocks.addSpaceMember.mockResolvedValue(undefined);
-    apiMocks.changeSpaceMemberRole.mockResolvedValue(undefined);
-    apiMocks.removeSpaceMember.mockResolvedValue(undefined);
-    apiMocks.createSubspace.mockResolvedValue(undefined);
-    apiMocks.createSpaceAlbum.mockResolvedValue(undefined);
-    apiMocks.updateSpaceAlbum.mockResolvedValue(undefined);
-    apiMocks.deleteSpaceAlbum.mockResolvedValue(undefined);
-    apiMocks.addPhotoToSpaceAlbum.mockResolvedValue(undefined);
-    apiMocks.removePhotoFromSpaceAlbum.mockResolvedValue(undefined);
     apiMocks.createSpaceInvite.mockResolvedValue(undefined);
     apiMocks.revokeSpaceInvite.mockResolvedValue(undefined);
+    apiMocks.changeSpaceMemberRole.mockResolvedValue(undefined);
   });
 
-  it("loads the Space detail and creates a new invite", async () => {
-    const Stub = createRoutesStub([
-      {
-        path: "/app/spaces/:spaceId",
-        Component: AppSpaceDetailRoute,
-        action: async ({ params, request }) =>
-          appSpaceDetailClientAction({ params, request } as never),
-        loader: async ({ params }) =>
-          appSpaceDetailClientLoader({ params } as never),
-      },
-    ]);
+  it("renders the hero and links album cards to the album route", async () => {
+    renderDetail();
 
-    render(<Stub initialEntries={["/app/spaces/space-1"]} />);
+    expect(
+      await screen.findByRole("heading", { name: "Family Space" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "Open album Weekend highlights" }),
+    ).toHaveAttribute("href", "/app/spaces/space-1/albums/album-1");
 
-    expect(await screen.findByText("Family Space")).toBeInTheDocument();
-    expect(screen.getByText("Owner User")).toBeInTheDocument();
-    expect(screen.getByText("JOIN-123")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: /Members/ }));
+    expect(screen.getByText("Just you")).toBeInTheDocument();
+  });
 
-    fireEvent.change(screen.getByLabelText("Invite default role"), {
-      target: { value: "MEMBER" },
-    });
-    fireEvent.change(screen.getByPlaceholderText("Usage limit"), {
+  it("creates an invite from the hero action", async () => {
+    renderDetail();
+    await screen.findByRole("heading", { name: "Family Space" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Invite" }));
+    const dialog = screen.getByRole("dialog");
+    fireEvent.change(within(dialog).getByPlaceholderText(/50/), {
       target: { value: "3" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Create invite" }));
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Create invite" }),
+    );
 
     await waitFor(() => {
       expect(apiMocks.createSpaceInvite).toHaveBeenCalledWith("space-1", {
@@ -171,67 +160,9 @@ describe("AppSpaceDetailRoute", () => {
     });
   });
 
-  it("creates a Space album and adds a personal photo to it", async () => {
-    const Stub = createRoutesStub([
-      {
-        path: "/app/spaces/:spaceId",
-        Component: AppSpaceDetailRoute,
-        action: async ({ params, request }) =>
-          appSpaceDetailClientAction({ params, request } as never),
-        loader: async ({ params }) =>
-          appSpaceDetailClientLoader({ params } as never),
-      },
-    ]);
-
-    render(<Stub initialEntries={["/app/spaces/space-1"]} />);
-
-    expect(
-      (await screen.findAllByText("Weekend highlights")).length,
-    ).toBeGreaterThan(0);
-
-    fireEvent.change(screen.getAllByLabelText("New album name")[0], {
-      target: { value: "Roadtrip" },
-    });
-    fireEvent.change(screen.getAllByLabelText("New album description")[0], {
-      target: { value: "New shared album" },
-    });
-    fireEvent.click(screen.getAllByRole("button", { name: "Create album" })[0]);
-
-    await waitFor(() => {
-      expect(apiMocks.createSpaceAlbum).toHaveBeenCalledWith("space-1", {
-        name: "Roadtrip",
-        description: "New shared album",
-      });
-    });
-
-    fireEvent.change(screen.getAllByLabelText("Photo for album")[0], {
-      target: { value: "photo-1" },
-    });
-    fireEvent.click(screen.getAllByRole("button", { name: "Add photo" })[0]);
-
-    await waitFor(() => {
-      expect(apiMocks.addPhotoToSpaceAlbum).toHaveBeenCalledWith(
-        "space-1",
-        "album-1",
-        "photo-1",
-      );
-    });
-
-    expect(screen.getByRole("link", { name: "Preview" })).toHaveAttribute(
-      "href",
-      "/app/spaces/space-1/albums/album-1/photos/photo-2",
-    );
-  });
-
-  it("changes a member role and revokes an invite through route actions", async () => {
+  it("changes a member role from the members tab", async () => {
     apiMocks.listSpaceMembers.mockResolvedValue([
-      {
-        userId: "user-1",
-        userName: "Owner User",
-        userAvatarUrl: null,
-        role: "OWNER",
-        joinedAt: "2026-04-02T10:00:00Z",
-      },
+      OWNER,
       {
         userId: "user-2",
         userName: "Member User",
@@ -241,22 +172,13 @@ describe("AppSpaceDetailRoute", () => {
       },
     ]);
 
-    const Stub = createRoutesStub([
-      {
-        path: "/app/spaces/:spaceId",
-        Component: AppSpaceDetailRoute,
-        action: async ({ params, request }) =>
-          appSpaceDetailClientAction({ params, request } as never),
-        loader: async ({ params }) =>
-          appSpaceDetailClientLoader({ params } as never),
-      },
-    ]);
+    renderDetail();
+    await screen.findByRole("heading", { name: "Family Space" });
 
-    render(<Stub initialEntries={["/app/spaces/space-1"]} />);
+    fireEvent.click(screen.getByRole("tab", { name: /Members/ }));
+    expect(screen.getByText("Member User")).toBeInTheDocument();
 
-    expect(await screen.findByText("Member User")).toBeInTheDocument();
-
-    fireEvent.change(screen.getByLabelText("Role for Member User"), {
+    fireEvent.change(screen.getByLabelText("Role"), {
       target: { value: "MEMBER" },
     });
 
@@ -267,8 +189,18 @@ describe("AppSpaceDetailRoute", () => {
         "MEMBER",
       );
     });
+  });
+
+  it("revokes an invite from the invites tab", async () => {
+    renderDetail();
+    await screen.findByRole("heading", { name: "Family Space" });
+
+    fireEvent.click(screen.getByRole("tab", { name: /Invites/ }));
+    expect(screen.getByText("JOIN-123")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Revoke" }));
+    const dialog = screen.getByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Revoke" }));
 
     await waitFor(() => {
       expect(apiMocks.revokeSpaceInvite).toHaveBeenCalledWith(
@@ -276,105 +208,5 @@ describe("AppSpaceDetailRoute", () => {
         "invite-1",
       );
     });
-  });
-
-  it("filters local Space detail sections without changing backend data", async () => {
-    apiMocks.listSpaceMembers.mockResolvedValue([
-      {
-        userId: "user-1",
-        userName: "Owner User",
-        userAvatarUrl: null,
-        role: "OWNER",
-        joinedAt: "2026-04-02T10:00:00Z",
-      },
-      {
-        userId: "user-2",
-        userName: "Guest Member",
-        userAvatarUrl: null,
-        role: "VIEWER",
-        joinedAt: "2026-04-02T10:05:00Z",
-      },
-    ]);
-    apiMocks.listSubspaces.mockResolvedValue([
-      {
-        id: "space-child-1",
-        name: "Archive Wing",
-        description: "Old material",
-        avatarUrl: null,
-        visibility: "PRIVATE",
-        parentId: "space-1",
-        depth: 1,
-        inheritMembers: true,
-        creatorId: "user-1",
-        createdAt: "2026-04-02T10:00:00Z",
-        updatedAt: "2026-04-02T10:00:00Z",
-      },
-    ]);
-    apiMocks.listSpaceAlbums.mockResolvedValue([
-      {
-        id: "album-1",
-        name: "Weekend highlights",
-        description: "Shared shots",
-        ownerId: "user-1",
-        personalLibraryId: null,
-        spaceId: "space-1",
-        createdAt: "2026-04-02T10:00:00Z",
-        updatedAt: "2026-04-02T10:00:00Z",
-      },
-      {
-        id: "album-2",
-        name: "Archive album",
-        description: "Older shared material",
-        ownerId: "user-1",
-        personalLibraryId: null,
-        spaceId: "space-1",
-        createdAt: "2026-04-02T10:00:00Z",
-        updatedAt: "2026-04-02T10:00:00Z",
-      },
-    ]);
-    apiMocks.listAllPhotos.mockResolvedValue([
-      {
-        id: "photo-2",
-        uploaderId: "user-2",
-        originalFilename: "campfire.jpg",
-        mimeType: "image/jpeg",
-        width: 1400,
-        height: 900,
-        sizeBytes: 220000,
-        personalLibraryId: "library-2",
-        exifData: null,
-        takenAt: null,
-        createdAt: "2026-04-02T10:10:00Z",
-        variants: [],
-      },
-    ]);
-
-    const Stub = createRoutesStub([
-      {
-        path: "/app/spaces/:spaceId",
-        Component: AppSpaceDetailRoute,
-        action: async ({ params, request }) =>
-          appSpaceDetailClientAction({ params, request } as never),
-        loader: async ({ params }) =>
-          appSpaceDetailClientLoader({ params } as never),
-      },
-    ]);
-
-    render(<Stub initialEntries={["/app/spaces/space-1"]} />);
-
-    expect(await screen.findByText("Guest Member")).toBeInTheDocument();
-    expect(screen.getByText("Archive Wing")).toBeInTheDocument();
-    expect(screen.getByText("Archive album")).toBeInTheDocument();
-
-    fireEvent.change(screen.getByLabelText("Filter Space detail"), {
-      target: { value: "archive" },
-    });
-
-    expect(screen.queryByText("Guest Member")).not.toBeInTheDocument();
-    expect(screen.getByText("Archive Wing")).toBeInTheDocument();
-    expect(screen.getByText("Archive album")).toBeInTheDocument();
-    expect(
-      screen.getByText("No members match the current filter."),
-    ).toBeInTheDocument();
   });
 });

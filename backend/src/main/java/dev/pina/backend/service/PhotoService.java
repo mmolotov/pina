@@ -30,6 +30,7 @@ import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -313,6 +314,36 @@ public class PhotoService {
 		Long totalItems = countGeoItems(whereClause, parameters, pageRequest.needsTotal());
 		Long totalPages = totalItems != null ? PageResult.totalPages(totalItems, effectiveSize) : null;
 		return new PageResult<>(items, pageRequest.page(), effectiveSize, hasNext, totalItems, totalPages);
+	}
+
+	/**
+	 * Album membership for the given photos, restricted to personal albums owned by
+	 * {@code ownerId} (space albums are excluded). Returned as a map keyed by photo
+	 * id; photos with no matching album are simply absent. Used to enrich geo-map
+	 * markers with their album(s) for the map's album filter.
+	 */
+	@Transactional
+	public Map<UUID, List<AlbumRef>> albumsForPhotos(UUID ownerId, Collection<UUID> photoIds) {
+		if (photoIds.isEmpty()) {
+			return Map.of();
+		}
+		List<Object[]> rows = em.createQuery("""
+				SELECT ap.photo.id, a.id, a.name
+				FROM AlbumPhoto ap
+				JOIN ap.album a
+				WHERE ap.photo.id IN :photoIds
+					AND a.space IS NULL
+					AND a.owner.id = :ownerId
+				ORDER BY a.name ASC, a.id ASC
+				""", Object[].class).setParameter("photoIds", photoIds).setParameter("ownerId", ownerId)
+				.getResultList();
+		Map<UUID, List<AlbumRef>> albumsByPhoto = new LinkedHashMap<>();
+		for (Object[] row : rows) {
+			UUID photoId = (UUID) row[0];
+			AlbumRef ref = new AlbumRef((UUID) row[1], (String) row[2]);
+			albumsByPhoto.computeIfAbsent(photoId, key -> new ArrayList<>()).add(ref);
+		}
+		return albumsByPhoto;
 	}
 
 	@Transactional
