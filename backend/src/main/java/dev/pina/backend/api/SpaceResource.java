@@ -76,7 +76,8 @@ public class SpaceResource {
 	@GET
 	public Response list() {
 		var user = userResolver.currentUser();
-		var spaces = spaceService.listByUser(user.id).stream().map(SpaceDto::from).toList();
+		var spaces = spaceService.listByUserWithMeta(user.id).stream()
+				.map(m -> SpaceDto.from(m.space(), m.myRole(), m.memberCount(), m.albumCount())).toList();
 		return Response.ok(spaces).build();
 	}
 
@@ -84,8 +85,9 @@ public class SpaceResource {
 	@Path("/{id}")
 	public Response getById(@PathParam("id") UUID id) {
 		var user = userResolver.currentUser();
-		return requireMember(id, user.id).flatMap(role -> spaceService.findById(id))
-				.map(space -> Response.ok(SpaceDto.from(space)).build()).orElse(ApiErrors.notFound("Space not found"));
+		return spaceService.findByIdWithMeta(id, user.id)
+				.map(m -> Response.ok(SpaceDto.from(m.space(), m.myRole(), m.memberCount(), m.albumCount())).build())
+				.orElse(ApiErrors.notFound("Space not found"));
 	}
 
 	@PUT
@@ -183,7 +185,8 @@ public class SpaceResource {
 	public Response listSubspaces(@PathParam("id") UUID id) {
 		var user = userResolver.currentUser();
 		return requireMember(id, user.id).map(role -> {
-			var subspaces = spaceService.listAccessibleSubspaces(id, user.id).stream().map(SpaceDto::from).toList();
+			var subspaces = spaceService.listAccessibleSubspacesWithMeta(id, user.id).stream()
+					.map(m -> SpaceDto.from(m.space(), m.myRole(), m.memberCount(), m.albumCount())).toList();
 			return Response.ok(subspaces).build();
 		}).orElse(ApiErrors.notFound("Space not found"));
 	}

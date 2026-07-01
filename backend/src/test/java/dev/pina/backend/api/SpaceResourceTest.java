@@ -383,4 +383,48 @@ class SpaceResourceTest {
 		auth().when().get("/api/v1/spaces/00000000-0000-0000-0000-000000000000").then().statusCode(404).body("error",
 				equalTo("not_found"));
 	}
+
+	// ── Role + counts enrichment ──────────────────────────────────────────
+
+	@Test
+	void listAndGetIncludeMyRoleAndCounts() {
+		String ownerToken = registerUser("meta-owner");
+		String id = authAs(ownerToken).body("{\"name\": \"Meta Space\"}").when().post("/api/v1/spaces").then()
+				.statusCode(201).extract().path("id");
+
+		String memberToken = registerUser("meta-member");
+		String memberId = currentUserId(memberToken);
+		authAs(ownerToken).body("{\"userId\": \"" + memberId + "\", \"role\": \"MEMBER\"}").when()
+				.post("/api/v1/spaces/{id}/members", id).then().statusCode(201);
+		authAs(ownerToken).body("{\"name\": \"Album One\"}").when().post("/api/v1/spaces/{id}/albums", id).then()
+				.statusCode(201);
+
+		authAs(ownerToken).when().get("/api/v1/spaces").then().statusCode(200).body("[0].myRole", equalTo("OWNER"))
+				.body("[0].memberCount", equalTo(2)).body("[0].albumCount", equalTo(1));
+
+		authAs(ownerToken).when().get("/api/v1/spaces/{id}", id).then().statusCode(200).body("myRole", equalTo("OWNER"))
+				.body("memberCount", equalTo(2)).body("albumCount", equalTo(1));
+
+		authAs(memberToken).when().get("/api/v1/spaces/{id}", id).then().statusCode(200).body("myRole",
+				equalTo("MEMBER"));
+	}
+
+	@Test
+	void subspacesIncludeInheritedMyRole() {
+		String ownerToken = registerUser("meta-inherit-owner");
+		String parentId = authAs(ownerToken).body("{\"name\": \"Meta Parent\"}").when().post("/api/v1/spaces").then()
+				.statusCode(201).extract().path("id");
+		String childId = authAs(ownerToken).body("{\"name\": \"Meta Child\"}").when()
+				.post("/api/v1/spaces/{id}/subspaces", parentId).then().statusCode(201).extract().path("id");
+
+		String memberToken = registerUser("meta-inherit-member");
+		String memberId = currentUserId(memberToken);
+		authAs(ownerToken).body("{\"userId\": \"" + memberId + "\", \"role\": \"MEMBER\"}").when()
+				.post("/api/v1/spaces/{id}/members", parentId).then().statusCode(201);
+
+		// Member has no direct membership in the child but inherits MEMBER from the
+		// parent.
+		authAs(memberToken).when().get("/api/v1/spaces/{id}/subspaces", parentId).then().statusCode(200)
+				.body("[0].id", equalTo(childId)).body("[0].myRole", equalTo("MEMBER"));
+	}
 }

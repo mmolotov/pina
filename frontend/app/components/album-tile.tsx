@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import {
   Download,
@@ -22,6 +22,7 @@ import {
   getAlbumPaletteIndex,
   type AlbumTileStyle,
 } from "~/lib/album-view-prefs";
+import { useCtxMenu } from "~/lib/use-ctx-menu";
 import type { AlbumDto } from "~/types/api";
 
 type RelativeForms = {
@@ -139,24 +140,6 @@ function useAlbumPreviewThumbs(album: AlbumDto): string[] {
   }, [previews]);
 
   return thumbs;
-}
-
-function useCtxMenu() {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    function onMouseDown(event: MouseEvent) {
-      if (!ref.current?.contains(event.target as Node)) {
-        setOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", onMouseDown);
-    return () => document.removeEventListener("mousedown", onMouseDown);
-  }, [open]);
-
-  return { open, setOpen, ref };
 }
 
 function ContextMenu(props: {

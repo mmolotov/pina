@@ -188,6 +188,9 @@ export interface SpaceDto {
   depth: number;
   inheritMembers: boolean;
   creatorId: string;
+  myRole: SpaceRole | null;
+  memberCount: number;
+  albumCount: number;
   createdAt: string;
   updatedAt: string;
 }
