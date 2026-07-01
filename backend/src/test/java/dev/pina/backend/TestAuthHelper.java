@@ -12,19 +12,23 @@ import java.util.UUID;
  */
 public final class TestAuthHelper {
 
+	private static final Object LOCK = new Object();
+
 	private static String cachedToken;
 
 	private TestAuthHelper() {
 	}
 
-	public static synchronized String getToken() {
-		if (cachedToken == null) {
-			String username = "testuser-" + UUID.randomUUID().toString().substring(0, 8);
-			cachedToken = given().contentType(ContentType.JSON)
-					.body("{\"username\":\"" + username + "\",\"password\":\"testpass123\"}").when()
-					.post("/api/v1/auth/register").then().statusCode(201).extract().path("accessToken");
+	public static String getToken() {
+		synchronized (LOCK) {
+			if (cachedToken == null) {
+				String username = "testuser-" + UUID.randomUUID().toString().substring(0, 8);
+				cachedToken = given().contentType(ContentType.JSON)
+						.body("{\"username\":\"" + username + "\",\"password\":\"testpass123\"}").when()
+						.post("/api/v1/auth/register").then().statusCode(201).extract().path("accessToken");
+			}
+			return cachedToken;
 		}
-		return cachedToken;
 	}
 
 	public static RequestSpecification authenticated() {
