@@ -79,11 +79,28 @@ public class FakeImageAnalysisService extends ImageAnalysisGrpc.ImageAnalysisImp
 	public void getServiceStatus(dev.pina.ml.v1.GetServiceStatusRequest request,
 			StreamObserver<dev.pina.ml.v1.GetServiceStatusResponse> observer) {
 		dev.pina.ml.v1.GetServiceStatusResponse.Builder builder = dev.pina.ml.v1.GetServiceStatusResponse.newBuilder()
-				.setServiceVersion("0.1.0-test").setActiveProfile("default").setReady(true);
-		for (String modelId : new String[]{"clip-test", "text-test", "det-test", "rec-test"}) {
-			builder.addModels(
-					dev.pina.ml.v1.ModelAvailability.newBuilder().setModel(model(modelId)).setAvailable(true));
-		}
+				.setServiceVersion("0.1.0-test").setActiveProfile("default").setReady(true)
+				.setProfile(dev.pina.ml.v1.RuntimeProfile.newBuilder().setName("default").setMaxParallelAnalyses(4)
+						.setAnalysisMaxResolution(1024).addExecutionProviders("CPUExecutionProvider"))
+				.addInferenceSettings(dev.pina.ml.v1.InferenceSetting.newBuilder().setKey("PINA_ML_TAG_TOP_K")
+						.setLabel("tag_top_k").setValue("8"));
+		// clip-test: full license (url + notes present).
+		builder.addModels(dev.pina.ml.v1.ModelAvailability.newBuilder().setModel(model("clip-test"))
+				.setStep(AnalysisStep.IMAGE_EMBEDDING).setAvailable(true).setLicense(
+						dev.pina.ml.v1.License.newBuilder().setSpdx("MIT").setUrl("https://opensource.org/license/mit")
+								.setCommercialUse(true).setAllowBundling(true).setNotes("bundled")));
+		// text-test: license without url/notes (exercises emptyToNull -> null).
+		builder.addModels(dev.pina.ml.v1.ModelAvailability.newBuilder().setModel(model("text-test"))
+				.setStep(AnalysisStep.TAGGING).setAvailable(true).setLicense(dev.pina.ml.v1.License.newBuilder()
+						.setSpdx("Apache-2.0").setCommercialUse(true).setAllowBundling(true)));
+		// det-test: non-commercial, bundling forbidden.
+		builder.addModels(dev.pina.ml.v1.ModelAvailability.newBuilder().setModel(model("det-test"))
+				.setStep(AnalysisStep.FACE_DETECTION).setAvailable(true)
+				.setLicense(dev.pina.ml.v1.License.newBuilder().setSpdx("NonCommercial").setCommercialUse(false)
+						.setAllowBundling(false).setNotes("downloaded")));
+		// rec-test: no license (exercises the hasLicense=false branch).
+		builder.addModels(dev.pina.ml.v1.ModelAvailability.newBuilder().setModel(model("rec-test"))
+				.setStep(AnalysisStep.FACE_EMBEDDING).setAvailable(true));
 		observer.onNext(builder.build());
 		observer.onCompleted();
 	}
