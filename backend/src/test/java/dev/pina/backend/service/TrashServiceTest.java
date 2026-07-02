@@ -51,6 +51,9 @@ class TrashServiceTest {
 	@Inject
 	TrashConfig trashConfig;
 
+	@Inject
+	TrashPurgeJob trashPurgeJob;
+
 	@Test
 	@Transactional
 	void purgeExpiredRemovesOnlyItemsPastRetention() throws IOException {
@@ -90,6 +93,36 @@ class TrashServiceTest {
 		TrashItemDto item = trash.items().get(0);
 		assertEquals(2, item.daysLeft());
 		assertTrue(item.sizeBytes() > 0);
+	}
+
+	@Test
+	@Transactional
+	void listFloorsDaysLeftAtZeroForOverdueItems() throws IOException {
+		User user = TestUserHelper.createUser("trash-overdue");
+		Photo photo = photoService.upload(jpegStream(Color.YELLOW, 67, 67), "overdue.jpg", "image/jpeg", user);
+		photoService.delete(photo.id);
+		// Deleted well past the retention window: purgeAt is already in the past, so
+		// daysLeft is floored at 0.
+		backdate("photos", photo.id, OffsetDateTime.now().minusDays(trashConfig.retentionDays() + 10));
+
+		TrashListDto trash = trashService.list(user, TrashService.TrashKind.ALL, TrashService.TrashSort.SOON);
+		assertEquals(1, trash.items().size());
+		assertEquals(0, trash.items().get(0).daysLeft());
+	}
+
+	@Test
+	@Transactional
+	void purgeJobRemovesExpiredItems() throws IOException {
+		User user = TestUserHelper.createUser("trash-job");
+		Photo expired = photoService.upload(jpegStream(Color.CYAN, 66, 66), "job-expired.jpg", "image/jpeg", user);
+		photoService.delete(expired.id);
+		backdate("photos", expired.id, OffsetDateTime.now().minusDays(trashConfig.retentionDays() + 1));
+
+		// Exercise the scheduled job wrapper itself (delegates to
+		// TrashService.purgeExpired and logs the counts).
+		trashPurgeJob.purgeExpired();
+
+		assertEquals(0, rowCount("photos", expired.id));
 	}
 
 	@Test
