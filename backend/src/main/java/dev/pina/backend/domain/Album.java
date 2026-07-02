@@ -13,9 +13,11 @@ import jakarta.persistence.Table;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 import org.hibernate.annotations.ColumnDefault;
+import org.hibernate.annotations.SQLRestriction;
 
 @Entity
 @Table(name = "albums")
+@SQLRestriction("deleted_at is null")
 public class Album extends PanacheEntityBase {
 
 	@Id
@@ -51,4 +53,8 @@ public class Album extends PanacheEntityBase {
 	@Column(nullable = false, insertable = false)
 	@ColumnDefault("now()")
 	public OffsetDateTime updatedAt;
+
+	/** Soft-delete marker; see {@link Photo#deletedAt}. */
+	@Column
+	public OffsetDateTime deletedAt;
 }

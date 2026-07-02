@@ -17,10 +17,12 @@ import java.util.Optional;
 import java.util.UUID;
 import org.hibernate.annotations.ColumnDefault;
 import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.annotations.SQLRestriction;
 import org.hibernate.type.SqlTypes;
 
 @Entity
 @Table(name = "photos")
+@SQLRestriction("deleted_at is null")
 public class Photo extends PanacheEntityBase {
 
 	// id is assigned manually by PhotoService.upload before persist so that
@@ -72,6 +74,15 @@ public class Photo extends PanacheEntityBase {
 	@Column(nullable = false, updatable = false, insertable = false)
 	@ColumnDefault("now()")
 	public OffsetDateTime createdAt;
+
+	/**
+	 * Soft-delete marker. NULL = live; non-NULL = the instant the photo entered the
+	 * trash. The class-level {@link SQLRestriction} hides trashed rows from every
+	 * normal read; the trash listing, restore, and purge paths use native SQL so
+	 * they can still see them.
+	 */
+	@Column
+	public OffsetDateTime deletedAt;
 
 	@OneToMany(mappedBy = "photo", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
 	public List<PhotoVariant> variants = new ArrayList<>();

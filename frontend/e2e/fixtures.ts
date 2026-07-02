@@ -78,6 +78,11 @@ const emptyPage = {
   totalPages: 0,
 };
 
+const emptyTrash = {
+  items: [],
+  summary: { totalItems: 0, totalBytes: 0, soonestPurgeDays: 0 },
+};
+
 function fulfillJson(route: Route, body: unknown) {
   return route.fulfill({
     status: 200,
@@ -125,6 +130,10 @@ export async function mockCoreApi(page: Page) {
 
     if (path === "/api/v1/spaces") {
       return fulfillJson(route, spacesResponse);
+    }
+
+    if (path === "/api/v1/trash") {
+      return fulfillJson(route, emptyTrash);
     }
 
     return route.fulfill({

@@ -80,8 +80,8 @@ public class AdminSpaceService {
 		long albumCount = (Long) em.createQuery("SELECT COUNT(a) FROM Album a WHERE a.space.id = :sid")
 				.setParameter("sid", space.id).getSingleResult();
 
-		long photoCount = (Long) em
-				.createQuery("SELECT COUNT(DISTINCT ap.photo.id) FROM AlbumPhoto ap WHERE ap.album.space.id = :sid")
+		long photoCount = (Long) em.createQuery(
+				"SELECT COUNT(DISTINCT p.id) FROM AlbumPhoto ap JOIN ap.photo p WHERE ap.album.space.id = :sid AND p.deletedAt IS NULL")
 				.setParameter("sid", space.id).getSingleResult();
 
 		return new AdminSpaceDto(space.id, space.name, space.description, space.visibility,

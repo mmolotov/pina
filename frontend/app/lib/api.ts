@@ -42,6 +42,8 @@ import type {
   SpaceMemberDto,
   SpaceRole,
   SpaceVisibility,
+  TrashItemRef,
+  TrashListDto,
   UserDto,
 } from "~/types/api";
 
@@ -1133,4 +1135,34 @@ export function searchMedia(params: SearchMediaParams) {
     })}`,
     { auth: true },
   );
+}
+
+export function getTrash(params: { kind?: string; sort?: string } = {}) {
+  const query = buildQuery({ kind: params.kind, sort: params.sort });
+  return request<TrashListDto>(`/trash${query ? `?${query}` : ""}`, {
+    auth: true,
+  });
+}
+
+export function restoreTrash(items: TrashItemRef[]) {
+  return request<void>("/trash/restore", {
+    auth: true,
+    method: "POST",
+    body: { items },
+  });
+}
+
+export function purgeTrash(items: TrashItemRef[]) {
+  return request<void>("/trash/purge", {
+    auth: true,
+    method: "POST",
+    body: { items },
+  });
+}
+
+export function emptyTrash() {
+  return request<void>("/trash", {
+    auth: true,
+    method: "DELETE",
+  });
 }

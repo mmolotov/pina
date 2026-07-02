@@ -31,17 +31,6 @@ const routeCopy = {
     status: "app.collection.videos.status",
     currentUse: "app.collection.videos.currentUse",
   },
-  trash: {
-    eyebrow: "app.collection.trash.eyebrow",
-    title: "app.collection.trash.title",
-    description: "app.collection.trash.description",
-    actionLabel: "app.collection.trash.action",
-    actionTo: "/app/library",
-    secondaryActionLabel: "app.collection.trash.secondary",
-    secondaryActionTo: "/app/recent",
-    status: "app.collection.trash.status",
-    currentUse: "app.collection.trash.currentUse",
-  },
 } as const satisfies Record<
   string,
   {

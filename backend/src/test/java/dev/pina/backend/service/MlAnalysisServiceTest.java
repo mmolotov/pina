@@ -229,15 +229,25 @@ class MlAnalysisServiceTest {
 	}
 
 	@Test
-	void deletingPhotoCascadesMlRows() throws IOException {
+	void purgingPhotoCascadesMlRows() throws IOException {
 		Path image = createJpegImage("ml-del", 80, 80, 0x556677);
 		String token = registerUserToken("del");
 		UUID photoId = UUID.fromString(uploadFile(token, image));
 		awaitJob(photoId, AnalysisJobStatus.COMPLETED);
 
+		// Soft-delete moves the photo to the trash but keeps its ML rows, so a
+		// restore brings the analysis back with it.
 		given().header("Authorization", "Bearer " + token).when().delete("/api/v1/photos/{id}", photoId).then()
 				.statusCode(204);
+		QuarkusTransaction.requiringNew().run(() -> {
+			assertTrue(PhotoEmbedding.findById(photoId) != null);
+			assertTrue(!PhotoAnalysisJob.findByPhotoId(photoId).isEmpty());
+		});
 
+		// Purge permanently deletes the photo; PostgreSQL cascades every ML row.
+		given().header("Authorization", "Bearer " + token).contentType(ContentType.JSON)
+				.body("{\"items\":[{\"kind\":\"PHOTO\",\"id\":\"" + photoId + "\"}]}").when()
+				.post("/api/v1/trash/purge").then().statusCode(204);
 		QuarkusTransaction.requiringNew().run(() -> {
 			assertNull(PhotoEmbedding.findById(photoId));
 			assertEquals(0, PhotoTag.listByPhotoId(photoId).size());

@@ -135,7 +135,7 @@ const enMessages = {
   "shell.nav.recent": "Recent",
   "shell.nav.recentCaption": "Fast return",
   "shell.nav.trash": "Trash",
-  "shell.nav.trashCaption": "Retention later",
+  "shell.nav.trashCaption": "Recoverable items",
   "shell.nav.admin": "Admin",
   "shell.nav.adminCaption": "Instance control",
   "shell.quick.allPhotosTitle": "All photos",
@@ -890,15 +890,6 @@ const enMessages = {
   "app.collection.videos.status": "Waiting on video pipeline",
   "app.collection.videos.currentUse":
     "Keep browsing uploads from the library until dedicated playback and video filters land.",
-  "app.collection.trash.eyebrow": "Trash",
-  "app.collection.trash.title": "Retention and recovery",
-  "app.collection.trash.description":
-    "The current product still deletes items directly. A real trash view needs backend retention semantics, restore operations, and eventual deletion windows before it can become a recovery surface.",
-  "app.collection.trash.action": "Return to library",
-  "app.collection.trash.secondary": "Open recent media",
-  "app.collection.trash.status": "Waiting on retention semantics",
-  "app.collection.trash.currentUse":
-    "Deletion still bypasses a recovery bin, so use this route as a stable navigation contract rather than an active restore workflow.",
   "app.collection.limitedMode": "Limited mode",
   "app.collection.routeReadyTitle": "Route contract is ready",
   "app.collection.routeReadyDescription":
@@ -1097,6 +1088,68 @@ const enMessages = {
   "app.spaceDetail.confirmRevokeBody":
     "The link will stop working immediately. This cannot be undone.",
   "app.spaceDetail.confirmRevokeBtn": "Revoke",
+
+  // ── Trash (Корзина) redesign — Pina Albums prototype ────────────────
+  "app.trash.eyebrow": "Trash",
+  "app.trash.title": "Deleted items",
+  "app.trash.lede":
+    "Items are kept for {days} days, then permanently deleted. Until then they still take up storage space.",
+  "app.trash.select": "Select",
+  "app.trash.selectDone": "Done",
+  "app.trash.emptyTrash": "Empty trash",
+  "app.trash.itemOne": "item",
+  "app.trash.itemFew": "items",
+  "app.trash.itemMany": "items",
+  "app.trash.itemOther": "items",
+  "app.trash.dayOne": "day",
+  "app.trash.dayFew": "days",
+  "app.trash.dayMany": "days",
+  "app.trash.dayOther": "days",
+  "app.trash.photoOne": "photo",
+  "app.trash.photoFew": "photos",
+  "app.trash.photoMany": "photos",
+  "app.trash.photoOther": "photos",
+  "app.trash.infoOccupy": "occupy {size}",
+  "app.trash.infoSoonLabel": "next purge",
+  "app.trash.infoInDays": "in {days}",
+  "app.trash.infoNote": "Storage is freed only after permanent deletion.",
+  "app.trash.filterAll": "All",
+  "app.trash.filterPhotos": "Photos",
+  "app.trash.filterAlbums": "Albums",
+  "app.trash.filterAria": "Type",
+  "app.trash.sortAria": "Sort",
+  "app.trash.sortRecent": "Recently deleted",
+  "app.trash.sortSoon": "Disappearing soon",
+  "app.trash.sortName": "By name",
+  "app.trash.countOfTotal": "{shown} of {total}",
+  "app.trash.willDeleteIn": "Will be deleted in {days}",
+  "app.trash.restoreItem": "Restore “{name}”",
+  "app.trash.deleteForeverItem": "Delete “{name}” forever",
+  "app.trash.selectItem": "Select: {name}",
+  "app.trash.selectedItem": "Selected: {name}",
+  "app.trash.bulkSelected": "Selected: {count}",
+  "app.trash.bulkClear": "Clear selection",
+  "app.trash.bulkRestore": "Restore selected",
+  "app.trash.bulkDelete": "Delete forever",
+  "app.trash.bulkAria": "Actions for the selection",
+  "app.trash.toastRestored": "Restored: {count}",
+  "app.trash.toastPurged": "Deleted permanently: {count}",
+  "app.trash.undo": "Undo",
+  "app.trash.confirmEmptyTitle": "Empty trash?",
+  "app.trash.confirmPurgeTitle": "Delete forever?",
+  "app.trash.confirmEmptyBody":
+    "All {count} will be permanently deleted and free up storage space. This action cannot be undone.",
+  "app.trash.confirmPurgeBody":
+    "{count} will be permanently deleted and cannot be recovered.",
+  "app.trash.errorTitle": "Failed to load trash",
+  "app.trash.errorBody":
+    "Something went wrong while loading the trash. Check your connection and try again.",
+  "app.trash.retry": "Retry",
+  "app.trash.emptyTitle": "Trash is empty",
+  "app.trash.emptyBody":
+    "Deleted photos and albums appear here and are kept for {days} days before they disappear forever.",
+  "app.trash.backToLibrary": "Back to library",
+  "app.trash.actionFailed": "Trash action failed.",
 };
 
 export type MessageKey = keyof typeof enMessages;
@@ -1222,7 +1275,7 @@ const ruMessages: Partial<MessageCatalog> = {
   "shell.nav.recent": "Недавнее",
   "shell.nav.recentCaption": "Быстрый возврат",
   "shell.nav.trash": "Корзина",
-  "shell.nav.trashCaption": "Retention позже",
+  "shell.nav.trashCaption": "Восстановление",
   "shell.nav.admin": "Админ",
   "shell.nav.adminCaption": "Управление инстансом",
   "shell.quick.allPhotosTitle": "Все фото",
@@ -1991,15 +2044,6 @@ const ruMessages: Partial<MessageCatalog> = {
   "app.collection.videos.status": "Ожидает video pipeline",
   "app.collection.videos.currentUse":
     "Пока продолжайте просматривать загрузки из библиотеки, пока не появятся отдельный playback и видео-фильтры.",
-  "app.collection.trash.eyebrow": "Корзина",
-  "app.collection.trash.title": "Удержание и восстановление",
-  "app.collection.trash.description":
-    "Текущий продукт всё ещё удаляет элементы напрямую. Реальный trash view требует backend semantics удержания, операций восстановления и окон окончательного удаления, прежде чем он станет поверхностью восстановления.",
-  "app.collection.trash.action": "Вернуться в библиотеку",
-  "app.collection.trash.secondary": "Открыть недавние медиа",
-  "app.collection.trash.status": "Ожидает retention semantics",
-  "app.collection.trash.currentUse":
-    "Удаление пока обходит recovery bin, поэтому используйте этот маршрут как стабильный навигационный контракт, а не как активный workflow восстановления.",
   "app.collection.limitedMode": "Ограниченный режим",
   "app.collection.routeReadyTitle": "Контракт маршрута готов",
   "app.collection.routeReadyDescription":
@@ -2203,6 +2247,69 @@ const ruMessages: Partial<MessageCatalog> = {
   "app.spaceDetail.confirmRevokeBody":
     "Ссылка перестанет работать сразу. Это действие необратимо.",
   "app.spaceDetail.confirmRevokeBtn": "Отозвать",
+
+  // ── Trash (Корзина) redesign — Pina Albums prototype ────────────────
+  "app.trash.eyebrow": "Корзина",
+  "app.trash.title": "Удалённые элементы",
+  "app.trash.lede":
+    "Элементы хранятся {days} дней, затем удаляются навсегда. До очистки они продолжают занимать место в хранилище.",
+  "app.trash.select": "Выбрать",
+  "app.trash.selectDone": "Готово",
+  "app.trash.emptyTrash": "Очистить корзину",
+  "app.trash.itemOne": "элемент",
+  "app.trash.itemFew": "элемента",
+  "app.trash.itemMany": "элементов",
+  "app.trash.itemOther": "элемента",
+  "app.trash.dayOne": "день",
+  "app.trash.dayFew": "дня",
+  "app.trash.dayMany": "дней",
+  "app.trash.dayOther": "дня",
+  "app.trash.photoOne": "фото",
+  "app.trash.photoFew": "фото",
+  "app.trash.photoMany": "фото",
+  "app.trash.photoOther": "фото",
+  "app.trash.infoOccupy": "занимают {size}",
+  "app.trash.infoSoonLabel": "ближайшая очистка",
+  "app.trash.infoInDays": "через {days}",
+  "app.trash.infoNote":
+    "Место освободится только после безвозвратного удаления.",
+  "app.trash.filterAll": "Все",
+  "app.trash.filterPhotos": "Фото",
+  "app.trash.filterAlbums": "Альбомы",
+  "app.trash.filterAria": "Тип",
+  "app.trash.sortAria": "Сортировка",
+  "app.trash.sortRecent": "Недавно удалённые",
+  "app.trash.sortSoon": "Скоро исчезнут",
+  "app.trash.sortName": "По имени",
+  "app.trash.countOfTotal": "{shown} из {total}",
+  "app.trash.willDeleteIn": "Будет удалено через {days}",
+  "app.trash.restoreItem": "Восстановить «{name}»",
+  "app.trash.deleteForeverItem": "Удалить навсегда «{name}»",
+  "app.trash.selectItem": "Выбрать: {name}",
+  "app.trash.selectedItem": "Выбрано: {name}",
+  "app.trash.bulkSelected": "Выбрано: {count}",
+  "app.trash.bulkClear": "Снять выделение",
+  "app.trash.bulkRestore": "Восстановить выбранные",
+  "app.trash.bulkDelete": "Удалить навсегда",
+  "app.trash.bulkAria": "Действия над выбранным",
+  "app.trash.toastRestored": "Восстановлено: {count}",
+  "app.trash.toastPurged": "Удалено навсегда: {count}",
+  "app.trash.undo": "Отменить",
+  "app.trash.confirmEmptyTitle": "Очистить корзину?",
+  "app.trash.confirmPurgeTitle": "Удалить навсегда?",
+  "app.trash.confirmEmptyBody":
+    "Все {count} будут удалены безвозвратно и освободят место в хранилище. Это действие нельзя отменить.",
+  "app.trash.confirmPurgeBody":
+    "{count} будут удалены безвозвратно. Восстановить их будет невозможно.",
+  "app.trash.errorTitle": "Не удалось загрузить корзину",
+  "app.trash.errorBody":
+    "Что-то пошло не так при загрузке корзины. Проверьте соединение и попробуйте снова.",
+  "app.trash.retry": "Повторить",
+  "app.trash.emptyTitle": "Корзина пуста",
+  "app.trash.emptyBody":
+    "Удалённые фото и альбомы появятся здесь и будут храниться {days} дней, прежде чем исчезнут навсегда.",
+  "app.trash.backToLibrary": "Вернуться в библиотеку",
+  "app.trash.actionFailed": "Не удалось выполнить действие в корзине.",
 };
 
 const messageCatalogs: Record<Locale, Partial<MessageCatalog>> = {

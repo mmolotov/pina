@@ -22,6 +22,7 @@ import jakarta.ws.rs.core.StreamingOutput;
 import java.io.InputStream;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -40,7 +41,6 @@ public class AlbumService {
 
 	private static final int MAX_PAGE_SIZE = 100;
 	public static final int MAX_PREVIEW_PHOTOS = 4;
-	private static final String FAVORITE_TARGET_LOCK_NAMESPACE = "favorite-target-album";
 	private static final String SPACE_CONTENT_LOCK_NAMESPACE = "space-content";
 
 	public enum AddPhotoResult {
@@ -152,15 +152,33 @@ public class AlbumService {
 
 	@Transactional
 	public boolean delete(UUID id) {
+		// Soft-delete: the album moves to the trash. Its AlbumPhoto references and
+		// favorites are preserved so a restore reinstates membership; member photos
+		// are never touched (an album holds references, not the photos themselves).
 		Album album = em.find(Album.class, id, LockModeType.PESSIMISTIC_WRITE);
 		if (album == null) {
 			return false;
 		}
-		lockService.lock(FAVORITE_TARGET_LOCK_NAMESPACE, id);
-		favoriteService.removeForTarget(FavoriteTargetType.ALBUM, id);
-		AlbumPhoto.delete("album.id", id);
-		album.delete();
+		album.deletedAt = OffsetDateTime.now();
+		em.flush();
 		return true;
+	}
+
+	/**
+	 * Permanently remove trashed albums. Deletes their favorites and their rows;
+	 * PostgreSQL cascades the album_photos references and share links. Member
+	 * photos are never removed. Native SQL so trashed rows are visible; unknown ids
+	 * are skipped.
+	 */
+	@Transactional
+	public void purge(Collection<UUID> ids) {
+		if (ids.isEmpty()) {
+			return;
+		}
+		List<UUID> idList = List.copyOf(ids);
+		favoriteService.removeForTargets(FavoriteTargetType.ALBUM, idList);
+		em.createNativeQuery("DELETE FROM albums WHERE id IN (:ids)").setParameter("ids", idList).executeUpdate();
+		em.flush();
 	}
 
 	public PageResult<Album> listByOwner(UUID ownerId, PageRequest pageRequest, SortField sort,
@@ -218,7 +236,8 @@ public class AlbumService {
 		String nullsClause = "";
 		String sortExpr = switch (sort) {
 			case NAME -> "a.name";
-			case ITEM_COUNT -> "(SELECT COUNT(ap) FROM AlbumPhoto ap WHERE ap.album.id = a.id)";
+			case ITEM_COUNT ->
+				"(SELECT COUNT(ap) FROM AlbumPhoto ap JOIN ap.photo p WHERE ap.album.id = a.id AND p.deletedAt IS NULL)";
 			case CREATED_AT -> "a.createdAt";
 			case UPDATED_AT -> "a.updatedAt";
 			case NEWEST_PHOTO ->
@@ -292,7 +311,7 @@ public class AlbumService {
 			@SuppressWarnings("unchecked")
 			List<Object[]> autoRows = em
 					.createNativeQuery("SELECT DISTINCT ON (ap.album_id) ap.album_id, ap.photo_id FROM album_photos ap "
-							+ "JOIN photos p ON p.id = ap.photo_id WHERE ap.album_id IN (:ids) "
+							+ "JOIN photos p ON p.id = ap.photo_id WHERE ap.album_id IN (:ids) AND p.deleted_at IS NULL "
 							+ "ORDER BY ap.album_id, COALESCE(p.taken_at, p.created_at) DESC, ap.added_at DESC")
 					.setParameter("ids", autoResolveAlbumIds).getResultList();
 			for (Object[] row : autoRows) {
@@ -311,7 +330,7 @@ public class AlbumService {
 							+ "ROW_NUMBER() OVER (PARTITION BY ap.album_id "
 							+ "ORDER BY COALESCE(p.taken_at, p.created_at) DESC, ap.added_at DESC, ap.photo_id) AS rn "
 							+ "FROM album_photos ap JOIN photos p ON p.id = ap.photo_id "
-							+ "WHERE ap.album_id IN (:ids)) ranked WHERE rn <= :limit ORDER BY album_id, rn")
+							+ "WHERE ap.album_id IN (:ids) AND p.deleted_at IS NULL) ranked WHERE rn <= :limit ORDER BY album_id, rn")
 					.setParameter("ids", nonEmptyAlbumIds).setParameter("limit", MAX_PREVIEW_PHOTOS).getResultList();
 			for (Object[] row : previewRows) {
 				UUID albumId = (UUID) row[0];
@@ -526,7 +545,7 @@ public class AlbumService {
 	public PageResult<Photo> listPhotos(UUID albumId, PageRequest pageRequest) {
 		int effectiveSize = pageRequest.effectiveSize(MAX_PAGE_SIZE);
 		List<UUID> photoIdsWithLookahead = em.createQuery(
-				"SELECT ap.photo.id FROM AlbumPhoto ap WHERE ap.album.id = :albumId ORDER BY ap.addedAt DESC, ap.photo.id DESC",
+				"SELECT p.id FROM AlbumPhoto ap JOIN ap.photo p WHERE ap.album.id = :albumId AND p.deletedAt IS NULL ORDER BY ap.addedAt DESC, p.id DESC",
 				UUID.class).setParameter("albumId", albumId).setFirstResult(pageRequest.offset(MAX_PAGE_SIZE))
 				.setMaxResults(effectiveSize + 1).getResultList();
 		boolean hasNext = photoIdsWithLookahead.size() > effectiveSize;
@@ -535,8 +554,9 @@ public class AlbumService {
 		Long totalItems = null;
 		Long totalPages = null;
 		if (pageRequest.needsTotal()) {
-			totalItems = em.createQuery("SELECT COUNT(ap) FROM AlbumPhoto ap WHERE ap.album.id = :albumId", Long.class)
-					.setParameter("albumId", albumId).getSingleResult();
+			totalItems = em.createQuery(
+					"SELECT COUNT(ap) FROM AlbumPhoto ap JOIN ap.photo p WHERE ap.album.id = :albumId AND p.deletedAt IS NULL",
+					Long.class).setParameter("albumId", albumId).getSingleResult();
 			totalPages = PageResult.totalPages(totalItems, effectiveSize);
 		}
 
