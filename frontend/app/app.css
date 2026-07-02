@@ -6069,6 +6069,8 @@ a {
   height: 1.75rem;
   border-radius: 0.4rem;
   flex-shrink: 0;
+  background: var(--color-surface-subtle);
+  border: 1px solid var(--color-border);
 }
 .ml-err-toggle {
   font-size: 0.6875rem;

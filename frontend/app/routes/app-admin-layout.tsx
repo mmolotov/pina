@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, Outlet, useLocation } from "react-router";
 import {
   Activity,
+  Cpu,
   ExternalLink,
   Gauge,
   HardDrive,
@@ -63,6 +64,7 @@ const ADMIN_NAV: AdminNavItem[] = [
     labelKey: "app.admin.nav.storage",
     Icon: HardDrive,
   },
+  { to: "/app/admin/ml", labelKey: "app.admin.nav.ml", Icon: Cpu },
   { to: "/app/admin/health", labelKey: "app.admin.nav.health", Icon: Activity },
   {
     to: "/app/admin/settings",

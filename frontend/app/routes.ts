@@ -15,6 +15,7 @@ export default [
       route("spaces", "routes/app-admin-spaces.tsx"),
       route("invites", "routes/app-admin-invites.tsx"),
       route("storage", "routes/app-admin-storage.tsx"),
+      route("ml", "routes/app-admin-ml.tsx"),
       route("health", "routes/app-admin-health.tsx"),
       route("settings", "routes/app-admin-settings.tsx"),
     ]),
