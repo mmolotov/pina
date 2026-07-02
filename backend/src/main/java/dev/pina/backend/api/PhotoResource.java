@@ -173,7 +173,6 @@ public class PhotoResource {
 		}
 		return switch (photoService.delete(id)) {
 			case DELETED -> Response.noContent().build();
-			case HAS_REFERENCES -> ApiErrors.conflict("Photo still has album references");
 			case NOT_FOUND -> ApiErrors.notFound("Photo not found");
 		};
 	}

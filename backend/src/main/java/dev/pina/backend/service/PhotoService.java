@@ -1,6 +1,6 @@
 package dev.pina.backend.service;
 
-import dev.pina.backend.domain.AlbumPhoto;
+import dev.pina.backend.domain.FavoriteTargetType;
 import dev.pina.backend.domain.PersonalLibrary;
 import dev.pina.backend.domain.Photo;
 import dev.pina.backend.domain.PhotoVariant;
@@ -39,13 +39,11 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import org.hibernate.Hibernate;
 
 @ApplicationScoped
 public class PhotoService {
 
 	private static final Logger LOG = Logger.getLogger(PhotoService.class.getName());
-	private static final String FAVORITE_TARGET_LOCK_NAMESPACE = "favorite-target-photo";
 	private static final double EARTH_RADIUS_KM = 6371.0088;
 	private static final String GEO_PROJECTION_SELECT = """
 			SELECT new dev.pina.backend.service.PhotoGeoProjection(
@@ -93,9 +91,6 @@ public class PhotoService {
 	TransactionCallbacks transactionCallbacks;
 
 	@Inject
-	TransactionalLockService lockService;
-
-	@Inject
 	MlAnalysisService mlAnalysisService;
 
 	record IngestedFile(Path tempFile, String contentHash, long size) {
@@ -105,7 +100,7 @@ public class PhotoService {
 	}
 
 	public enum DeleteResult {
-		DELETED, NOT_FOUND, HAS_REFERENCES
+		DELETED, NOT_FOUND
 	}
 
 	public Photo upload(InputStream inputStream, String originalFilename, String mimeType, User uploader)
@@ -225,20 +220,42 @@ public class PhotoService {
 
 	@Transactional
 	public DeleteResult delete(UUID id) {
-		lockService.lock(FAVORITE_TARGET_LOCK_NAMESPACE, id);
-		Photo photo = findByIdForDelete(id);
+		// Soft-delete: the photo moves to the trash. Its row, variants, album
+		// references, and favorites are all preserved so a restore fully reinstates
+		// it; storage is untouched until the photo is purged. A photo referenced by
+		// albums can be trashed now — album views and counts hide it via the entity
+		// @SQLRestriction.
+		Photo photo = em.find(Photo.class, id, LockModeType.PESSIMISTIC_WRITE);
 		if (photo == null) {
 			return DeleteResult.NOT_FOUND;
 		}
-		if (AlbumPhoto.find("photo.id", id).count() > 0) {
-			return DeleteResult.HAS_REFERENCES;
+		photo.deletedAt = OffsetDateTime.now();
+		em.flush();
+		return DeleteResult.DELETED;
+	}
+
+	/**
+	 * Permanently remove trashed photos. Deletes their favorites (the favorites
+	 * target is polymorphic with no FK) and their rows; PostgreSQL cascades the
+	 * variants, album references, and ML rows. Stored variant files are removed
+	 * after the transaction commits. Trashed rows are invisible to the entity
+	 * mapping, so this reads and deletes them with native SQL; unknown ids are
+	 * skipped.
+	 */
+	@Transactional
+	public void purge(Collection<UUID> ids) {
+		if (ids.isEmpty()) {
+			return;
 		}
-		List<String> storagePaths = photo.variants.stream().map(variant -> variant.storagePath).toList();
-		favoriteService.removeForTarget(dev.pina.backend.domain.FavoriteTargetType.PHOTO, id);
-		photo.delete();
+		List<UUID> idList = List.copyOf(ids);
+		@SuppressWarnings("unchecked")
+		List<String> storagePaths = em
+				.createNativeQuery("SELECT pv.storage_path FROM photo_variants pv WHERE pv.photo_id IN (:ids)")
+				.setParameter("ids", idList).getResultList();
+		favoriteService.removeForTargets(FavoriteTargetType.PHOTO, idList);
+		em.createNativeQuery("DELETE FROM photos WHERE id IN (:ids)").setParameter("ids", idList).executeUpdate();
 		em.flush();
 		transactionCallbacks.afterCommit(() -> deleteStoredVariants(storagePaths));
-		return DeleteResult.DELETED;
 	}
 
 	public InputStream getVariantFile(Photo photo, VariantType variantType) {
@@ -358,9 +375,10 @@ public class PhotoService {
 				? EARTH_RADIUS_KM + " * abs(radians(p.latitude) - :latRad)"
 				: EARTH_RADIUS_KM + " * acos(least(1.0, greatest(-1.0, :sinLat * sin(radians(p.latitude))"
 						+ " + :cosLat * cos(radians(p.latitude)) * cos(radians(p.longitude) - :lngRad))))";
-		String whereClause = "WHERE p.uploader_id = :uploaderId\n" + "\tAND p.latitude IS NOT NULL\n"
-				+ "\tAND p.longitude IS NOT NULL\n" + "\tAND p.latitude BETWEEN :swLat AND :neLat\n" + "\tAND "
-				+ longitudePredicate + "\n" + "\tAND " + distanceExpression + " <= :radiusKm";
+		String whereClause = "WHERE p.uploader_id = :uploaderId\n" + "\tAND p.deleted_at IS NULL\n"
+				+ "\tAND p.latitude IS NOT NULL\n" + "\tAND p.longitude IS NOT NULL\n"
+				+ "\tAND p.latitude BETWEEN :swLat AND :neLat\n" + "\tAND " + longitudePredicate + "\n" + "\tAND "
+				+ distanceExpression + " <= :radiusKm";
 		Map<String, Object> parameters = new LinkedHashMap<>();
 		parameters.put("uploaderId", uploaderId);
 		parameters.put("swLat", swLat);
@@ -439,14 +457,6 @@ public class PhotoService {
 		} catch (NoSuchAlgorithmException _) {
 			throw new AssertionError("SHA-256 must be available");
 		}
-	}
-
-	private Photo findByIdForDelete(UUID id) {
-		Photo photo = em.find(Photo.class, id, LockModeType.PESSIMISTIC_WRITE);
-		if (photo != null) {
-			Hibernate.initialize(photo.variants);
-		}
-		return photo;
 	}
 
 	private void deleteStoredVariants(List<String> storagePaths) {

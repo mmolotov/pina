@@ -28,27 +28,4 @@ describe("CollectionPlaceholder", () => {
       screen.getAllByRole("link", { name: "Open timeline" })[0],
     ).toHaveAttribute("href", "/app/library?view=photos");
   });
-
-  it("renders trash guidance as a limited retention route", () => {
-    const Stub = createRoutesStub([
-      {
-        path: "/app/trash",
-        Component: () => <CollectionPlaceholder kind="trash" />,
-      },
-    ]);
-
-    render(
-      <I18nProvider>
-        <Stub initialEntries={["/app/trash"]} />
-      </I18nProvider>,
-    );
-
-    expect(screen.getByText("Retention and recovery")).toBeInTheDocument();
-    expect(
-      screen.getByText("Waiting on retention semantics"),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(/Deletion still bypasses a recovery bin/i),
-    ).toBeInTheDocument();
-  });
 });

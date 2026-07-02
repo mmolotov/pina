@@ -140,14 +140,19 @@ class PhotoServiceTest {
 
 	@Test
 	@Transactional
-	void deleteReferencedPhotoReturnsHasReferences() throws IOException {
+	void deleteReferencedPhotoSoftDeletesAndHidesFromAlbum() throws IOException {
 		User user = TestUserHelper.createUser("photo-svc");
 		Photo photo = photoService.upload(jpegStream(Color.PINK, 70, 70), "ref.jpg", "image/jpeg", user);
 		Album album = albumService.create("ref-test", null, user);
 		albumService.addPhoto(album.id, photo.id, user);
 
+		// A referenced photo can now be trashed (soft-delete): it is hidden from
+		// reads and from the album's live photo list, but its row survives.
 		PhotoService.DeleteResult result = photoService.delete(photo.id);
-		assertEquals(PhotoService.DeleteResult.HAS_REFERENCES, result);
+		assertEquals(PhotoService.DeleteResult.DELETED, result);
+		assertTrue(photoService.findById(photo.id).isEmpty());
+		assertTrue(albumService.listPhotos(album.id, new dev.pina.backend.pagination.PageRequest(0, 10, false)).items()
+				.isEmpty());
 	}
 
 	@Test

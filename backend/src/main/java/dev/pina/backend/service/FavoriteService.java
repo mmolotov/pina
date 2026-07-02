@@ -177,7 +177,7 @@ public class FavoriteService {
 				.collect(Collectors.toSet());
 		if (!accessibleSpaceIds.isEmpty()) {
 			accessiblePhotoIds.addAll(Favorite.getEntityManager().createQuery(
-					"SELECT DISTINCT ap.photo.id FROM AlbumPhoto ap WHERE ap.photo.id IN :photoIds AND ap.album.space.id IN :spaceIds",
+					"SELECT DISTINCT p.id FROM AlbumPhoto ap JOIN ap.photo p WHERE p.id IN :photoIds AND ap.album.space.id IN :spaceIds AND p.deletedAt IS NULL",
 					UUID.class).setParameter("photoIds", photoIds).setParameter("spaceIds", accessibleSpaceIds)
 					.getResultStream().collect(Collectors.toSet()));
 		}

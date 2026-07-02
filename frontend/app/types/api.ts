@@ -380,3 +380,32 @@ export interface AdminSettingsDto {
   compressionQuality: number;
   compressionMaxResolution: number;
 }
+
+export type TrashItemKind = "PHOTO" | "ALBUM";
+
+export interface TrashItemDto {
+  kind: TrashItemKind;
+  id: string;
+  name: string;
+  sizeBytes: number;
+  deletedAt: string;
+  purgeAt: string;
+  daysLeft: number;
+  photoCount: number | null;
+}
+
+export interface TrashSummaryDto {
+  totalItems: number;
+  totalBytes: number;
+  soonestPurgeDays: number;
+}
+
+export interface TrashListDto {
+  items: TrashItemDto[];
+  summary: TrashSummaryDto;
+}
+
+export interface TrashItemRef {
+  kind: TrashItemKind;
+  id: string;
+}

@@ -177,7 +177,7 @@ class PhotoResourceTest {
 	}
 
 	@Test
-	void deleteReferencedPhotoReturns409() throws IOException {
+	void deleteReferencedPhotoSoftDeletesAndHidesFromAlbum() throws IOException {
 		Path testImage = createJpegImage("test-photo-ref", 140, 110, 0x225522);
 
 		String photoId = TestAuthHelper.authenticated().multiPart("file", testImage.toFile(), "image/jpeg").when()
@@ -190,8 +190,17 @@ class PhotoResourceTest {
 		TestAuthHelper.authenticated().when().post("/api/v1/albums/{albumId}/photos/{photoId}", albumId, photoId).then()
 				.statusCode(201);
 
-		TestAuthHelper.authenticated().when().delete("/api/v1/photos/{id}", photoId).then().statusCode(409)
-				.body("error", equalTo("conflict"));
+		// A photo referenced by an album can be trashed now (soft-delete, 204) — no
+		// 409. It disappears from the library and from the album (and its count).
+		TestAuthHelper.authenticated().when().delete("/api/v1/photos/{id}", photoId).then().statusCode(204);
+
+		TestAuthHelper.authenticated().when().get("/api/v1/photos/{id}", photoId).then().statusCode(404);
+
+		TestAuthHelper.authenticated().when().get("/api/v1/albums/{id}/photos?needsTotal=true", albumId).then()
+				.statusCode(200).body("items", hasSize(0)).body("totalItems", equalTo(0));
+
+		TestAuthHelper.authenticated().when().get("/api/v1/albums/{id}", albumId).then().statusCode(200)
+				.body("photoCount", equalTo(0));
 	}
 
 	@Test
