@@ -65,15 +65,33 @@ message pina.ml.v1.EmbedTextResponse
   embedding = 1: pina.ml.v1.Embedding
   model = 2: pina.ml.v1.ModelRef
 message pina.ml.v1.GetServiceStatusRequest
+message pina.ml.v1.License
+  spdx = 1: string
+  url = 2: string
+  commercial_use = 3: bool
+  allow_bundling = 4: bool
+  notes = 5: string
+message pina.ml.v1.RuntimeProfile
+  name = 1: string
+  max_parallel_analyses = 2: uint32
+  analysis_max_resolution = 3: uint32
+  execution_providers = 4: repeated string
+message pina.ml.v1.InferenceSetting
+  key = 1: string
+  label = 2: string
+  value = 3: string
 message pina.ml.v1.ModelAvailability
   model = 1: pina.ml.v1.ModelRef
   step = 2: pina.ml.v1.AnalysisStep
   available = 3: bool
+  license = 4: pina.ml.v1.License
 message pina.ml.v1.GetServiceStatusResponse
   service_version = 1: string
   active_profile = 2: string
   ready = 3: bool
   models = 4: repeated pina.ml.v1.ModelAvailability
+  profile = 5: pina.ml.v1.RuntimeProfile
+  inference_settings = 6: repeated pina.ml.v1.InferenceSetting
 service pina.ml.v1.ImageAnalysis
   rpc AnalyzeImage(pina.ml.v1.AnalyzeImageRequest) returns (pina.ml.v1.AnalyzeImageResponse)
   rpc EmbedText(pina.ml.v1.EmbedTextRequest) returns (pina.ml.v1.EmbedTextResponse)

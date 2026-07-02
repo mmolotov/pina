@@ -60,13 +60,34 @@ public class AdminMlService {
 			List<AdminMlStatusDto.Model> models = response.getModelsList().stream()
 					.map(m -> new AdminMlStatusDto.Model(m.getStep().name().toLowerCase(Locale.ROOT),
 							m.getModel().getModelId(), m.getModel().getVersion(), m.getModel().getRuntime(),
-							m.getAvailable(), null))
+							m.getAvailable(), toLicense(m)))
 					.toList();
+			AdminMlStatusDto.Profile profile = response.hasProfile()
+					? new AdminMlStatusDto.Profile(response.getProfile().getName(),
+							response.getProfile().getMaxParallelAnalyses(),
+							response.getProfile().getAnalysisMaxResolution(),
+							List.copyOf(response.getProfile().getExecutionProvidersList()))
+					: null;
+			List<AdminMlStatusDto.InferenceSetting> inference = response.getInferenceSettingsList().stream()
+					.map(s -> new AdminMlStatusDto.InferenceSetting(s.getKey(), s.getLabel(), s.getValue())).toList();
 			return new AdminMlStatusDto(true, true, response.getServiceVersion(), response.getActiveProfile(),
-					response.getReady(), models, null, List.of());
+					response.getReady(), models, profile, inference);
 		} catch (RuntimeException _) {
 			return AdminMlStatusDto.unreachable();
 		}
+	}
+
+	private static AdminMlStatusDto.License toLicense(dev.pina.ml.v1.ModelAvailability model) {
+		if (!model.hasLicense()) {
+			return null;
+		}
+		dev.pina.ml.v1.License license = model.getLicense();
+		return new AdminMlStatusDto.License(license.getSpdx(), emptyToNull(license.getUrl()),
+				license.getCommercialUse(), license.getAllowBundling(), emptyToNull(license.getNotes()));
+	}
+
+	private static String emptyToNull(String value) {
+		return value == null || value.isBlank() ? null : value;
 	}
 
 	public AdminMlDto.QueueCounts queueCounts() {

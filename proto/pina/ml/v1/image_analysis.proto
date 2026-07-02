@@ -94,12 +94,43 @@ message EmbedTextResponse {
 message GetServiceStatusRequest {
 }
 
+// Redistribution and usage terms for a model's underlying weights, surfaced so
+// operators can see which artifacts are non-commercial or must not be bundled.
+message License {
+  // SPDX identifier, e.g. "MIT", "Apache-2.0", or "NonCommercial".
+  string spdx = 1;
+  string url = 2;
+  bool commercial_use = 3;
+  bool allow_bundling = 4;
+  string notes = 5;
+}
+
+// Active runtime profile detail: model-selection limits plus the ordered ONNX
+// execution providers. Set via environment and applied on service restart.
+message RuntimeProfile {
+  string name = 1;
+  uint32 max_parallel_analyses = 2;
+  uint32 analysis_max_resolution = 3;
+  repeated string execution_providers = 4;
+}
+
+// One read-only inference knob sourced from a PINA_ML_* setting.
+message InferenceSetting {
+  // Environment variable name, e.g. "PINA_ML_TAG_TOP_K".
+  string key = 1;
+  // Short human label, e.g. "tag_top_k".
+  string label = 2;
+  string value = 3;
+}
+
 message ModelAvailability {
   ModelRef model = 1;
   // The pipeline step this model serves.
   AnalysisStep step = 2;
   // True when the manifest resolved and the artifact is cached and loadable.
   bool available = 3;
+  // Redistribution/usage terms of the underlying weights.
+  License license = 4;
 }
 
 message GetServiceStatusResponse {
@@ -109,6 +140,10 @@ message GetServiceStatusResponse {
   // True when every model required by the active profile is available.
   bool ready = 3;
   repeated ModelAvailability models = 4;
+  // Active profile detail: selection limits and execution providers.
+  RuntimeProfile profile = 5;
+  // Read-only PINA_ML_* inference knobs, for operator visibility.
+  repeated InferenceSetting inference_settings = 6;
 }
 
 // Image analysis service for the backend-to-ML boundary. Photos and, later,
