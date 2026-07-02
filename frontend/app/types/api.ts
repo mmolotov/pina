@@ -381,6 +381,25 @@ export interface AdminSettingsDto {
   compressionMaxResolution: number;
 }
 
+export interface AdminOverviewDto {
+  totalUsers: number;
+  activeUsers: number;
+  adminUsers: number;
+  totalSpaces: number;
+  activeInvites: number;
+  totalPhotos: number;
+  totalVariants: number;
+  totalStorageBytes: number;
+  filesystemUsedBytes: number;
+  filesystemAvailableBytes: number;
+  storageProvider: string;
+  status: string;
+  version: string;
+  databaseConnected: boolean;
+  jvmHeapUsedBytes: number;
+  jvmHeapMaxBytes: number;
+}
+
 export type TrashItemKind = "PHOTO" | "ALBUM";
 
 export interface TrashItemDto {

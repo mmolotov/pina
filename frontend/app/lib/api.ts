@@ -12,6 +12,7 @@ import type {
   AlbumSortDirection,
   AlbumSortField,
   AdminInviteLinkDto,
+  AdminOverviewDto,
   AdminHealthDto,
   AdminSettingsDto,
   AdminSpaceDto,
@@ -495,6 +496,10 @@ export function updateAdminSettings(input: {
 
 export function getAdminStorageSummary() {
   return request<AdminStorageSummaryDto>("/admin/storage", { auth: true });
+}
+
+export function getAdminOverview() {
+  return request<AdminOverviewDto>("/admin/overview", { auth: true });
 }
 
 export function listAdminStorageUsers(params: {

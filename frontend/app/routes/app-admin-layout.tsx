@@ -3,6 +3,7 @@ import { Link, Outlet, useLocation } from "react-router";
 import {
   Activity,
   ExternalLink,
+  Gauge,
   HardDrive,
   Layers,
   Link2,
@@ -29,9 +30,16 @@ interface AdminNavItem {
   labelKey: MessageKey;
   Icon: LucideIcon;
   countKey?: CountKey;
+  exact?: boolean;
 }
 
 const ADMIN_NAV: AdminNavItem[] = [
+  {
+    to: "/app/admin",
+    labelKey: "app.admin.nav.overview",
+    Icon: Gauge,
+    exact: true,
+  },
   {
     to: "/app/admin/users",
     labelKey: "app.admin.nav.users",
@@ -68,6 +76,12 @@ type Counts = Record<CountKey, number | null>;
 
 function isInstanceAdmin(role: string | null | undefined) {
   return role === "ADMIN";
+}
+
+function isNavActive(pathname: string, item: AdminNavItem) {
+  return item.exact
+    ? pathname === item.to || pathname === `${item.to}/`
+    : pathname.startsWith(item.to);
 }
 
 function AdminHeader({ activeLabel }: { activeLabel: string }) {
@@ -205,7 +219,7 @@ export default function AppAdminLayoutRoute() {
 
   const activeItem = useMemo(
     () =>
-      ADMIN_NAV.find((item) => location.pathname.startsWith(item.to)) ??
+      ADMIN_NAV.find((item) => isNavActive(location.pathname, item)) ??
       ADMIN_NAV[0]!,
     [location.pathname],
   );
@@ -272,7 +286,7 @@ export default function AppAdminLayoutRoute() {
         <nav aria-label={t("app.admin.title")} className="adm-nav">
           <div className="adm-nav-panel">
             {ADMIN_NAV.map((item) => {
-              const active = location.pathname.startsWith(item.to);
+              const active = isNavActive(location.pathname, item);
               const count = item.countKey ? counts[item.countKey] : null;
               return (
                 <Link
