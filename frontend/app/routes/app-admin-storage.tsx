@@ -1,12 +1,15 @@
 import type { Route } from "./+types/app-admin-storage";
-import { Link, useSearchParams } from "react-router";
+import { useState } from "react";
+import { useSearchParams } from "react-router";
 import {
-  EmptyHint,
-  InlineMessage,
-  PageHeader,
-  Panel,
-  SurfaceCard,
-} from "~/components/ui";
+  AlertTriangle,
+  Database,
+  HardDrive,
+  ImageIcon,
+  Server,
+} from "lucide-react";
+import { ABar, AEmpty, APager } from "~/components/admin/ui";
+import { avatarIndex, fmtBytes, fmtNum, initials } from "~/lib/admin-format";
 import {
   getAdminStorageSummary,
   isBackendUnavailableError,
@@ -14,7 +17,7 @@ import {
   listAdminStorageUsers,
 } from "~/lib/api";
 import { toErrorMessage } from "~/lib/errors";
-import { formatBytes, formatRelativeCount } from "~/lib/format";
+import { getActiveLocale, translateMessage, useI18n } from "~/lib/i18n";
 import type {
   AdminSpaceStorageDto,
   AdminStorageSummaryDto,
@@ -26,9 +29,8 @@ interface AdminStorageLoaderData {
   summary: AdminStorageSummaryDto | null;
   summaryError: string | null;
   usersPage: PageResponse<AdminUserStorageDto>;
-  usersError: string | null;
   spacesPage: PageResponse<AdminSpaceStorageDto>;
-  spacesError: string | null;
+  loadError: string | null;
 }
 
 const EMPTY_USER_PAGE: PageResponse<AdminUserStorageDto> = {
@@ -60,12 +62,15 @@ export async function clientLoader({
   const spacePage =
     Number.isFinite(spacePageParam) && spacePageParam >= 0 ? spacePageParam : 0;
 
+  const fallback = translateMessage(
+    getActiveLocale(),
+    "app.admin.storage.loadFailed",
+  );
   let summary: AdminStorageSummaryDto | null = null;
   let summaryError: string | null = null;
   let usersPage = EMPTY_USER_PAGE;
-  let usersError: string | null = null;
   let spacesPage = EMPTY_SPACE_PAGE;
-  let spacesError: string | null = null;
+  let loadError: string | null = null;
 
   try {
     summary = await getAdminStorageSummary();
@@ -73,8 +78,7 @@ export async function clientLoader({
     if (isBackendUnavailableError(error)) {
       throw error;
     }
-
-    summaryError = toErrorMessage(error, "Failed to load storage summary.");
+    summaryError = toErrorMessage(error, fallback);
   }
 
   try {
@@ -87,11 +91,7 @@ export async function clientLoader({
     if (isBackendUnavailableError(error)) {
       throw error;
     }
-
-    usersError = toErrorMessage(
-      error,
-      "Failed to load user storage breakdown.",
-    );
+    loadError = toErrorMessage(error, fallback);
   }
 
   try {
@@ -104,21 +104,10 @@ export async function clientLoader({
     if (isBackendUnavailableError(error)) {
       throw error;
     }
-
-    spacesError = toErrorMessage(
-      error,
-      "Failed to load Space storage breakdown.",
-    );
+    loadError = toErrorMessage(error, fallback);
   }
 
-  return {
-    summary,
-    summaryError,
-    usersPage,
-    usersError,
-    spacesPage,
-    spacesError,
-  };
+  return { summary, summaryError, usersPage, spacesPage, loadError };
 }
 
 export function meta(_: Route.MetaArgs) {
@@ -128,255 +117,270 @@ export function meta(_: Route.MetaArgs) {
 export default function AppAdminStorageRoute({
   loaderData,
 }: Route.ComponentProps) {
+  const { t } = useI18n();
   const [searchParams, setSearchParams] = useSearchParams();
-  const summary = loaderData.summary;
-  const isEmptyStorage =
-    summary != null &&
-    summary.totalPhotos === 0 &&
-    loaderData.usersPage.items.length === 0 &&
-    loaderData.spacesPage.items.length === 0;
+  const [tab, setTab] = useState<"users" | "spaces">("users");
 
-  function updatePage(key: "userPage" | "spacePage", page: number) {
+  const summary = loaderData.summary;
+  const usersPage = loaderData.usersPage;
+  const spacesPage = loaderData.spacesPage;
+
+  const fsTotal = summary
+    ? summary.filesystemUsedBytes + summary.filesystemAvailableBytes
+    : 0;
+  const fsPct =
+    summary && fsTotal > 0
+      ? Math.round((summary.filesystemUsedBytes / fsTotal) * 100)
+      : 0;
+
+  const maxUserBytes = Math.max(
+    1,
+    ...usersPage.items.map((row) => row.storageBytesUsed),
+  );
+  const maxSpacePhotos = Math.max(
+    1,
+    ...spacesPage.items.map((row) => row.photoCount),
+  );
+
+  const kpis = summary
+    ? [
+        {
+          label: t("app.admin.storage.kpiProvider"),
+          value: summary.storageProvider,
+          Icon: Server,
+          wide: true,
+        },
+        {
+          label: t("app.admin.storage.kpiPhotos"),
+          value: fmtNum(summary.totalPhotos),
+          Icon: ImageIcon,
+        },
+        {
+          label: t("app.admin.storage.kpiVariants"),
+          value: fmtNum(summary.totalVariants),
+          Icon: Database,
+        },
+        {
+          label: t("app.admin.storage.kpiLogical"),
+          value: fmtBytes(summary.totalStorageBytes),
+          Icon: HardDrive,
+        },
+      ]
+    : [];
+
+  function goToPage(param: "userPage" | "spacePage", next: number) {
     const nextParams = new URLSearchParams(searchParams);
-    if (page <= 0) {
-      nextParams.delete(key);
+    if (next <= 0) {
+      nextParams.delete(param);
     } else {
-      nextParams.set(key, String(page));
+      nextParams.set(param, String(next));
     }
     setSearchParams(nextParams, { replace: true });
   }
 
   return (
-    <div className="space-y-6">
-      <PageHeader
-        actions={
-          <>
-            <Link className="button-secondary" to="/app/admin/health">
-              Open health
-            </Link>
-            <Link className="button-secondary" to="/app/admin/settings">
-              Open settings
-            </Link>
-          </>
-        }
-        description="Operational overview of stored media volume, filesystem capacity, and owner-level storage distribution across users and Spaces."
-        eyebrow="Admin Storage"
-        title="Storage operations"
-      />
-
-      {loaderData.summaryError ? (
-        <InlineMessage tone="danger">{loaderData.summaryError}</InlineMessage>
-      ) : null}
+    <>
+      <div className="adm-section-head">
+        <div>
+          <h2 className="adm-section-title">{t("app.admin.storage.title")}</h2>
+          <p className="adm-section-sub">{t("app.admin.storage.sub")}</p>
+        </div>
+      </div>
 
       {summary ? (
-        isEmptyStorage ? (
-          <Panel className="p-6">
-            <p className="eyebrow">Storage summary</p>
-            <h2 className="mt-2 text-2xl font-semibold tracking-tight">
-              No stored media yet
-            </h2>
-            <EmptyHint className="mt-5 px-5 py-6 leading-7">
-              The instance has not accumulated uploaded photos or derived
-              variants yet. Storage breakdowns remain available and should stay
-              empty until new uploads arrive.
-            </EmptyHint>
-          </Panel>
-        ) : (
-          <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-            <SurfaceCard className="rounded-2xl p-4">
-              <p className="text-xs uppercase tracking-[0.24em] text-[var(--color-text-muted)]">
-                Provider
-              </p>
-              <p className="mt-3 text-lg font-semibold tracking-tight">
-                {summary.storageProvider}
-              </p>
-            </SurfaceCard>
-            <SurfaceCard className="rounded-2xl p-4">
-              <p className="text-xs uppercase tracking-[0.24em] text-[var(--color-text-muted)]">
-                Photos
-              </p>
-              <p className="mt-3 text-lg font-semibold tracking-tight">
-                {summary.totalPhotos}
-              </p>
-            </SurfaceCard>
-            <SurfaceCard className="rounded-2xl p-4">
-              <p className="text-xs uppercase tracking-[0.24em] text-[var(--color-text-muted)]">
-                Variants
-              </p>
-              <p className="mt-3 text-lg font-semibold tracking-tight">
-                {summary.totalVariants}
-              </p>
-            </SurfaceCard>
-            <SurfaceCard className="rounded-2xl p-4">
-              <p className="text-xs uppercase tracking-[0.24em] text-[var(--color-text-muted)]">
-                Media bytes
-              </p>
-              <p className="mt-3 text-lg font-semibold tracking-tight">
-                {formatBytes(summary.totalStorageBytes)}
-              </p>
-            </SurfaceCard>
-            <SurfaceCard className="rounded-2xl p-4">
-              <p className="text-xs uppercase tracking-[0.24em] text-[var(--color-text-muted)]">
-                FS available
-              </p>
-              <p className="mt-3 text-lg font-semibold tracking-tight">
-                {formatBytes(summary.filesystemAvailableBytes)}
-              </p>
-            </SurfaceCard>
-          </section>
-        )
-      ) : null}
-
-      <section className="grid gap-6 xl:grid-cols-2">
-        <Panel className="p-6">
-          <div className="flex items-end justify-between gap-4">
-            <div>
-              <p className="eyebrow">Users</p>
-              <h2 className="mt-2 text-2xl font-semibold tracking-tight">
-                Per-user storage
-              </h2>
-              <p className="mt-2 text-sm text-[var(--color-text-muted)]">
-                {(loaderData.usersPage.totalItems ??
-                  loaderData.usersPage.items.length) ||
-                  0}{" "}
-                matching users · page {loaderData.usersPage.page + 1}
-              </p>
-            </div>
-            <div className="flex gap-2">
-              <button
-                className="button-secondary"
-                disabled={loaderData.usersPage.page === 0}
-                onClick={() =>
-                  updatePage("userPage", loaderData.usersPage.page - 1)
-                }
-                type="button"
-              >
-                Previous
-              </button>
-              <button
-                className="button-secondary"
-                disabled={!loaderData.usersPage.hasNext}
-                onClick={() =>
-                  updatePage("userPage", loaderData.usersPage.page + 1)
-                }
-                type="button"
-              >
-                Next
-              </button>
-            </div>
+        <>
+          <div className="adm-kpi-grid">
+            {kpis.map((kpi) => (
+              <div className="adm-kpi" key={kpi.label}>
+                <span className="adm-kpi-label">
+                  <kpi.Icon size={14} /> {kpi.label}
+                </span>
+                <span
+                  className="adm-kpi-value"
+                  style={
+                    kpi.wide ? { fontSize: "1rem", lineHeight: 1.3 } : undefined
+                  }
+                >
+                  {kpi.value}
+                </span>
+              </div>
+            ))}
           </div>
 
-          {loaderData.usersError ? (
-            <InlineMessage className="mt-6" tone="danger">
-              {loaderData.usersError}
-            </InlineMessage>
-          ) : loaderData.usersPage.items.length === 0 ? (
-            <EmptyHint className="mt-6 px-5 py-6 leading-7">
-              No user storage rows are available for the current page.
-            </EmptyHint>
-          ) : (
-            <div className="mt-6 space-y-3">
-              {loaderData.usersPage.items.map((row) => (
-                <SurfaceCard className="rounded-2xl p-4" key={row.userId}>
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="min-w-0">
-                      <h3 className="truncate text-lg font-semibold tracking-tight">
-                        {row.userName}
-                      </h3>
-                      <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-                        {formatRelativeCount(row.photoCount, "photo", "photos")}{" "}
-                        ·{" "}
-                        {formatRelativeCount(
-                          row.variantCount,
-                          "variant",
-                          "variants",
+          <div className="adm-card">
+            <div className="adm-bar-label" style={{ fontSize: ".875rem" }}>
+              <span style={{ fontWeight: 600 }}>
+                {t("app.admin.storage.fsTitle")}
+              </span>
+              <span className="muted">
+                {t("app.admin.storage.fsUsage", {
+                  used: fmtBytes(summary.filesystemUsedBytes),
+                  total: fmtBytes(fsTotal),
+                  free: fmtBytes(summary.filesystemAvailableBytes),
+                })}
+              </span>
+            </div>
+            <ABar pct={fsPct} />
+            {fsPct > 85 ? (
+              <div
+                className="adm-inline-error"
+                style={{ marginTop: ".875rem" }}
+              >
+                <AlertTriangle size={16} />
+                <span>{t("app.admin.storage.fsFull", { pct: fsPct })}</span>
+              </div>
+            ) : null}
+          </div>
+        </>
+      ) : (
+        <AEmpty
+          icon={<HardDrive size={22} />}
+          text={loaderData.summaryError ?? t("app.admin.storage.emptyText")}
+          title={t("app.admin.storage.emptyTitle")}
+        />
+      )}
+
+      <div className="adm-toolbar">
+        <div className="adm-seg" role="tablist">
+          <button
+            aria-selected={tab === "users"}
+            className={tab === "users" ? "on" : ""}
+            onClick={() => setTab("users")}
+            role="tab"
+            type="button"
+          >
+            {t("app.admin.storage.tabUsers")}
+          </button>
+          <button
+            aria-selected={tab === "spaces"}
+            className={tab === "spaces" ? "on" : ""}
+            onClick={() => setTab("spaces")}
+            role="tab"
+            type="button"
+          >
+            {t("app.admin.storage.tabSpaces")}
+          </button>
+        </div>
+      </div>
+
+      <div className="adm-table-wrap">
+        {tab === "users" ? (
+          <table className="adm-table">
+            <thead>
+              <tr>
+                <th>{t("app.admin.storage.colUser")}</th>
+                <th className="num">{t("app.admin.storage.colPhotos")}</th>
+                <th className="num">{t("app.admin.storage.colVariants")}</th>
+                <th className="num">{t("app.admin.storage.colVolume")}</th>
+                <th>{t("app.admin.storage.colShare")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {usersPage.items.length === 0 ? (
+                <tr>
+                  <td colSpan={5} style={{ padding: 0 }}>
+                    <AEmpty
+                      icon={<HardDrive size={22} />}
+                      text={t("app.admin.storage.emptyText")}
+                      title={t("app.admin.storage.emptyTitle")}
+                    />
+                  </td>
+                </tr>
+              ) : (
+                usersPage.items.map((row) => (
+                  <tr key={row.userId}>
+                    <td>
+                      <div className="adm-cell-user">
+                        <span
+                          className="adm-avatar"
+                          data-av={avatarIndex(row.userId)}
+                        >
+                          {initials(row.userName)}
+                        </span>
+                        <span className="adm-cell-name">{row.userName}</span>
+                      </div>
+                    </td>
+                    <td className="num">{fmtNum(row.photoCount)}</td>
+                    <td className="num">{fmtNum(row.variantCount)}</td>
+                    <td className="num" style={{ fontWeight: 600 }}>
+                      {fmtBytes(row.storageBytesUsed)}
+                    </td>
+                    <td>
+                      <ABar
+                        danger={false}
+                        mini
+                        pct={Math.round(
+                          (row.storageBytesUsed / maxUserBytes) * 100,
                         )}
-                      </p>
-                    </div>
-                    <p className="text-sm font-semibold">
-                      {formatBytes(row.storageBytesUsed)}
-                    </p>
-                  </div>
-                </SurfaceCard>
-              ))}
-            </div>
-          )}
-        </Panel>
-
-        <Panel className="p-6">
-          <div className="flex items-end justify-between gap-4">
-            <div>
-              <p className="eyebrow">Spaces</p>
-              <h2 className="mt-2 text-2xl font-semibold tracking-tight">
-                Per-Space media activity
-              </h2>
-              <p className="mt-2 text-sm text-[var(--color-text-muted)]">
-                {(loaderData.spacesPage.totalItems ??
-                  loaderData.spacesPage.items.length) ||
-                  0}{" "}
-                matching Spaces · page {loaderData.spacesPage.page + 1}
-              </p>
-            </div>
-            <div className="flex gap-2">
-              <button
-                className="button-secondary"
-                disabled={loaderData.spacesPage.page === 0}
-                onClick={() =>
-                  updatePage("spacePage", loaderData.spacesPage.page - 1)
-                }
-                type="button"
-              >
-                Previous
-              </button>
-              <button
-                className="button-secondary"
-                disabled={!loaderData.spacesPage.hasNext}
-                onClick={() =>
-                  updatePage("spacePage", loaderData.spacesPage.page + 1)
-                }
-                type="button"
-              >
-                Next
-              </button>
-            </div>
-          </div>
-
-          {loaderData.spacesError ? (
-            <InlineMessage className="mt-6" tone="danger">
-              {loaderData.spacesError}
-            </InlineMessage>
-          ) : loaderData.spacesPage.items.length === 0 ? (
-            <EmptyHint className="mt-6 px-5 py-6 leading-7">
-              No Space storage rows are available for the current page.
-            </EmptyHint>
-          ) : (
-            <div className="mt-6 space-y-3">
-              {loaderData.spacesPage.items.map((row) => (
-                <SurfaceCard className="rounded-2xl p-4" key={row.spaceId}>
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="min-w-0">
-                      <h3 className="truncate text-lg font-semibold tracking-tight">
-                        {row.spaceName}
-                      </h3>
-                      <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-                        {formatRelativeCount(row.albumCount, "album", "albums")}{" "}
-                        ·{" "}
-                        {formatRelativeCount(row.photoCount, "photo", "photos")}
-                      </p>
-                    </div>
-                    <Link
-                      className="button-secondary"
-                      to={`/app/admin/spaces?space=${row.spaceId}`}
-                    >
-                      Inspect
-                    </Link>
-                  </div>
-                </SurfaceCard>
-              ))}
-            </div>
-          )}
-        </Panel>
-      </section>
-    </div>
+                      />
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        ) : (
+          <table className="adm-table">
+            <thead>
+              <tr>
+                <th>{t("app.admin.storage.colSpace")}</th>
+                <th className="num">{t("app.admin.storage.colAlbums")}</th>
+                <th className="num">{t("app.admin.storage.colPhotos")}</th>
+                <th>{t("app.admin.storage.colShare")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {spacesPage.items.length === 0 ? (
+                <tr>
+                  <td colSpan={4} style={{ padding: 0 }}>
+                    <AEmpty
+                      icon={<HardDrive size={22} />}
+                      text={t("app.admin.storage.emptyText")}
+                      title={t("app.admin.storage.emptyTitle")}
+                    />
+                  </td>
+                </tr>
+              ) : (
+                spacesPage.items.map((row) => (
+                  <tr key={row.spaceId}>
+                    <td>
+                      <div style={{ fontWeight: 600 }}>{row.spaceName}</div>
+                    </td>
+                    <td className="num">{fmtNum(row.albumCount)}</td>
+                    <td className="num" style={{ fontWeight: 600 }}>
+                      {fmtNum(row.photoCount)}
+                    </td>
+                    <td>
+                      <ABar
+                        danger={false}
+                        mini
+                        pct={Math.round(
+                          (row.photoCount / maxSpacePhotos) * 100,
+                        )}
+                      />
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        )}
+        {tab === "users" ? (
+          <APager
+            onPage={(next) => goToPage("userPage", next - 1)}
+            page={usersPage.page + 1}
+            pageCount={usersPage.totalPages ?? 1}
+            total={usersPage.totalItems ?? usersPage.items.length}
+          />
+        ) : (
+          <APager
+            onPage={(next) => goToPage("spacePage", next - 1)}
+            page={spacesPage.page + 1}
+            pageCount={spacesPage.totalPages ?? 1}
+            total={spacesPage.totalItems ?? spacesPage.items.length}
+          />
+        )}
+      </div>
+    </>
   );
 }

@@ -1,143 +1,96 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { createRoutesStub } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { I18nProvider } from "~/lib/i18n";
 import AppAdminStorageRoute, {
-  clientLoader as appAdminStorageClientLoader,
+  clientLoader as storageClientLoader,
 } from "~/routes/app-admin-storage";
 
 const apiMocks = vi.hoisted(() => ({
   getAdminStorageSummary: vi.fn(),
   listAdminStorageSpaces: vi.fn(),
   listAdminStorageUsers: vi.fn(),
+  isBackendUnavailableError: vi.fn(() => false),
 }));
 
 vi.mock("~/lib/api", () => ({
   ...apiMocks,
-  isBackendUnavailableError: vi.fn(() => false),
+  ApiError: class ApiError extends Error {},
 }));
+
+function page<T>(items: T[]) {
+  return {
+    items,
+    page: 0,
+    size: 10,
+    hasNext: false,
+    totalItems: items.length,
+    totalPages: 1,
+  };
+}
+
+function renderRoute() {
+  const Stub = createRoutesStub([
+    {
+      path: "/app/admin/storage",
+      Component: AppAdminStorageRoute,
+      loader: (args) => storageClientLoader(args as never),
+    },
+  ]);
+  return render(
+    <I18nProvider>
+      <Stub initialEntries={["/app/admin/storage"]} />
+    </I18nProvider>,
+  );
+}
 
 describe("AppAdminStorageRoute", () => {
   beforeEach(() => {
+    vi.clearAllMocks();
+    apiMocks.isBackendUnavailableError.mockReturnValue(false);
     apiMocks.getAdminStorageSummary.mockResolvedValue({
-      storageProvider: "filesystem",
-      totalPhotos: 42,
-      totalVariants: 84,
-      totalStorageBytes: 1024 * 1024,
-      filesystemUsedBytes: 2 * 1024 * 1024,
-      filesystemAvailableBytes: 8 * 1024 * 1024,
+      storageProvider: "local",
+      totalPhotos: 100,
+      totalVariants: 400,
+      totalStorageBytes: 1_000_000_000,
+      filesystemUsedBytes: 9_000_000_000,
+      filesystemAvailableBytes: 1_000_000_000,
     });
-
-    apiMocks.listAdminStorageUsers.mockResolvedValue({
-      items: [
+    apiMocks.listAdminStorageUsers.mockResolvedValue(
+      page([
         {
-          userId: "user-1",
-          userName: "Alice Example",
-          photoCount: 20,
-          variantCount: 40,
-          storageBytesUsed: 4096,
+          userId: "u-1",
+          userName: "Bob Ivanov",
+          photoCount: 50,
+          variantCount: 200,
+          storageBytesUsed: 500_000_000,
         },
-      ],
-      page: 0,
-      size: 10,
-      hasNext: false,
-      totalItems: 1,
-      totalPages: 1,
-    });
-
-    apiMocks.listAdminStorageSpaces.mockResolvedValue({
-      items: [
-        {
-          spaceId: "space-1",
-          spaceName: "Family Archive",
-          albumCount: 3,
-          photoCount: 12,
-        },
-      ],
-      page: 0,
-      size: 10,
-      hasNext: false,
-      totalItems: 1,
-      totalPages: 1,
-    });
-  });
-
-  it("renders storage summary and breakdown panels", async () => {
-    const Stub = createRoutesStub([
-      {
-        path: "/app/admin/storage",
-        Component: AppAdminStorageRoute,
-        loader: async ({ request }) =>
-          appAdminStorageClientLoader({ request } as never),
-      },
-    ]);
-
-    render(<Stub initialEntries={["/app/admin/storage"]} />);
-
-    expect(await screen.findByText("Storage operations")).toBeInTheDocument();
-    expect(screen.getByText("filesystem")).toBeInTheDocument();
-    expect(screen.getByText("Alice Example")).toBeInTheDocument();
-    expect(screen.getByText("Family Archive")).toBeInTheDocument();
-  });
-
-  it("shows an empty-state hint when no media is stored yet", async () => {
-    apiMocks.getAdminStorageSummary.mockResolvedValueOnce({
-      storageProvider: "filesystem",
-      totalPhotos: 0,
-      totalVariants: 0,
-      totalStorageBytes: 0,
-      filesystemUsedBytes: 0,
-      filesystemAvailableBytes: 8 * 1024 * 1024,
-    });
-    apiMocks.listAdminStorageUsers.mockResolvedValueOnce({
-      items: [],
-      page: 0,
-      size: 10,
-      hasNext: false,
-      totalItems: 0,
-      totalPages: 0,
-    });
-    apiMocks.listAdminStorageSpaces.mockResolvedValueOnce({
-      items: [],
-      page: 0,
-      size: 10,
-      hasNext: false,
-      totalItems: 0,
-      totalPages: 0,
-    });
-
-    const Stub = createRoutesStub([
-      {
-        path: "/app/admin/storage",
-        Component: AppAdminStorageRoute,
-        loader: async ({ request }) =>
-          appAdminStorageClientLoader({ request } as never),
-      },
-    ]);
-
-    render(<Stub initialEntries={["/app/admin/storage"]} />);
-
-    expect(await screen.findByText("No stored media yet")).toBeInTheDocument();
-  });
-
-  it("shows inline storage errors without breaking the route", async () => {
-    apiMocks.getAdminStorageSummary.mockRejectedValueOnce(
-      new Error("Storage summary failed"),
+      ]),
     );
+    apiMocks.listAdminStorageSpaces.mockResolvedValue(
+      page([
+        {
+          spaceId: "s-1",
+          spaceName: "Family Space",
+          albumCount: 2,
+          photoCount: 40,
+        },
+      ]),
+    );
+  });
 
-    const Stub = createRoutesStub([
-      {
-        path: "/app/admin/storage",
-        Component: AppAdminStorageRoute,
-        loader: async ({ request }) =>
-          appAdminStorageClientLoader({ request } as never),
-      },
-    ]);
+  it("renders the storage summary and a disk-full warning", async () => {
+    renderRoute();
+    expect(await screen.findByText("local")).toBeInTheDocument();
+    expect(screen.getByText(/Disk is 90% full/)).toBeInTheDocument();
+    expect(screen.getByText("Bob Ivanov")).toBeInTheDocument();
+  });
 
-    render(<Stub initialEntries={["/app/admin/storage"]} />);
+  it("switches to the Space breakdown tab", async () => {
+    renderRoute();
+    await screen.findByText("Bob Ivanov");
 
-    expect(
-      await screen.findByText("Storage summary failed"),
-    ).toBeInTheDocument();
-    expect(screen.getByText("Alice Example")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: "By Space" }));
+    expect(screen.getByText("Family Space")).toBeInTheDocument();
   });
 });

@@ -1,16 +1,12 @@
 import type { Route } from "./+types/app-admin-health";
-import { Link } from "react-router";
-import {
-  Badge,
-  EmptyHint,
-  InlineMessage,
-  PageHeader,
-  Panel,
-  SurfaceCard,
-} from "~/components/ui";
+import { useState } from "react";
+import { useRevalidator } from "react-router";
+import { Activity, Database, HardDrive, RefreshCw, Server } from "lucide-react";
+import { ABadge, ABar, AEmpty } from "~/components/admin/ui";
+import { fmtBytes } from "~/lib/admin-format";
 import { getAdminHealth, isBackendUnavailableError } from "~/lib/api";
 import { toErrorMessage } from "~/lib/errors";
-import { formatBytes } from "~/lib/format";
+import { getActiveLocale, translateMessage, useI18n } from "~/lib/i18n";
 import type { AdminHealthDto } from "~/types/api";
 
 interface AdminHealthLoaderData {
@@ -22,18 +18,17 @@ export async function clientLoader({
   request: _request,
 }: Route.ClientLoaderArgs): Promise<AdminHealthLoaderData> {
   try {
-    return {
-      health: await getAdminHealth(),
-      error: null,
-    };
+    return { health: await getAdminHealth(), error: null };
   } catch (error) {
     if (isBackendUnavailableError(error)) {
       throw error;
     }
-
     return {
       health: null,
-      error: toErrorMessage(error, "Failed to load admin health data."),
+      error: toErrorMessage(
+        error,
+        translateMessage(getActiveLocale(), "app.admin.health.loadFailed"),
+      ),
     };
   }
 }
@@ -45,184 +40,214 @@ export function meta(_: Route.MetaArgs) {
 export default function AppAdminHealthRoute({
   loaderData,
 }: Route.ComponentProps) {
+  const { t } = useI18n();
+  const revalidator = useRevalidator();
+  const [stamp, setStamp] = useState(() => Date.now());
+  const refreshing = revalidator.state === "loading";
   const health = loaderData.health;
-  const isDegraded =
-    health != null &&
-    (health.status !== "UP" ||
-      !health.database.connected ||
-      health.storage.availableBytes <= 0);
+
+  const timeStr = new Intl.DateTimeFormat(getActiveLocale(), {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).format(stamp);
+
+  function refresh() {
+    revalidator.revalidate();
+    setStamp(Date.now());
+  }
+
+  if (!health) {
+    return (
+      <>
+        <div className="adm-section-head">
+          <div>
+            <h2 className="adm-section-title">{t("app.admin.health.title")}</h2>
+          </div>
+        </div>
+        <AEmpty
+          icon={<Activity size={22} />}
+          text={loaderData.error ?? t("app.admin.loadErrorText")}
+          title={t("app.admin.loadErrorTitle")}
+        />
+      </>
+    );
+  }
+
+  const heapPct = Math.round(
+    (health.jvm.heapUsedBytes / health.jvm.heapMaxBytes) * 100,
+  );
+  const stoTotal = health.storage.usedBytes + health.storage.availableBytes;
+  const stoPct =
+    stoTotal > 0 ? Math.round((health.storage.usedBytes / stoTotal) * 100) : 0;
+  const dbConnected = health.database.connected;
 
   return (
-    <div className="space-y-6">
-      <PageHeader
-        actions={
-          <>
-            <Link className="button-secondary" to="/app/admin/storage">
-              Open storage
-            </Link>
-            <Link className="button-secondary" to="/app/admin/settings">
-              Open settings
-            </Link>
-          </>
-        }
-        description="Operational visibility for backend status, database connectivity, storage capacity, and JVM runtime state."
-        eyebrow="Admin Health"
-        title="System health"
-      />
+    <>
+      <div className="adm-section-head">
+        <div>
+          <h2 className="adm-section-title">{t("app.admin.health.title")}</h2>
+          <p className="adm-section-sub">
+            {t("app.admin.health.updatedAt", { time: timeStr })}
+          </p>
+        </div>
+        <button
+          className="button-secondary btn-sm"
+          disabled={refreshing}
+          onClick={refresh}
+          type="button"
+        >
+          <RefreshCw size={15} /> {t("app.admin.health.refresh")}
+        </button>
+      </div>
 
-      {loaderData.error ? (
-        <InlineMessage tone="danger">{loaderData.error}</InlineMessage>
-      ) : null}
+      <div
+        className="adm-card"
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: "1rem",
+          flexWrap: "wrap",
+        }}
+      >
+        <span
+          className={`adm-stat-ico ${health.status === "UP" ? "ok" : "danger"}`}
+          style={{ width: "3rem", height: "3rem" }}
+        >
+          <Activity size={22} />
+        </span>
+        <div style={{ flex: 1, minWidth: "12rem" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: ".5rem" }}>
+            <span style={{ fontSize: "1.125rem", fontWeight: 700 }}>
+              {t("app.admin.health.instance")}
+            </span>
+            <ABadge dot tone={health.status === "UP" ? "success" : "danger"}>
+              {health.status}
+            </ABadge>
+          </div>
+          <div className="adm-cell-sub" style={{ marginTop: ".2rem" }}>
+            PINA {health.version} ·{" "}
+            {t("app.admin.health.cpu", {
+              count: health.jvm.availableProcessors,
+            })}
+          </div>
+        </div>
+      </div>
 
-      {!health ? (
-        <Panel className="p-6">
-          <p className="eyebrow">Health</p>
-          <h2 className="mt-2 text-2xl font-semibold tracking-tight">
-            Health data is unavailable
-          </h2>
-          <EmptyHint className="mt-5 px-5 py-6 leading-7">
-            The admin shell remains available, but the health endpoint did not
-            return operational data for this request.
-          </EmptyHint>
-        </Panel>
-      ) : (
-        <>
-          <Panel className="p-6">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-              <div>
-                <p className="eyebrow">Runtime status</p>
-                <h2 className="mt-2 text-2xl font-semibold tracking-tight">
-                  {isDegraded
-                    ? "Degraded operational state"
-                    : "System is healthy"}
-                </h2>
-                <p className="mt-3 text-sm leading-7 text-[var(--color-text-muted)]">
-                  Backend status: {health.status}. Database connectivity,
-                  storage capacity, and JVM runtime are summarized below for
-                  instance operators.
-                </p>
+      <div className="adm-health-grid">
+        <div className="adm-card">
+          <div
+            style={{ display: "flex", alignItems: "center", gap: ".625rem" }}
+          >
+            <span className={`adm-stat-ico ${dbConnected ? "ok" : "danger"}`}>
+              <Database size={18} />
+            </span>
+            <div>
+              <div className="adm-card-title" style={{ fontSize: ".875rem" }}>
+                {t("app.admin.health.dbTitle")}
               </div>
-              <div className="flex flex-wrap gap-2">
-                <Badge
-                  className="rounded-full px-3 py-1 text-xs font-semibold"
-                  tone={isDegraded ? "neutral" : "accent"}
-                >
-                  {isDegraded ? "degraded" : "healthy"}
-                </Badge>
-                <Badge className="rounded-full px-3 py-1 text-xs font-semibold">
-                  version {health.version}
-                </Badge>
+              <div className="adm-card-sub">
+                {health.database.version ?? "—"}
               </div>
             </div>
-
-            {isDegraded ? (
-              <EmptyHint className="mt-5 px-5 py-5 leading-7">
-                One or more operational checks are degraded. Review database
-                connectivity and remaining storage capacity before treating the
-                instance as healthy.
-              </EmptyHint>
-            ) : null}
-
-            <div className="mt-6 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-              <SurfaceCard className="rounded-2xl p-4">
-                <p className="text-xs uppercase tracking-[0.24em] text-[var(--color-text-muted)]">
-                  Backend
-                </p>
-                <p className="mt-3 text-lg font-semibold tracking-tight">
-                  {health.status}
-                </p>
-              </SurfaceCard>
-              <SurfaceCard className="rounded-2xl p-4">
-                <p className="text-xs uppercase tracking-[0.24em] text-[var(--color-text-muted)]">
-                  Database
-                </p>
-                <p className="mt-3 text-lg font-semibold tracking-tight">
-                  {health.database.connected ? "Connected" : "Unavailable"}
-                </p>
-              </SurfaceCard>
-              <SurfaceCard className="rounded-2xl p-4">
-                <p className="text-xs uppercase tracking-[0.24em] text-[var(--color-text-muted)]">
-                  Storage provider
-                </p>
-                <p className="mt-3 text-lg font-semibold tracking-tight">
-                  {health.storage.provider}
-                </p>
-              </SurfaceCard>
-              <SurfaceCard className="rounded-2xl p-4">
-                <p className="text-xs uppercase tracking-[0.24em] text-[var(--color-text-muted)]">
-                  CPUs
-                </p>
-                <p className="mt-3 text-lg font-semibold tracking-tight">
-                  {health.jvm.availableProcessors}
-                </p>
-              </SurfaceCard>
+          </div>
+          <div className="adm-kv" style={{ marginTop: "1rem" }}>
+            <div className="adm-kv-row">
+              <span>{t("app.admin.health.dbConnection")}</span>
+              <span>
+                <ABadge dot tone={dbConnected ? "success" : "danger"}>
+                  {t(
+                    dbConnected
+                      ? "app.admin.health.connected"
+                      : "app.admin.health.offline",
+                  )}
+                </ABadge>
+              </span>
             </div>
-          </Panel>
+            <div className="adm-kv-row">
+              <span>{t("app.admin.health.dbVersion")}</span>
+              <span>
+                {health.database.version
+                  ? health.database.version.replace("PostgreSQL ", "PG ")
+                  : "—"}
+              </span>
+            </div>
+          </div>
+        </div>
 
-          <section className="grid gap-6 xl:grid-cols-3">
-            <Panel className="p-6">
-              <p className="eyebrow">Database</p>
-              <h2 className="mt-2 text-2xl font-semibold tracking-tight">
-                Connectivity
-              </h2>
-              <dl className="mt-5 space-y-3 text-sm text-[var(--color-text-muted)]">
-                <div className="flex justify-between gap-4">
-                  <dt>Connected</dt>
-                  <dd>{health.database.connected ? "Yes" : "No"}</dd>
-                </div>
-                <div className="flex justify-between gap-4">
-                  <dt>Version</dt>
-                  <dd className="max-w-[14rem] truncate text-right">
-                    {health.database.version ?? "Not available"}
-                  </dd>
-                </div>
-              </dl>
-            </Panel>
+        <div className="adm-card">
+          <div
+            style={{ display: "flex", alignItems: "center", gap: ".625rem" }}
+          >
+            <span className={`adm-stat-ico ${stoPct > 85 ? "danger" : "ok"}`}>
+              <HardDrive size={18} />
+            </span>
+            <div>
+              <div className="adm-card-title" style={{ fontSize: ".875rem" }}>
+                {t("app.admin.health.storageTitle")}
+              </div>
+              <div className="adm-card-sub">{health.storage.provider}</div>
+            </div>
+          </div>
+          <div style={{ marginTop: "1rem" }}>
+            <div className="adm-bar-label">
+              <span>{t("app.admin.health.storageUsed")}</span>
+              <span className="muted">{stoPct}%</span>
+            </div>
+            <ABar pct={stoPct} />
+            <div className="adm-kv" style={{ marginTop: ".75rem" }}>
+              <div className="adm-kv-row">
+                <span>{t("app.admin.health.storageUsed")}</span>
+                <span>{fmtBytes(health.storage.usedBytes)}</span>
+              </div>
+              <div className="adm-kv-row">
+                <span>{t("app.admin.health.storageAvailable")}</span>
+                <span>{fmtBytes(health.storage.availableBytes)}</span>
+              </div>
+            </div>
+          </div>
+        </div>
 
-            <Panel className="p-6">
-              <p className="eyebrow">Storage</p>
-              <h2 className="mt-2 text-2xl font-semibold tracking-tight">
-                Capacity
-              </h2>
-              <dl className="mt-5 space-y-3 text-sm text-[var(--color-text-muted)]">
-                <div className="flex justify-between gap-4">
-                  <dt>Used</dt>
-                  <dd>{formatBytes(health.storage.usedBytes)}</dd>
-                </div>
-                <div className="flex justify-between gap-4">
-                  <dt>Available</dt>
-                  <dd>{formatBytes(health.storage.availableBytes)}</dd>
-                </div>
-                <div className="flex justify-between gap-4">
-                  <dt>Provider</dt>
-                  <dd>{health.storage.provider}</dd>
-                </div>
-              </dl>
-            </Panel>
-
-            <Panel className="p-6">
-              <p className="eyebrow">JVM</p>
-              <h2 className="mt-2 text-2xl font-semibold tracking-tight">
-                Runtime memory
-              </h2>
-              <dl className="mt-5 space-y-3 text-sm text-[var(--color-text-muted)]">
-                <div className="flex justify-between gap-4">
-                  <dt>Heap used</dt>
-                  <dd>{formatBytes(health.jvm.heapUsedBytes)}</dd>
-                </div>
-                <div className="flex justify-between gap-4">
-                  <dt>Heap max</dt>
-                  <dd>{formatBytes(health.jvm.heapMaxBytes)}</dd>
-                </div>
-                <div className="flex justify-between gap-4">
-                  <dt>Non-heap used</dt>
-                  <dd>{formatBytes(health.jvm.nonHeapUsedBytes)}</dd>
-                </div>
-              </dl>
-            </Panel>
-          </section>
-        </>
-      )}
-    </div>
+        <div className="adm-card">
+          <div
+            style={{ display: "flex", alignItems: "center", gap: ".625rem" }}
+          >
+            <span className={`adm-stat-ico ${heapPct > 90 ? "danger" : "ok"}`}>
+              <Server size={18} />
+            </span>
+            <div>
+              <div className="adm-card-title" style={{ fontSize: ".875rem" }}>
+                {t("app.admin.health.jvmTitle")}
+              </div>
+              <div className="adm-card-sub">
+                {t("app.admin.health.jvmProcessors", {
+                  count: health.jvm.availableProcessors,
+                })}
+              </div>
+            </div>
+          </div>
+          <div style={{ marginTop: "1rem" }}>
+            <div className="adm-bar-label">
+              <span>{t("app.admin.health.jvmHeap")}</span>
+              <span className="muted">{heapPct}%</span>
+            </div>
+            <ABar danger={heapPct > 90} pct={heapPct} />
+            <div className="adm-kv" style={{ marginTop: ".75rem" }}>
+              <div className="adm-kv-row">
+                <span>{t("app.admin.health.jvmHeapUsed")}</span>
+                <span>
+                  {fmtBytes(health.jvm.heapUsedBytes)} /{" "}
+                  {fmtBytes(health.jvm.heapMaxBytes)}
+                </span>
+              </div>
+              <div className="adm-kv-row">
+                <span>{t("app.admin.health.jvmNonHeap")}</span>
+                <span>{fmtBytes(health.jvm.nonHeapUsedBytes)}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </>
   );
 }

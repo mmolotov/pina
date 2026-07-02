@@ -1,10 +1,14 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import { createRoutesStub } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { I18nProvider } from "~/lib/i18n";
 import AppAdminLayoutRoute from "~/routes/app-admin-layout";
 
 const apiMocks = vi.hoisted(() => ({
   getCurrentUser: vi.fn(),
+  listAdminUsers: vi.fn(),
+  listAdminSpaces: vi.fn(),
+  listAdminInvites: vi.fn(),
 }));
 
 const sessionMocks = vi.hoisted(() => ({
@@ -20,11 +24,43 @@ vi.mock("~/lib/session", () => ({
   ...sessionMocks,
 }));
 
+function countPage(totalItems: number) {
+  return {
+    items: [],
+    page: 0,
+    size: 1,
+    hasNext: false,
+    totalItems,
+    totalPages: 1,
+  };
+}
+
+function renderStub(
+  initialEntries: string[],
+  child?: { path: string; label: string },
+) {
+  const Stub = createRoutesStub([
+    {
+      path: "/app/admin",
+      Component: AppAdminLayoutRoute,
+      children: child
+        ? [{ path: child.path, Component: () => <div>{child.label}</div> }]
+        : undefined,
+    },
+  ]);
+  return render(
+    <I18nProvider>
+      <Stub initialEntries={initialEntries} />
+    </I18nProvider>,
+  );
+}
+
 describe("AppAdminLayoutRoute", () => {
   beforeEach(() => {
-    apiMocks.getCurrentUser.mockReset();
-    sessionMocks.updateSessionUser.mockReset();
-    sessionMocks.useSession.mockReset();
+    vi.clearAllMocks();
+    apiMocks.listAdminUsers.mockResolvedValue(countPage(24));
+    apiMocks.listAdminSpaces.mockResolvedValue(countPage(10));
+    apiMocks.listAdminInvites.mockResolvedValue(countPage(8));
   });
 
   it("renders admin navigation for instance admins", async () => {
@@ -43,30 +79,17 @@ describe("AppAdminLayoutRoute", () => {
       },
     });
 
-    const Stub = createRoutesStub([
-      {
-        path: "/app/admin",
-        Component: AppAdminLayoutRoute,
-        children: [
-          {
-            path: "users",
-            Component: () => <div>Users section</div>,
-          },
-        ],
-      },
-    ]);
-
-    render(<Stub initialEntries={["/app/admin/users"]} />);
+    renderStub(["/app/admin/users"], { path: "users", label: "Users section" });
 
     expect(await screen.findByText("Instance control")).toBeInTheDocument();
     expect(screen.getByText("Users section")).toBeInTheDocument();
-    expect(
-      screen.getByText("Instance-wide administration"),
-    ).toBeInTheDocument();
+    expect(screen.getByText("whole instance")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Users/i })).toHaveAttribute(
       "href",
       "/app/admin/users",
     );
+    // nav count badge from the best-effort totals fetch
+    expect(await screen.findByText("24")).toBeInTheDocument();
   });
 
   it("renders a denial state for non-admin users", async () => {
@@ -85,21 +108,13 @@ describe("AppAdminLayoutRoute", () => {
       },
     });
 
-    const Stub = createRoutesStub([
-      {
-        path: "/app/admin",
-        Component: AppAdminLayoutRoute,
-      },
-    ]);
+    renderStub(["/app/admin"]);
 
-    render(<Stub initialEntries={["/app/admin"]} />);
-
-    expect(await screen.findByText("Access denied")).toBeInTheDocument();
     expect(
-      screen.getByText("You do not have admin access"),
+      await screen.findByText("You do not have admin access"),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("link", { name: "Return to library" }),
+      screen.getByRole("link", { name: "Back to library" }),
     ).toHaveAttribute("href", "/app/library");
   });
 
@@ -125,22 +140,12 @@ describe("AppAdminLayoutRoute", () => {
       active: true,
     });
 
-    const Stub = createRoutesStub([
-      {
-        path: "/app/admin",
-        Component: AppAdminLayoutRoute,
-        children: [
-          {
-            path: "health",
-            Component: () => <div>Health section</div>,
-          },
-        ],
-      },
-    ]);
+    renderStub(["/app/admin/health"], {
+      path: "health",
+      label: "Health section",
+    });
 
-    render(<Stub initialEntries={["/app/admin/health"]} />);
-
-    expect(screen.getByText("Loading admin access")).toBeInTheDocument();
+    expect(screen.getByText("Checking admin access")).toBeInTheDocument();
 
     await waitFor(() => {
       expect(apiMocks.getCurrentUser).toHaveBeenCalledTimes(1);

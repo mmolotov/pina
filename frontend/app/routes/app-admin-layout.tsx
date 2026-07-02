@@ -1,36 +1,98 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, Outlet, useLocation } from "react-router";
 import {
-  Badge,
-  EmptyState,
-  PageHeader,
-  Panel,
-  SurfaceCard,
-} from "~/components/ui";
-import { getCurrentUser } from "~/lib/api";
+  Activity,
+  ExternalLink,
+  HardDrive,
+  Layers,
+  Link2,
+  Settings,
+  Shield,
+  Users,
+  type LucideIcon,
+} from "lucide-react";
+import { ABadge } from "~/components/admin/ui";
+import { fmtNum } from "~/lib/admin-format";
+import {
+  getCurrentUser,
+  listAdminInvites,
+  listAdminSpaces,
+  listAdminUsers,
+} from "~/lib/api";
+import { useI18n, type MessageKey } from "~/lib/i18n";
 import { updateSessionUser, useSession } from "~/lib/session";
+
+type CountKey = "users" | "spaces" | "invites";
 
 interface AdminNavItem {
   to: string;
-  label: string;
+  labelKey: MessageKey;
+  Icon: LucideIcon;
+  countKey?: CountKey;
 }
 
-const adminNavItems: AdminNavItem[] = [
-  { to: "/app/admin/users", label: "Users" },
-  { to: "/app/admin/spaces", label: "Spaces" },
-  { to: "/app/admin/invites", label: "Invites" },
-  { to: "/app/admin/storage", label: "Storage" },
-  { to: "/app/admin/health", label: "Health" },
-  { to: "/app/admin/settings", label: "Settings" },
+const ADMIN_NAV: AdminNavItem[] = [
+  {
+    to: "/app/admin/users",
+    labelKey: "app.admin.nav.users",
+    Icon: Users,
+    countKey: "users",
+  },
+  {
+    to: "/app/admin/spaces",
+    labelKey: "app.admin.nav.spaces",
+    Icon: Layers,
+    countKey: "spaces",
+  },
+  {
+    to: "/app/admin/invites",
+    labelKey: "app.admin.nav.invites",
+    Icon: Link2,
+    countKey: "invites",
+  },
+  {
+    to: "/app/admin/storage",
+    labelKey: "app.admin.nav.storage",
+    Icon: HardDrive,
+  },
+  { to: "/app/admin/health", labelKey: "app.admin.nav.health", Icon: Activity },
+  {
+    to: "/app/admin/settings",
+    labelKey: "app.admin.nav.settings",
+    Icon: Settings,
+  },
 ];
 
 type CapabilityState = "loading" | "allowed" | "denied";
+type Counts = Record<CountKey, number | null>;
 
 function isInstanceAdmin(role: string | null | undefined) {
   return role === "ADMIN";
 }
 
+function AdminHeader({ activeLabel }: { activeLabel: string }) {
+  const { t } = useI18n();
+  return (
+    <div className="adm-head">
+      <div>
+        <p className="eyebrow">{t("app.admin.eyebrow")}</p>
+        <h1 className="adm-head-title">{t("app.admin.title")}</h1>
+        <p className="adm-head-lede">{t("app.admin.lede")}</p>
+      </div>
+      <div className="adm-head-actions">
+        <Link className="button-secondary btn-sm" to="/app/library">
+          <ExternalLink size={15} /> {t("app.admin.openLibrary")}
+        </Link>
+        <span className="adm-badge accent" style={{ padding: ".4rem .75rem" }}>
+          {activeLabel}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 export default function AppAdminLayoutRoute() {
+  const { t } = useI18n();
   const location = useLocation();
   const session = useSession();
   const [capabilityState, setCapabilityState] = useState<CapabilityState>(
@@ -51,6 +113,11 @@ export default function AppAdminLayoutRoute() {
       return "loading";
     },
   );
+  const [counts, setCounts] = useState<Counts>({
+    users: null,
+    spaces: null,
+    invites: null,
+  });
 
   useEffect(() => {
     if (!session?.user) {
@@ -99,130 +166,153 @@ export default function AppAdminLayoutRoute() {
     };
   }, [session]);
 
-  const activeSection = useMemo(
+  // Best-effort per-section counts for the nav badges.
+  useEffect(() => {
+    if (capabilityState !== "allowed") {
+      return;
+    }
+
+    let cancelled = false;
+    Promise.allSettled([
+      listAdminUsers({ page: 0, size: 1, needsTotal: true }),
+      listAdminSpaces({ page: 0, size: 1, needsTotal: true }),
+      listAdminInvites({ page: 0, size: 1, needsTotal: true }),
+    ]).then((results) => {
+      if (cancelled) {
+        return;
+      }
+      const [users, spaces, invites] = results;
+      setCounts({
+        users:
+          users.status === "fulfilled"
+            ? (users.value.totalItems ?? null)
+            : null,
+        spaces:
+          spaces.status === "fulfilled"
+            ? (spaces.value.totalItems ?? null)
+            : null,
+        invites:
+          invites.status === "fulfilled"
+            ? (invites.value.totalItems ?? null)
+            : null,
+      });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [capabilityState]);
+
+  const activeItem = useMemo(
     () =>
-      adminNavItems.find((item) => location.pathname.startsWith(item.to)) ??
-      adminNavItems[0],
+      ADMIN_NAV.find((item) => location.pathname.startsWith(item.to)) ??
+      ADMIN_NAV[0]!,
     [location.pathname],
   );
 
   if (capabilityState === "loading") {
     return (
-      <div className="space-y-8">
-        <PageHeader
-          description="Checking instance-admin capability before opening the administration surface."
-          eyebrow="Admin"
-          title="Loading admin access"
-        />
-
-        <section className="grid gap-6 xl:grid-cols-[14rem_minmax(0,1fr)]">
-          <Panel className="p-3">
-            <div className="space-y-1">
+      <div className="adm" data-screen-label="Admin">
+        <AdminHeader activeLabel={t("app.admin.loadingTitle")} />
+        <div className="adm-body">
+          <div className="adm-nav">
+            <div className="adm-nav-panel">
               {Array.from({ length: 6 }).map((_, index) => (
                 <div
-                  className="surface-card-subtle h-10 rounded-lg"
-                  key={`admin-nav-skeleton-${index}`}
+                  className="adm-skel-row skel"
+                  key={index}
+                  style={{
+                    height: "2.1rem",
+                    borderRadius: ".75rem",
+                    margin: ".125rem",
+                  }}
                 />
               ))}
             </div>
-          </Panel>
-          <Panel className="p-6">
-            <div className="surface-card-subtle h-64 rounded-lg" />
-          </Panel>
-        </section>
+          </div>
+          <div className="adm-content">
+            <div className="adm-card">
+              <div
+                className="adm-skel-row skel"
+                style={{ height: "12rem", borderRadius: "1rem" }}
+              />
+            </div>
+          </div>
+        </div>
       </div>
     );
   }
 
   if (capabilityState === "denied") {
     return (
-      <div className="space-y-8">
-        <PageHeader
-          actions={
-            <Link className="button-secondary" to="/app/library">
-              Return to library
-            </Link>
-          }
-          description="Instance administration is reserved for users with the backend-confirmed admin role."
-          eyebrow="Admin"
-          title="Access denied"
-        />
-
-        <EmptyState
-          action={
-            <Link className="button-primary" to="/app/settings">
-              Open profile settings
-            </Link>
-          }
-          description="Your current account does not have instance-admin capability. If this is unexpected, ask an existing admin to review your instance role."
-          title="You do not have admin access"
-        />
+      <div className="adm" data-screen-label="Admin — Denied">
+        <div className="adm-denied">
+          <div className="adm-denied-ico">
+            <Shield size={32} />
+          </div>
+          <h2>{t("app.admin.deniedTitle")}</h2>
+          <p>{t("app.admin.deniedText")}</p>
+          <Link
+            className="button-primary"
+            style={{ marginTop: ".5rem" }}
+            to="/app/library"
+          >
+            {t("app.admin.backToLibrary")}
+          </Link>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-8">
-      <PageHeader
-        actions={
-          <>
-            <Link className="button-secondary" to="/app/library">
-              Open library
-            </Link>
-            <Link
-              className="button-primary"
-              to={activeSection?.to ?? "/app/admin/users"}
-            >
-              Open current section
-            </Link>
-          </>
-        }
-        description="Instance-wide administration surface for users, Spaces, invites, storage, health, and mutable settings."
-        eyebrow="Admin"
-        title="Instance control"
-      />
+    <div className="adm" data-screen-label="Admin">
+      <AdminHeader activeLabel={t(activeItem.labelKey)} />
 
-      <section className="grid gap-6 xl:grid-cols-[14rem_minmax(0,1fr)]">
-        <aside className="space-y-4">
-          <Panel className="p-3">
-            <div className="space-y-1" aria-label="Admin navigation">
-              {adminNavItems.map((item) => {
-                const isActive = location.pathname.startsWith(item.to);
+      <div className="adm-body">
+        <nav aria-label={t("app.admin.title")} className="adm-nav">
+          <div className="adm-nav-panel">
+            {ADMIN_NAV.map((item) => {
+              const active = location.pathname.startsWith(item.to);
+              const count = item.countKey ? counts[item.countKey] : null;
+              return (
+                <Link
+                  aria-current={active ? "page" : undefined}
+                  className={`adm-nav-link${active ? " active" : ""}`}
+                  key={item.to}
+                  to={item.to}
+                >
+                  <item.Icon size={17} />
+                  <span>{t(item.labelKey)}</span>
+                  {count != null ? (
+                    <span className="adm-nav-count">{fmtNum(count)}</span>
+                  ) : null}
+                </Link>
+              );
+            })}
+          </div>
 
-                return (
-                  <Link
-                    className={[
-                      "nav-link",
-                      isActive ? "nav-link-active" : "nav-link-idle",
-                    ].join(" ")}
-                    key={item.to}
-                    to={item.to}
-                  >
-                    <span className="text-sm font-medium">{item.label}</span>
-                  </Link>
-                );
-              })}
+          <div className="adm-scope">
+            <div className="adm-scope-row">
+              <span className="adm-scope-ico">
+                <Shield size={18} />
+              </span>
+              <div>
+                <div className="adm-scope-name">{t("app.admin.scopeName")}</div>
+                <div className="adm-scope-sub">{t("app.admin.scopeSub")}</div>
+              </div>
             </div>
-          </Panel>
+            <div style={{ marginTop: ".75rem" }}>
+              <ABadge dot tone="accent">
+                {t("app.admin.scopeBadge")}
+              </ABadge>
+            </div>
+          </div>
+        </nav>
 
-          <SurfaceCard className="rounded-lg p-4" tone="subtle">
-            <p className="eyebrow">Access scope</p>
-            <p className="mt-2 text-sm text-[var(--color-text-muted)]">
-              Instance-wide administration
-            </p>
-            <Badge
-              className="mt-3 rounded-full px-3 py-1 text-xs font-semibold"
-              tone="accent"
-            >
-              instance admin
-            </Badge>
-          </SurfaceCard>
-        </aside>
-
-        <div className="min-w-0">
+        <div className="adm-content">
           <Outlet />
         </div>
-      </section>
+      </div>
     </div>
   );
 }

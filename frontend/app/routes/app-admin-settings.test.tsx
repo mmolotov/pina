@@ -1,150 +1,87 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { createRoutesStub } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { I18nProvider } from "~/lib/i18n";
 import AppAdminSettingsRoute, {
-  clientAction as appAdminSettingsClientAction,
-  clientLoader as appAdminSettingsClientLoader,
+  clientAction as settingsClientAction,
+  clientLoader as settingsClientLoader,
 } from "~/routes/app-admin-settings";
 
 const apiMocks = vi.hoisted(() => ({
   getAdminSettings: vi.fn(),
   updateAdminSettings: vi.fn(),
+  isBackendUnavailableError: vi.fn(() => false),
 }));
 
 vi.mock("~/lib/api", () => ({
   ...apiMocks,
-  ApiError: class ApiError extends Error {
-    status: number;
-    code: string;
-
-    constructor(status: number, code: string, message: string) {
-      super(message);
-      this.status = status;
-      this.code = code;
-    }
-  },
-  isBackendUnavailableError: vi.fn(() => false),
+  ApiError: class ApiError extends Error {},
 }));
+
+function renderRoute() {
+  const Stub = createRoutesStub([
+    {
+      path: "/app/admin/settings",
+      Component: AppAdminSettingsRoute,
+      loader: (args) => settingsClientLoader(args as never),
+      action: (args) => settingsClientAction(args as never),
+    },
+  ]);
+  return render(
+    <I18nProvider>
+      <Stub initialEntries={["/app/admin/settings"]} />
+    </I18nProvider>,
+  );
+}
 
 describe("AppAdminSettingsRoute", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-
+    apiMocks.isBackendUnavailableError.mockReturnValue(false);
+    apiMocks.updateAdminSettings.mockResolvedValue({});
     apiMocks.getAdminSettings.mockResolvedValue({
       registrationMode: "INVITE_ONLY",
-      compressionFormat: "jpg",
-      compressionQuality: 82,
-      compressionMaxResolution: 2048,
-    });
-
-    apiMocks.updateAdminSettings.mockResolvedValue({
-      registrationMode: "OPEN",
-      compressionFormat: "png",
-      compressionQuality: 90,
+      compressionFormat: "jpeg",
+      compressionQuality: 80,
       compressionMaxResolution: 4096,
     });
   });
 
-  it("renders settings and updates them with success feedback", async () => {
-    const Stub = createRoutesStub([
-      {
-        path: "/app/admin/settings",
-        Component: AppAdminSettingsRoute,
-        action: async ({ request }) =>
-          appAdminSettingsClientAction({ request } as never),
-        loader: async ({ request }) =>
-          appAdminSettingsClientLoader({ request } as never),
-      },
-    ]);
+  it("renders the settings form", async () => {
+    renderRoute();
+    expect(await screen.findByText("Invite only")).toBeInTheDocument();
+    expect(screen.getByText("All changes saved")).toBeInTheDocument();
+  });
 
-    render(<Stub initialEntries={["/app/admin/settings"]} />);
+  it("saves changed settings", async () => {
+    renderRoute();
+    await screen.findByText("Invite only");
 
-    expect(await screen.findByText("Instance settings")).toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("button", { name: /Anyone can register/ }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
-    fireEvent.change(screen.getByLabelText("Registration mode"), {
-      target: { value: "OPEN" },
-    });
-    fireEvent.change(screen.getByLabelText("Compression format"), {
-      target: { value: "png" },
-    });
-    fireEvent.change(screen.getByLabelText("Compression quality"), {
-      target: { value: "90" },
-    });
-    fireEvent.change(screen.getByLabelText("Compression max resolution"), {
-      target: { value: "4096" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
-
-    await waitFor(() => {
+    await waitFor(() =>
       expect(apiMocks.updateAdminSettings).toHaveBeenCalledWith({
         registrationMode: "OPEN",
-        compressionFormat: "png",
-        compressionQuality: 90,
+        compressionFormat: "jpeg",
+        compressionQuality: 80,
         compressionMaxResolution: 4096,
-      });
-    });
-
-    expect(await screen.findByText("Settings updated.")).toBeInTheDocument();
+      }),
+    );
   });
 
-  it("shows backend validation feedback when settings update fails", async () => {
-    apiMocks.updateAdminSettings.mockRejectedValueOnce(
-      new Error("Compression quality must be between 1 and 100"),
-    );
+  it("blocks saving an out-of-range resolution", async () => {
+    renderRoute();
+    await screen.findByText("Invite only");
 
-    const Stub = createRoutesStub([
-      {
-        path: "/app/admin/settings",
-        Component: AppAdminSettingsRoute,
-        action: async ({ request }) =>
-          appAdminSettingsClientAction({ request } as never),
-        loader: async ({ request }) =>
-          appAdminSettingsClientLoader({ request } as never),
-      },
-    ]);
-
-    render(<Stub initialEntries={["/app/admin/settings"]} />);
-
-    expect(await screen.findByText("Instance settings")).toBeInTheDocument();
-
-    fireEvent.change(screen.getByLabelText("Registration mode"), {
-      target: { value: "OPEN" },
+    fireEvent.change(screen.getByLabelText("Max resolution, px"), {
+      target: { value: "100" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
-    await waitFor(() => {
-      expect(apiMocks.updateAdminSettings).toHaveBeenCalledWith({
-        registrationMode: "OPEN",
-        compressionFormat: "jpg",
-        compressionQuality: 82,
-        compressionMaxResolution: 2048,
-      });
-    });
-
-    expect(
-      await screen.findByText("Compression quality must be between 1 and 100"),
-    ).toBeInTheDocument();
-  });
-
-  it("shows an inline load error when settings cannot be fetched", async () => {
-    apiMocks.getAdminSettings.mockRejectedValueOnce(
-      new Error("Settings load failed"),
-    );
-
-    const Stub = createRoutesStub([
-      {
-        path: "/app/admin/settings",
-        Component: AppAdminSettingsRoute,
-        action: async ({ request }) =>
-          appAdminSettingsClientAction({ request } as never),
-        loader: async ({ request }) =>
-          appAdminSettingsClientLoader({ request } as never),
-      },
-    ]);
-
-    render(<Stub initialEntries={["/app/admin/settings"]} />);
-
-    expect(await screen.findByText("Settings load failed")).toBeInTheDocument();
-    expect(screen.getByText("Settings are unavailable")).toBeInTheDocument();
+    expect(await screen.findByText("Minimum 256 px.")).toBeInTheDocument();
+    expect(apiMocks.updateAdminSettings).not.toHaveBeenCalled();
   });
 });

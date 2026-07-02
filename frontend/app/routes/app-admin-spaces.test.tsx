@@ -1,181 +1,123 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { createRoutesStub } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { I18nProvider } from "~/lib/i18n";
 import AppAdminSpacesRoute, {
-  clientAction as appAdminSpacesClientAction,
-  clientLoader as appAdminSpacesClientLoader,
+  clientAction as spacesClientAction,
+  clientLoader as spacesClientLoader,
 } from "~/routes/app-admin-spaces";
+import type { AdminSpaceDto } from "~/types/api";
 
 const apiMocks = vi.hoisted(() => ({
   deleteAdminSpace: vi.fn(),
-  getAdminSpace: vi.fn(),
   listAdminSpaces: vi.fn(),
+  isBackendUnavailableError: vi.fn(() => false),
 }));
 
 vi.mock("~/lib/api", () => ({
   ...apiMocks,
-  ApiError: class ApiError extends Error {
-    status: number;
-    code: string;
-
-    constructor(status: number, code: string, message: string) {
-      super(message);
-      this.status = status;
-      this.code = code;
-    }
-  },
-  isBackendUnavailableError: vi.fn(() => false),
+  ApiError: class ApiError extends Error {},
 }));
+
+function makeSpace(overrides: Partial<AdminSpaceDto> = {}): AdminSpaceDto {
+  return {
+    id: "s-1",
+    name: "Family",
+    description: "Shared media",
+    visibility: "PRIVATE",
+    parentId: null,
+    depth: 0,
+    creatorId: "u-1",
+    creatorName: "Owner One",
+    memberCount: 3,
+    albumCount: 2,
+    photoCount: 42,
+    createdAt: "2026-01-02T00:00:00Z",
+    updatedAt: "2026-01-02T00:00:00Z",
+    ...overrides,
+  };
+}
+
+function spacesPage(items: AdminSpaceDto[]) {
+  return {
+    items,
+    page: 0,
+    size: 20,
+    hasNext: false,
+    totalItems: items.length,
+    totalPages: 1,
+  };
+}
+
+function renderRoute() {
+  const Stub = createRoutesStub([
+    {
+      path: "/app/admin/spaces",
+      Component: AppAdminSpacesRoute,
+      loader: (args) => spacesClientLoader(args as never),
+      action: (args) => spacesClientAction(args as never),
+    },
+  ]);
+  return render(
+    <I18nProvider>
+      <Stub initialEntries={["/app/admin/spaces"]} />
+    </I18nProvider>,
+  );
+}
 
 describe("AppAdminSpacesRoute", () => {
   beforeEach(() => {
-    apiMocks.listAdminSpaces.mockResolvedValue({
-      items: [
-        {
-          id: "space-1",
-          name: "Family Archive",
-          description: "Shared family photos",
-          visibility: "PRIVATE",
-          parentId: null,
-          depth: 0,
-          creatorId: "user-1",
-          creatorName: "Alice Example",
-          memberCount: 4,
-          albumCount: 3,
-          photoCount: 120,
-          createdAt: "2026-04-01T10:00:00Z",
-          updatedAt: "2026-04-02T10:00:00Z",
-        },
-        {
-          id: "space-2",
-          name: "Event Highlights",
-          description: "Public event media",
-          visibility: "PUBLIC",
-          parentId: "space-1",
-          depth: 1,
-          creatorId: "user-2",
-          creatorName: "Bob Admin",
-          memberCount: 9,
-          albumCount: 5,
-          photoCount: 240,
-          createdAt: "2026-04-01T11:00:00Z",
-          updatedAt: "2026-04-02T11:00:00Z",
-        },
-      ],
-      page: 0,
-      size: 20,
-      hasNext: false,
-      totalItems: 2,
-      totalPages: 1,
-    });
-
-    apiMocks.getAdminSpace.mockImplementation(async (spaceId: string) => {
-      if (spaceId === "space-2") {
-        return {
-          id: "space-2",
-          name: "Event Highlights",
-          description: "Public event media",
-          visibility: "PUBLIC",
-          parentId: "space-1",
-          depth: 1,
-          creatorId: "user-2",
-          creatorName: "Bob Admin",
-          memberCount: 9,
-          albumCount: 5,
-          photoCount: 240,
-          createdAt: "2026-04-01T11:00:00Z",
-          updatedAt: "2026-04-02T11:00:00Z",
-        };
-      }
-
-      return {
-        id: "space-1",
-        name: "Family Archive",
-        description: "Shared family photos",
-        visibility: "PRIVATE",
-        parentId: null,
-        depth: 0,
-        creatorId: "user-1",
-        creatorName: "Alice Example",
-        memberCount: 4,
-        albumCount: 3,
-        photoCount: 120,
-        createdAt: "2026-04-01T10:00:00Z",
-        updatedAt: "2026-04-02T10:00:00Z",
-      };
-    });
-
+    vi.clearAllMocks();
+    apiMocks.isBackendUnavailableError.mockReturnValue(false);
     apiMocks.deleteAdminSpace.mockResolvedValue(undefined);
-  });
-
-  it("renders a paginated admin Space list and selected Space details", async () => {
-    const Stub = createRoutesStub([
-      {
-        path: "/app/admin/spaces",
-        Component: AppAdminSpacesRoute,
-        action: async ({ request }) =>
-          appAdminSpacesClientAction({ request } as never),
-        loader: async ({ request }) =>
-          appAdminSpacesClientLoader({ request } as never),
-      },
-    ]);
-
-    render(<Stub initialEntries={["/app/admin/spaces?space=space-2"]} />);
-
-    expect(await screen.findByText("Space oversight")).toBeInTheDocument();
-    expect(screen.getByText("Family Archive")).toBeInTheDocument();
-    expect(screen.getAllByText("Event Highlights")).toHaveLength(2);
-    expect(screen.getByText("Force-delete Space")).toBeInTheDocument();
-    expect(
-      screen.getByRole("link", { name: "Open invites for this Space" }),
-    ).toHaveAttribute("href", "/app/admin/invites?spaceId=space-2&active=true");
-  });
-
-  it("deletes a selected Space and surfaces success feedback", async () => {
-    const Stub = createRoutesStub([
-      {
-        path: "/app/admin/spaces",
-        Component: AppAdminSpacesRoute,
-        action: async ({ request }) =>
-          appAdminSpacesClientAction({ request } as never),
-        loader: async ({ request }) =>
-          appAdminSpacesClientLoader({ request } as never),
-      },
-    ]);
-
-    render(<Stub initialEntries={["/app/admin/spaces?space=space-1"]} />);
-
-    expect((await screen.findAllByText("Family Archive")).length).toBe(2);
-
-    fireEvent.click(screen.getByRole("button", { name: "Delete Space" }));
-
-    await waitFor(() => {
-      expect(apiMocks.deleteAdminSpace).toHaveBeenCalledWith("space-1");
-    });
-
-    expect(await screen.findByText("Space deleted.")).toBeInTheDocument();
-  });
-
-  it("shows an inline list error when the admin Space list request fails", async () => {
-    apiMocks.listAdminSpaces.mockRejectedValueOnce(
-      new Error("Admin Space list failed"),
+    apiMocks.listAdminSpaces.mockResolvedValue(
+      spacesPage([
+        makeSpace(),
+        makeSpace({
+          id: "s-2",
+          name: "Trips",
+          visibility: "PUBLIC",
+          depth: 1,
+          parentId: "s-1",
+          creatorName: "Creator Two",
+        }),
+      ]),
     );
+  });
 
-    const Stub = createRoutesStub([
-      {
-        path: "/app/admin/spaces",
-        Component: AppAdminSpacesRoute,
-        action: async ({ request }) =>
-          appAdminSpacesClientAction({ request } as never),
-        loader: async ({ request }) =>
-          appAdminSpacesClientLoader({ request } as never),
-      },
-    ]);
+  it("renders the Space table", async () => {
+    renderRoute();
+    expect(await screen.findByText("Family")).toBeInTheDocument();
+    expect(screen.getByText("Trips")).toBeInTheDocument();
+    expect(screen.getByText("PUBLIC")).toBeInTheDocument();
+    expect(screen.getByText("Owner One")).toBeInTheDocument();
+  });
 
-    render(<Stub initialEntries={["/app/admin/spaces"]} />);
+  it("force-deletes a Space through the confirm dialog", async () => {
+    renderRoute();
+    await screen.findByText("Family");
 
-    expect(
-      await screen.findByText("Admin Space list failed"),
-    ).toBeInTheDocument();
+    fireEvent.click(
+      screen.getAllByRole("button", { name: "Delete Space" })[0]!,
+    );
+    const dialog = screen.getByRole("alertdialog");
+    expect(within(dialog).getByText("Delete Space?")).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("button", { name: /Delete/ }));
+
+    await waitFor(() =>
+      expect(apiMocks.deleteAdminSpace).toHaveBeenCalledWith("s-1"),
+    );
+  });
+
+  it("shows a table error when the list fails", async () => {
+    apiMocks.listAdminSpaces.mockRejectedValue(new Error("boom"));
+    renderRoute();
+    expect(await screen.findByText("Failed to load data")).toBeInTheDocument();
   });
 });
