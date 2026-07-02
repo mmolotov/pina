@@ -509,7 +509,7 @@ export default function AppAdminMlRoute({ loaderData }: Route.ComponentProps) {
                     {t("app.admin.ml.profileActive")}
                   </ABadge>
                 </div>
-                <div className="adm-prof-meta ml-prof-meta">
+                <div className="ml-prof-meta">
                   <div className="ml-prof-meta-cell">
                     <div className="lbl">
                       {t("app.admin.ml.profileMaxParallel")}
