@@ -381,6 +381,89 @@ export interface AdminSettingsDto {
   compressionMaxResolution: number;
 }
 
+export interface AdminOverviewDto {
+  totalUsers: number;
+  activeUsers: number;
+  adminUsers: number;
+  totalSpaces: number;
+  activeInvites: number;
+  totalPhotos: number;
+  totalVariants: number;
+  totalStorageBytes: number;
+  filesystemUsedBytes: number;
+  filesystemAvailableBytes: number;
+  storageProvider: string;
+  status: string;
+  version: string;
+  databaseConnected: boolean;
+  jvmHeapUsedBytes: number;
+  jvmHeapMaxBytes: number;
+}
+
+export interface AdminMlLicenseDto {
+  spdx: string;
+  url: string | null;
+  commercialUse: boolean;
+  allowBundling: boolean;
+  notes: string | null;
+}
+
+export interface AdminMlModelDto {
+  step: string;
+  modelId: string;
+  version: string;
+  runtime: string;
+  available: boolean;
+  license: AdminMlLicenseDto | null;
+}
+
+export interface AdminMlProfileDto {
+  name: string;
+  maxParallelAnalyses: number;
+  analysisMaxResolution: number;
+  executionProviders: string[];
+}
+
+export interface AdminMlInferenceSettingDto {
+  key: string;
+  label: string;
+  value: string;
+}
+
+export interface AdminMlStatusDto {
+  enabled: boolean;
+  reachable: boolean;
+  serviceVersion: string | null;
+  activeProfile: string | null;
+  ready: boolean;
+  models: AdminMlModelDto[];
+  profile: AdminMlProfileDto | null;
+  inferenceSettings: AdminMlInferenceSettingDto[];
+}
+
+export interface AdminMlQueueCountsDto {
+  pending: number;
+  completed: number;
+  failed: number;
+}
+
+export interface AdminMlDto {
+  status: AdminMlStatusDto;
+  counts: AdminMlQueueCountsDto;
+}
+
+export type AnalysisJobStatus = "PENDING" | "COMPLETED" | "FAILED";
+
+export interface AdminMlJobDto {
+  photoId: string;
+  photoName: string | null;
+  status: AnalysisJobStatus;
+  attempts: number;
+  nextAttemptAt: string;
+  lastError: string | null;
+  createdAt: string;
+}
+
 export type TrashItemKind = "PHOTO" | "ALBUM";
 
 export interface TrashItemDto {

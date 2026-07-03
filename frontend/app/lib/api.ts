@@ -12,6 +12,9 @@ import type {
   AlbumSortDirection,
   AlbumSortField,
   AdminInviteLinkDto,
+  AdminMlDto,
+  AdminMlJobDto,
+  AdminOverviewDto,
   AdminHealthDto,
   AdminSettingsDto,
   AdminSpaceDto,
@@ -495,6 +498,52 @@ export function updateAdminSettings(input: {
 
 export function getAdminStorageSummary() {
   return request<AdminStorageSummaryDto>("/admin/storage", { auth: true });
+}
+
+export function getAdminOverview() {
+  return request<AdminOverviewDto>("/admin/overview", { auth: true });
+}
+
+export function getAdminMl() {
+  return request<AdminMlDto>("/admin/ml", { auth: true });
+}
+
+export function listAdminMlJobs(params: {
+  page?: number;
+  size?: number;
+  needsTotal?: boolean;
+  status?: string | null;
+}) {
+  return request<PageResponse<AdminMlJobDto>>(
+    `/admin/ml/jobs?${buildQuery({
+      page: params.page ?? 0,
+      size: params.size ?? 20,
+      needsTotal: params.needsTotal ?? true,
+      status: params.status?.trim() || null,
+    })}`,
+    { auth: true },
+  );
+}
+
+export function retryAdminMlJob(photoId: string) {
+  return request<void>(`/admin/ml/jobs/${photoId}/retry`, {
+    auth: true,
+    method: "POST",
+  });
+}
+
+export function reanalyzeAdminMlJob(photoId: string) {
+  return request<void>(`/admin/ml/jobs/${photoId}/reanalyze`, {
+    auth: true,
+    method: "POST",
+  });
+}
+
+export function retryAllFailedAdminMl() {
+  return request<{ requeued: number }>("/admin/ml/retry-failed", {
+    auth: true,
+    method: "POST",
+  });
 }
 
 export function listAdminStorageUsers(params: {

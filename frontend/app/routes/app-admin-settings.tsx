@@ -1,19 +1,20 @@
 import type { Route } from "./+types/app-admin-settings";
 import { useEffect, useRef, useState } from "react";
-import {
-  Form,
-  Link,
-  useActionData,
-  useNavigation,
-  useRevalidator,
-} from "react-router";
-import { EmptyHint, InlineMessage, PageHeader, Panel } from "~/components/ui";
+import { useFetcher } from "react-router";
+import { Settings2 } from "lucide-react";
+import { AEmpty } from "~/components/admin/ui";
 import {
   getAdminSettings,
   isBackendUnavailableError,
   updateAdminSettings,
 } from "~/lib/api";
 import { toErrorMessage } from "~/lib/errors";
+import {
+  getActiveLocale,
+  translateMessage,
+  useI18n,
+  type MessageKey,
+} from "~/lib/i18n";
 import { toActionErrorMessage } from "~/lib/route-actions";
 import type {
   AdminSettingsDto,
@@ -27,38 +28,24 @@ interface AdminSettingsLoaderData {
 }
 
 type UpdateAdminSettingsActionResult =
-  | { ok: true; successMessage: string }
+  | { ok: true }
   | { ok: false; errorMessage: string };
-
-function parseRequiredInteger(
-  value: FormDataEntryValue | null,
-  fieldName: string,
-) {
-  const parsed = Number(String(value ?? "").trim());
-
-  if (!Number.isInteger(parsed)) {
-    return `${fieldName} must be an integer.`;
-  }
-
-  return parsed;
-}
 
 export async function clientLoader({
   request: _request,
 }: Route.ClientLoaderArgs): Promise<AdminSettingsLoaderData> {
   try {
-    return {
-      settings: await getAdminSettings(),
-      error: null,
-    };
+    return { settings: await getAdminSettings(), error: null };
   } catch (error) {
     if (isBackendUnavailableError(error)) {
       throw error;
     }
-
     return {
       settings: null,
-      error: toErrorMessage(error, "Failed to load admin settings."),
+      error: toErrorMessage(
+        error,
+        translateMessage(getActiveLocale(), "app.admin.settings.loadFailed"),
+      ),
     };
   }
 }
@@ -67,27 +54,8 @@ export async function clientAction({
   request,
 }: Route.ClientActionArgs): Promise<UpdateAdminSettingsActionResult> {
   const formData = await request.formData();
-  const compressionQuality = parseRequiredInteger(
-    formData.get("compressionQuality"),
-    "Compression quality",
-  );
-  if (typeof compressionQuality === "string") {
-    return {
-      ok: false,
-      errorMessage: compressionQuality,
-    };
-  }
-
-  const compressionMaxResolution = parseRequiredInteger(
-    formData.get("compressionMaxResolution"),
-    "Compression max resolution",
-  );
-  if (typeof compressionMaxResolution === "string") {
-    return {
-      ok: false,
-      errorMessage: compressionMaxResolution,
-    };
-  }
+  const quality = Number(formData.get("compressionQuality"));
+  const maxResolution = Number(formData.get("compressionMaxResolution"));
 
   try {
     await updateAdminSettings({
@@ -95,20 +63,21 @@ export async function clientAction({
         formData.get("registrationMode") ?? "INVITE_ONLY",
       ) as RegistrationMode,
       compressionFormat: String(
-        formData.get("compressionFormat") ?? "jpg",
+        formData.get("compressionFormat") ?? "jpeg",
       ) as CompressionFormat,
-      compressionQuality,
-      compressionMaxResolution,
+      compressionQuality: Number.isFinite(quality) ? quality : 80,
+      compressionMaxResolution: Number.isFinite(maxResolution)
+        ? maxResolution
+        : 4096,
     });
-
-    return {
-      ok: true,
-      successMessage: "Settings updated.",
-    };
+    return { ok: true };
   } catch (error) {
     return {
       ok: false,
-      errorMessage: toActionErrorMessage(error, "Failed to update settings."),
+      errorMessage: toActionErrorMessage(
+        error,
+        translateMessage(getActiveLocale(), "app.admin.settings.saveFailed"),
+      ),
     };
   }
 }
@@ -117,22 +86,62 @@ export function meta(_: Route.MetaArgs) {
   return [{ title: "Admin Settings | PINA" }];
 }
 
+const REG_MODES: {
+  id: RegistrationMode;
+  labelKey: MessageKey;
+  descKey: MessageKey;
+}[] = [
+  {
+    id: "OPEN",
+    labelKey: "app.admin.settings.regOpen",
+    descKey: "app.admin.settings.regOpenDesc",
+  },
+  {
+    id: "INVITE_ONLY",
+    labelKey: "app.admin.settings.regInvite",
+    descKey: "app.admin.settings.regInviteDesc",
+  },
+  {
+    id: "CLOSED",
+    labelKey: "app.admin.settings.regClosed",
+    descKey: "app.admin.settings.regClosedDesc",
+  },
+];
+
+interface FieldErrors {
+  quality?: string;
+  resolution?: string;
+}
+
 export default function AppAdminSettingsRoute({
   loaderData,
 }: Route.ComponentProps) {
-  const actionData = useActionData<typeof clientAction>();
-  const navigation = useNavigation();
-  const revalidator = useRevalidator();
+  const { t } = useI18n();
+  const fetcher = useFetcher<UpdateAdminSettingsActionResult>();
   const [draft, setDraft] = useState<AdminSettingsDto | null>(
     loaderData.settings,
   );
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
-  // Adopt revalidated loader settings only right after a successful save, so an
-  // in-flight revalidation never clobbers the edits the user is making.
+  const [errors, setErrors] = useState<FieldErrors>({});
+  const [toast, setToast] = useState<{ label: string; ok: boolean } | null>(
+    null,
+  );
   const adoptLoaderSettings = useRef(false);
-  const isSaving = navigation.state !== "idle";
-  const errorMessage =
-    actionData && !actionData.ok ? actionData.errorMessage : null;
+  const toastTimer = useRef<number | null>(null);
+  const pendingToast = useRef<string | null>(null);
+  const saving = fetcher.state !== "idle";
+
+  useEffect(
+    () => () => {
+      if (toastTimer.current) window.clearTimeout(toastTimer.current);
+    },
+    [],
+  );
+
+  const showToast = (label: string, ok: boolean) => {
+    if (toastTimer.current) window.clearTimeout(toastTimer.current);
+    setToast({ label, ok });
+    toastTimer.current = window.setTimeout(() => setToast(null), 3200);
+  };
 
   useEffect(() => {
     if (adoptLoaderSettings.current) {
@@ -142,208 +151,255 @@ export default function AppAdminSettingsRoute({
   }, [loaderData.settings]);
 
   useEffect(() => {
-    if (!actionData) {
+    if (fetcher.state !== "idle" || !fetcher.data) {
       return;
     }
-
-    if (actionData.ok) {
-      setSuccessMessage(actionData.successMessage);
+    if (fetcher.data.ok) {
+      showToast(pendingToast.current ?? "", true);
       adoptLoaderSettings.current = true;
-      revalidator.revalidate();
+    } else {
+      showToast(fetcher.data.errorMessage, false);
+    }
+    pendingToast.current = null;
+  }, [fetcher.state, fetcher.data]);
+
+  if (!draft || !loaderData.settings) {
+    return (
+      <>
+        <div className="adm-section-head">
+          <div>
+            <h2 className="adm-section-title">
+              {t("app.admin.settings.title")}
+            </h2>
+          </div>
+        </div>
+        <AEmpty
+          icon={<Settings2 size={22} />}
+          text={loaderData.error ?? t("app.admin.loadErrorText")}
+          title={t("app.admin.loadErrorTitle")}
+        />
+      </>
+    );
+  }
+
+  const saved = loaderData.settings;
+  const dirty =
+    draft.registrationMode !== saved.registrationMode ||
+    draft.compressionFormat !== saved.compressionFormat ||
+    draft.compressionQuality !== saved.compressionQuality ||
+    draft.compressionMaxResolution !== saved.compressionMaxResolution;
+  const isPng = draft.compressionFormat === "png";
+
+  function update<K extends keyof AdminSettingsDto>(
+    key: K,
+    value: AdminSettingsDto[K],
+  ) {
+    setDraft((current) => (current ? { ...current, [key]: value } : current));
+  }
+
+  function save() {
+    if (!draft) {
       return;
     }
-
-    setSuccessMessage(null);
-  }, [actionData, revalidator]);
-
-  const hasDraftChanges =
-    loaderData.settings != null &&
-    draft != null &&
-    (draft.registrationMode !== loaderData.settings.registrationMode ||
-      draft.compressionFormat !== loaderData.settings.compressionFormat ||
-      draft.compressionQuality !== loaderData.settings.compressionQuality ||
-      draft.compressionMaxResolution !==
-        loaderData.settings.compressionMaxResolution);
+    const nextErrors: FieldErrors = {};
+    if (draft.compressionQuality < 1 || draft.compressionQuality > 100) {
+      nextErrors.quality = t("app.admin.settings.qualityError");
+    }
+    if (draft.compressionMaxResolution < 256) {
+      nextErrors.resolution = t("app.admin.settings.resolutionMin");
+    } else if (draft.compressionMaxResolution > 16384) {
+      nextErrors.resolution = t("app.admin.settings.resolutionMax");
+    }
+    setErrors(nextErrors);
+    if (Object.keys(nextErrors).length > 0) {
+      return;
+    }
+    pendingToast.current = t("app.admin.settings.toastSaved");
+    fetcher.submit(
+      {
+        registrationMode: draft.registrationMode,
+        compressionFormat: draft.compressionFormat,
+        compressionQuality: String(draft.compressionQuality),
+        compressionMaxResolution: String(draft.compressionMaxResolution),
+      },
+      { method: "post" },
+    );
+  }
 
   return (
-    <div className="space-y-6">
-      <PageHeader
-        actions={
-          <>
-            <Link className="button-secondary" to="/app/admin/health">
-              Open health
-            </Link>
-            <Link className="button-secondary" to="/app/admin/storage">
-              Open storage
-            </Link>
-          </>
-        }
-        description="View and update the supported mutable instance settings exposed by the backend admin API."
-        eyebrow="Admin Settings"
-        title="Instance settings"
-      />
+    <>
+      <div className="adm-section-head">
+        <div>
+          <h2 className="adm-section-title">{t("app.admin.settings.title")}</h2>
+          <p className="adm-section-sub">{t("app.admin.settings.sub")}</p>
+        </div>
+      </div>
 
-      {loaderData.error ? (
-        <InlineMessage tone="danger">{loaderData.error}</InlineMessage>
-      ) : null}
-      {errorMessage ? (
-        <InlineMessage tone="danger">{errorMessage}</InlineMessage>
-      ) : null}
-      {successMessage ? (
-        <InlineMessage tone="success">{successMessage}</InlineMessage>
-      ) : null}
+      <div className="adm-card">
+        <div className="adm-form">
+          <div className="adm-field-group">
+            <div className="adm-field-label">
+              {t("app.admin.settings.regTitle")}
+            </div>
+            <div className="adm-field-hint">
+              {t("app.admin.settings.regHint")}
+            </div>
+            <div className="adm-radio-cards" style={{ marginTop: ".25rem" }}>
+              {REG_MODES.map((mode) => (
+                <button
+                  aria-pressed={draft.registrationMode === mode.id}
+                  className={`adm-radio-card${draft.registrationMode === mode.id ? " active" : ""}`}
+                  key={mode.id}
+                  onClick={() => update("registrationMode", mode.id)}
+                  type="button"
+                >
+                  <b>{t(mode.labelKey)}</b>
+                  <span>{t(mode.descKey)}</span>
+                </button>
+              ))}
+            </div>
+          </div>
 
-      {!draft ? (
-        <Panel className="p-6">
-          <p className="eyebrow">Settings</p>
-          <h2 className="mt-2 text-2xl font-semibold tracking-tight">
-            Settings are unavailable
-          </h2>
-          <EmptyHint className="mt-5 px-5 py-6 leading-7">
-            The admin shell remains active, but this request could not load the
-            mutable instance settings snapshot.
-          </EmptyHint>
-        </Panel>
-      ) : (
-        <Panel className="p-6">
-          <p className="eyebrow">Mutable configuration</p>
-          <h2 className="mt-2 text-2xl font-semibold tracking-tight">
-            Registration and compression
-          </h2>
-          <p className="mt-3 text-sm leading-7 text-[var(--color-text-muted)]">
-            Registration mode changes apply immediately to sign-up flows.
-            Compression settings affect new uploads only.
-          </p>
+          <div style={{ height: 1, background: "var(--color-border)" }} />
 
-          <Form className="mt-6 space-y-5" method="post">
-            <label className="block">
-              <span className="mb-2 block text-sm font-medium">
-                Registration mode
-              </span>
-              <select
-                aria-label="Registration mode"
-                className="field"
-                name="registrationMode"
-                onChange={(event) =>
-                  setDraft((current) =>
-                    current
-                      ? {
-                          ...current,
-                          registrationMode: event.target
-                            .value as RegistrationMode,
-                        }
-                      : current,
-                  )
-                }
-                value={draft.registrationMode}
-              >
-                <option value="OPEN">Open</option>
-                <option value="INVITE_ONLY">Invite only</option>
-                <option value="CLOSED">Closed</option>
-              </select>
-            </label>
-
-            <label className="block">
-              <span className="mb-2 block text-sm font-medium">
-                Compression format
-              </span>
-              <select
-                aria-label="Compression format"
-                className="field"
-                name="compressionFormat"
-                onChange={(event) =>
-                  setDraft((current) =>
-                    current
-                      ? {
-                          ...current,
-                          compressionFormat: event.target
-                            .value as CompressionFormat,
-                        }
-                      : current,
-                  )
-                }
-                value={draft.compressionFormat}
-              >
-                <option value="jpg">jpg</option>
-                <option value="jpeg">jpeg</option>
-                <option value="png">png</option>
-              </select>
-            </label>
-
-            <label className="block">
-              <span className="mb-2 block text-sm font-medium">
-                Compression quality
-              </span>
-              <input
-                aria-label="Compression quality"
-                className="field"
-                max={100}
-                min={1}
-                name="compressionQuality"
-                onChange={(event) =>
-                  setDraft((current) =>
-                    current
-                      ? {
-                          ...current,
-                          compressionQuality: Number(event.target.value),
-                        }
-                      : current,
-                  )
-                }
-                type="number"
-                value={draft.compressionQuality}
-              />
-            </label>
-
-            <label className="block">
-              <span className="mb-2 block text-sm font-medium">
-                Compression max resolution
-              </span>
-              <input
-                aria-label="Compression max resolution"
-                className="field"
-                min={100}
-                name="compressionMaxResolution"
-                onChange={(event) =>
-                  setDraft((current) =>
-                    current
-                      ? {
-                          ...current,
-                          compressionMaxResolution: Number(event.target.value),
-                        }
-                      : current,
-                  )
-                }
-                type="number"
-                value={draft.compressionMaxResolution}
-              />
-            </label>
-
-            <div className="flex flex-col gap-3 sm:flex-row">
+          <div className="adm-field-group">
+            <div className="adm-field-label">
+              {t("app.admin.settings.formatTitle")}
+            </div>
+            <div className="adm-field-hint">
+              {t("app.admin.settings.formatHint")}
+            </div>
+            <div
+              className="adm-seg"
+              style={{ marginTop: ".25rem", alignSelf: "flex-start" }}
+            >
               <button
-                className="button-primary"
-                disabled={isSaving || !hasDraftChanges}
-                type="submit"
-              >
-                {isSaving ? "Saving settings..." : "Save changes"}
-              </button>
-              <button
-                className="button-secondary"
-                disabled={
-                  isSaving || loaderData.settings == null || !hasDraftChanges
-                }
-                onClick={() => {
-                  setDraft(loaderData.settings);
-                  setSuccessMessage(null);
-                }}
+                className={!isPng ? "on" : ""}
+                onClick={() => update("compressionFormat", "jpeg")}
                 type="button"
               >
-                Reset
+                JPEG
+              </button>
+              <button
+                className={isPng ? "on" : ""}
+                onClick={() => update("compressionFormat", "png")}
+                type="button"
+              >
+                PNG
               </button>
             </div>
-          </Form>
-        </Panel>
-      )}
-    </div>
+          </div>
+
+          <div className="adm-field-group">
+            <div
+              className="adm-field-label"
+              style={{ display: "flex", justifyContent: "space-between" }}
+            >
+              <span>{t("app.admin.settings.qualityTitle")}</span>
+              <span
+                style={{
+                  color: "var(--color-accent-strong)",
+                  fontVariantNumeric: "tabular-nums",
+                }}
+              >
+                {draft.compressionQuality}
+              </span>
+            </div>
+            <input
+              aria-label={t("app.admin.settings.qualityTitle")}
+              className="adm-slider"
+              disabled={isPng}
+              max="100"
+              min="1"
+              onChange={(event) =>
+                update("compressionQuality", Number(event.target.value))
+              }
+              step="1"
+              type="range"
+              value={draft.compressionQuality}
+            />
+            <div className="adm-field-hint">
+              {isPng
+                ? t("app.admin.settings.qualityHintPng")
+                : t("app.admin.settings.qualityHintJpeg")}
+            </div>
+            {errors.quality ? (
+              <div
+                className="adm-field-hint"
+                style={{ color: "var(--color-danger-strong)" }}
+              >
+                {errors.quality}
+              </div>
+            ) : null}
+          </div>
+
+          <div className="adm-field-group" style={{ maxWidth: "20rem" }}>
+            <div className="adm-field-label">
+              {t("app.admin.settings.resolutionTitle")}
+            </div>
+            <div className="adm-field-hint">
+              {t("app.admin.settings.resolutionHint")}
+            </div>
+            <input
+              aria-label={t("app.admin.settings.resolutionTitle")}
+              className="field"
+              max="16384"
+              min="256"
+              onChange={(event) =>
+                update("compressionMaxResolution", Number(event.target.value))
+              }
+              step="64"
+              type="number"
+              value={draft.compressionMaxResolution}
+            />
+            {errors.resolution ? (
+              <div
+                className="adm-field-hint"
+                style={{ color: "var(--color-danger-strong)" }}
+              >
+                {errors.resolution}
+              </div>
+            ) : null}
+          </div>
+
+          <div className="adm-form-foot">
+            <span className="adm-dirty-note">
+              {dirty
+                ? t("app.admin.settings.dirty")
+                : t("app.admin.settings.clean")}
+            </span>
+            <span className="spacer" />
+            <button
+              className="button-secondary"
+              disabled={!dirty || saving}
+              onClick={() => {
+                setDraft(saved);
+                setErrors({});
+              }}
+              type="button"
+            >
+              {t("app.admin.settings.reset")}
+            </button>
+            <button
+              className="button-primary"
+              disabled={!dirty || saving}
+              onClick={save}
+              style={{ minWidth: "9rem" }}
+              type="button"
+            >
+              {saving
+                ? t("app.admin.settings.saving")
+                : t("app.admin.settings.save")}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {toast ? (
+        <div className={`adm-toast${toast.ok ? " ok" : ""}`} role="status">
+          {toast.label}
+        </div>
+      ) : null}
+    </>
   );
 }

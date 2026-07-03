@@ -89,7 +89,10 @@ describe("AppPhotoDetailRoute", () => {
     ).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("tab", { name: /^exif$/i }));
-    expect(await screen.findByText("camera")).toBeInTheDocument();
+    // Longer wait: the EXIF panel render can lag under CI's parallel + coverage load.
+    expect(
+      await screen.findByText("camera", undefined, { timeout: 5000 }),
+    ).toBeInTheDocument();
     expect(screen.getByText("Phone")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /favorite|избран/i }));

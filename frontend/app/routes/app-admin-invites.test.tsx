@@ -1,144 +1,127 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { createRoutesStub } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { I18nProvider } from "~/lib/i18n";
 import AppAdminInvitesRoute, {
-  clientAction as appAdminInvitesClientAction,
-  clientLoader as appAdminInvitesClientLoader,
+  clientAction as invitesClientAction,
+  clientLoader as invitesClientLoader,
 } from "~/routes/app-admin-invites";
+import type { AdminInviteLinkDto } from "~/types/api";
 
 const apiMocks = vi.hoisted(() => ({
   listAdminInvites: vi.fn(),
   revokeAdminInvite: vi.fn(),
+  isBackendUnavailableError: vi.fn(() => false),
 }));
 
 vi.mock("~/lib/api", () => ({
   ...apiMocks,
-  ApiError: class ApiError extends Error {
-    status: number;
-    code: string;
-
-    constructor(status: number, code: string, message: string) {
-      super(message);
-      this.status = status;
-      this.code = code;
-    }
-  },
-  isBackendUnavailableError: vi.fn(() => false),
+  ApiError: class ApiError extends Error {},
 }));
+
+function makeInvite(
+  overrides: Partial<AdminInviteLinkDto> = {},
+): AdminInviteLinkDto {
+  return {
+    id: "i-1",
+    code: "ABCD1234",
+    spaceId: "s-1",
+    spaceName: "Family",
+    defaultRole: "MEMBER",
+    expiration: null,
+    usageLimit: 10,
+    usageCount: 3,
+    active: true,
+    createdById: "u-1",
+    createdByName: "Owner One",
+    createdAt: "2026-01-02T00:00:00Z",
+    ...overrides,
+  };
+}
+
+function invitesPage(items: AdminInviteLinkDto[]) {
+  return {
+    items,
+    page: 0,
+    size: 20,
+    hasNext: false,
+    totalItems: items.length,
+    totalPages: 1,
+  };
+}
+
+function renderRoute() {
+  const Stub = createRoutesStub([
+    {
+      path: "/app/admin/invites",
+      Component: AppAdminInvitesRoute,
+      loader: (args) => invitesClientLoader(args as never),
+      action: (args) => invitesClientAction(args as never),
+    },
+  ]);
+  return render(
+    <I18nProvider>
+      <Stub initialEntries={["/app/admin/invites"]} />
+    </I18nProvider>,
+  );
+}
 
 describe("AppAdminInvitesRoute", () => {
   beforeEach(() => {
-    apiMocks.listAdminInvites.mockResolvedValue({
-      items: [
-        {
-          id: "invite-1",
-          code: "FAMILY-AAA",
-          spaceId: "space-1",
-          spaceName: "Family Archive",
-          defaultRole: "MEMBER",
-          expiration: "2026-04-10T10:00:00Z",
-          usageLimit: 5,
-          usageCount: 2,
-          active: true,
-          createdById: "user-1",
-          createdByName: "Alice Example",
-          createdAt: "2026-04-01T10:00:00Z",
-        },
-        {
-          id: "invite-2",
-          code: "EVENT-BBB",
-          spaceId: "space-2",
-          spaceName: "Event Highlights",
-          defaultRole: "VIEWER",
-          expiration: null,
-          usageLimit: null,
-          usageCount: 7,
-          active: false,
-          createdById: "user-2",
-          createdByName: "Bob Admin",
-          createdAt: "2026-04-01T11:00:00Z",
-        },
-      ],
-      page: 0,
-      size: 20,
-      hasNext: false,
-      totalItems: 2,
-      totalPages: 1,
-    });
-
+    vi.clearAllMocks();
+    apiMocks.isBackendUnavailableError.mockReturnValue(false);
     apiMocks.revokeAdminInvite.mockResolvedValue(undefined);
+    apiMocks.listAdminInvites.mockResolvedValue(
+      invitesPage([
+        makeInvite(),
+        makeInvite({ id: "i-2", code: "REVOKED9", active: false }),
+      ]),
+    );
   });
 
-  it("renders invite inventory and selected invite details", async () => {
-    const Stub = createRoutesStub([
-      {
-        path: "/app/admin/invites",
-        Component: AppAdminInvitesRoute,
-        action: async ({ request }) =>
-          appAdminInvitesClientAction({ request } as never),
-        loader: async ({ request }) =>
-          appAdminInvitesClientLoader({ request } as never),
-      },
-    ]);
-
-    render(<Stub initialEntries={["/app/admin/invites?invite=invite-1"]} />);
-
-    expect(await screen.findByText("Invite oversight")).toBeInTheDocument();
-    expect(screen.getByText("Event Highlights")).toBeInTheDocument();
-    expect(screen.getAllByText("Family Archive")).toHaveLength(2);
-    expect(
-      screen.getByRole("heading", { name: "Revoke invite" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("link", { name: "Open admin Space oversight" }),
-    ).toHaveAttribute("href", "/app/admin/spaces?space=space-1");
+  it("renders the invite table with statuses", async () => {
+    renderRoute();
+    expect(await screen.findByText("ABCD1234")).toBeInTheDocument();
+    expect(screen.getByText("REVOKED9")).toBeInTheDocument();
+    expect(screen.getByText("active")).toBeInTheDocument();
+    expect(screen.getByText("revoked")).toBeInTheDocument();
   });
 
-  it("revokes an invite and surfaces success feedback", async () => {
-    const Stub = createRoutesStub([
-      {
-        path: "/app/admin/invites",
-        Component: AppAdminInvitesRoute,
-        action: async ({ request }) =>
-          appAdminInvitesClientAction({ request } as never),
-        loader: async ({ request }) =>
-          appAdminInvitesClientLoader({ request } as never),
-      },
-    ]);
+  it("filters invites by code with the search box", async () => {
+    renderRoute();
+    await screen.findByText("ABCD1234");
 
-    render(<Stub initialEntries={["/app/admin/invites?invite=invite-1"]} />);
-
-    expect((await screen.findAllByText("Family Archive")).length).toBe(2);
-
-    fireEvent.click(screen.getByRole("button", { name: "Revoke invite" }));
-
-    await waitFor(() => {
-      expect(apiMocks.revokeAdminInvite).toHaveBeenCalledWith("invite-1");
+    fireEvent.change(screen.getByLabelText("Search invites"), {
+      target: { value: "REVOKED" },
     });
 
-    expect(await screen.findByText("Invite revoked.")).toBeInTheDocument();
+    expect(screen.queryByText("ABCD1234")).not.toBeInTheDocument();
+    expect(screen.getByText("REVOKED9")).toBeInTheDocument();
   });
 
-  it("shows an inline list error when the admin invite request fails", async () => {
-    apiMocks.listAdminInvites.mockRejectedValueOnce(
-      new Error("Admin invite list failed"),
+  it("revokes an invite through the confirm dialog", async () => {
+    renderRoute();
+    await screen.findByText("ABCD1234");
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Revoke" })[0]!);
+    const dialog = screen.getByRole("alertdialog");
+    expect(within(dialog).getByText("Revoke invite?")).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("button", { name: /Revoke/ }));
+
+    await waitFor(() =>
+      expect(apiMocks.revokeAdminInvite).toHaveBeenCalledWith("i-1"),
     );
+  });
 
-    const Stub = createRoutesStub([
-      {
-        path: "/app/admin/invites",
-        Component: AppAdminInvitesRoute,
-        action: async ({ request }) =>
-          appAdminInvitesClientAction({ request } as never),
-        loader: async ({ request }) =>
-          appAdminInvitesClientLoader({ request } as never),
-      },
-    ]);
-
-    render(<Stub initialEntries={["/app/admin/invites"]} />);
-
-    expect(
-      await screen.findByText("Admin invite list failed"),
-    ).toBeInTheDocument();
+  it("shows a table error when the list fails", async () => {
+    apiMocks.listAdminInvites.mockRejectedValue(new Error("boom"));
+    renderRoute();
+    expect(await screen.findByText("Failed to load data")).toBeInTheDocument();
   });
 });
