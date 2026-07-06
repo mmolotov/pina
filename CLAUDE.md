@@ -66,6 +66,15 @@ docker compose -f docker/docker-compose.yml up --build
 - Frontend uses path alias `~/` for `app/` imports
 - Frontend prefers `clientLoader`/`clientAction` for route data; SPA mode only (no SSR)
 
+## Git Workflow
+
+- **PRs target `develop`** — `main` is the lagging release branch and only receives release merges
+  from `develop`. Tooling that defaults to `main` (including Claude Code's PR helper) must be
+  pointed at `develop` explicitly: `gh pr create --base develop`.
+- Branch off `develop`, named `feature/<slug>`, `fix/<slug>`, or `chore/<slug>`.
+- Commits follow Conventional Commits: `feat(scope): …`, `fix: …`, `test: …`, `style: …`, `chore: …`.
+- Diffs for review or analysis are taken against `develop`: `git diff develop...HEAD`.
+
 ## Architecture Overview
 
 **Monorepo** with backend, frontend, and placeholder modules (ml, proto, tg-bot, tg-mini-app).
@@ -112,7 +121,8 @@ Test helpers: `TestAuthHelper` (REST-based JWT), `TestUserHelper` (direct DB set
 
 ### Current Phase
 
-Phase 2 (backend) complete. Phase 3 (frontend) nearly complete — remaining: face search backend integration, admin panel. Phase 4 (ML service) implemented except video keyframe extraction (deferred to Phase 7). See [MILESTONES.md](MILESTONES.md).
+Phase status lives in [MILESTONES.md](MILESTONES.md) — check it there; per-phase detail is
+deliberately not duplicated here because it goes stale.
 
 <!-- BACKLOG.MD MCP GUIDELINES START -->
 

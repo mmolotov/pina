@@ -1,7 +1,6 @@
 ---
 name: create-migration
 description: Create a new Flyway SQL migration for the backend with correct versioning and naming. Use whenever a schema change is needed — Flyway migrations are the source of truth for DDL (never hand-edit the DB or rely on Hibernate auto-DDL).
-disable-model-invocation: true
 ---
 
 # Create Migration

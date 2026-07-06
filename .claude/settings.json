@@ -2,11 +2,30 @@
   "permissions": {
     "allow": [
       "Bash(./gradlew *)",
+      "Bash(cd backend && ./gradlew *)",
       "Bash(npm run *)",
+      "Bash(cd frontend && npm run *)",
       "Bash(npm ci)",
       "Bash(npm install)",
       "Bash(npm audit *)",
-      "Bash(npx *)",
+      "Bash(npx prettier *)",
+      "Bash(npx vitest *)",
+      "Bash(npx tsc *)",
+      "Bash(npx eslint *)",
+      "Bash(npx stylelint *)",
+      "Bash(npx playwright *)",
+      "Bash(npx react-router *)",
+      "Bash(make *)",
+      "Bash(cd ml && make *)",
+      "Bash(uv run *)",
+      "Bash(cd ml && uv run *)",
+      "Bash(buf *)",
+      "Bash(cd proto && buf *)",
+      "Bash(docker compose *)",
+      "Bash(cd backend)",
+      "Bash(cd frontend)",
+      "Bash(cd ml)",
+      "Bash(cd proto)",
       "Bash(git *)",
       "Bash(gh pr *)",
       "Bash(gh run *)",
@@ -17,7 +36,6 @@
       "Bash(awk *)",
       "Bash(sed -n *)",
       "Bash(xargs *)",
-      "Bash(python3 *)",
       "Bash(trivy *)",
       "mcp__backlog__task_list",
       "mcp__backlog__task_view",
@@ -27,6 +45,12 @@
       "mcp__backlog__task_complete",
       "mcp__backlog__milestone_list",
       "mcp__backlog__get_backlog_instructions"
+    ],
+    "ask": [
+      "Bash(git push --force*)",
+      "Bash(git push -f*)",
+      "Bash(git reset --hard*)",
+      "Bash(git clean *)"
     ]
   },
   "enabledMcpjsonServers": ["backlog"],
@@ -37,7 +61,18 @@
         "hooks": [
           {
             "type": "command",
-            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/guard-secrets.sh"
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/guard-writes.sh"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/collect-touched.sh"
           }
         ]
       }
@@ -47,7 +82,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/format.sh"
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/format.sh",
+            "timeout": 180
           }
         ]
       }
