@@ -13,7 +13,8 @@ issues you can justify — no speculative noise. Rank findings Critical / High /
 
 ## Scope — review the diff first
 
-Start from the change under review (`git diff main...HEAD` or the files named). Trace tainted
+Start from the change under review (`git diff develop...HEAD` — PRs target `develop`, not
+`main` — or the files named). Trace tainted
 input from REST resource → service → domain/storage. Focus on these PINA-specific surfaces:
 
 ### AuthZ — Spaces & roles (highest risk)
