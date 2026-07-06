@@ -4,7 +4,7 @@ plugins {
     java
     jacoco
     id("io.quarkus")
-    id("com.diffplug.spotless") version "8.7.0"
+    id("com.diffplug.spotless") version "8.8.0"
     id("com.github.spotbugs") version "6.5.8"
 }
 
