@@ -36,7 +36,7 @@ class AuthResourceGoogleTest {
 	void googleLoginWithValidTokenReturns200() {
 		String googleSub = "google-" + UUID.randomUUID();
 		when(googleTokenVerifier.verify("valid-token-1"))
-				.thenReturn(Optional.of(new GoogleIdToken(googleSub, "test@gmail.com", "Test User", null)));
+				.thenReturn(Optional.of(new GoogleIdToken(googleSub, googleSub + "@gmail.com", "Test User", null)));
 
 		given().contentType(ContentType.JSON).body("{\"idToken\":\"valid-token-1\"}").when().post("/api/v1/auth/google")
 				.then().statusCode(200).body("accessToken", notNullValue()).body("refreshToken", notNullValue())
@@ -55,7 +55,7 @@ class AuthResourceGoogleTest {
 	void googleLoginCreatesPersistentUser() {
 		String googleSub = "google-persist-" + UUID.randomUUID();
 		when(googleTokenVerifier.verify("persist-token"))
-				.thenReturn(Optional.of(new GoogleIdToken(googleSub, "persist@gmail.com", "Persist User", null)));
+				.thenReturn(Optional.of(new GoogleIdToken(googleSub, googleSub + "@gmail.com", "Persist User", null)));
 
 		String token1 = given().contentType(ContentType.JSON).body("{\"idToken\":\"persist-token\"}").when()
 				.post("/api/v1/auth/google").then().statusCode(200).extract().path("accessToken");
@@ -100,7 +100,7 @@ class AuthResourceGoogleTest {
 	void inactiveGoogleUserCannotLogin() throws Exception {
 		String googleSub = "google-inactive-" + UUID.randomUUID();
 		when(googleTokenVerifier.verify("inactive-google-token"))
-				.thenReturn(Optional.of(new GoogleIdToken(googleSub, "inactive@gmail.com", "Inactive User", null)));
+				.thenReturn(Optional.of(new GoogleIdToken(googleSub, googleSub + "@gmail.com", "Inactive User", null)));
 
 		String userId = given().contentType(ContentType.JSON).body("{\"idToken\":\"inactive-google-token\"}").when()
 				.post("/api/v1/auth/google").then().statusCode(200).extract().path("user.id");
@@ -114,15 +114,15 @@ class AuthResourceGoogleTest {
 	@Test
 	void googleLoginWithExistingEmailReturns409() {
 		String username = "google-email-conflict-" + UUID.randomUUID().toString().substring(0, 8);
+		String sharedEmail = username + "@gmail.com";
 		String token = given().contentType(ContentType.JSON)
 				.body("{\"username\":\"" + username + "\",\"password\":\"testpass123\"}").when()
 				.post("/api/v1/auth/register").then().statusCode(201).extract().path("accessToken");
 
-		authAs(token).body("{\"email\":\"conflict@gmail.com\"}").when().put("/api/v1/auth/me").then().statusCode(200);
+		authAs(token).body("{\"email\":\"" + sharedEmail + "\"}").when().put("/api/v1/auth/me").then().statusCode(200);
 
-		when(googleTokenVerifier.verify("email-conflict-token"))
-				.thenReturn(Optional.of(new GoogleIdToken("google-email-conflict-" + UUID.randomUUID(),
-						"conflict@gmail.com", "Conflict User", null)));
+		when(googleTokenVerifier.verify("email-conflict-token")).thenReturn(Optional.of(
+				new GoogleIdToken("google-email-conflict-" + UUID.randomUUID(), sharedEmail, "Conflict User", null)));
 
 		given().contentType(ContentType.JSON).body("{\"idToken\":\"email-conflict-token\"}").when()
 				.post("/api/v1/auth/google").then().statusCode(409);

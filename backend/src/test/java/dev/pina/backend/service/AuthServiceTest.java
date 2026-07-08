@@ -27,59 +27,64 @@ class AuthServiceTest {
 
 	@Test
 	void registerCreatesUserAndLinkedAccountAndLibrary() {
-		User user = authService.register("new-user", "password123", "New User");
+		String username = unique("new-user");
+		User user = authService.register(username, "password123", "New User");
 
 		assertNotNull(user.id);
 		assertEquals("New User", user.name);
-		assertEquals(1L,
-				LinkedAccount.count("provider = ?1 and providerAccountId = ?2", AuthProvider.LOCAL, "new-user"));
+		assertEquals(1L, LinkedAccount.count("provider = ?1 and providerAccountId = ?2", AuthProvider.LOCAL, username));
 		assertTrue(PersonalLibrary.find("owner.id", user.id).firstResultOptional().isPresent());
 	}
 
 	@Test
 	void registerWithoutNameUsesUsername() {
-		User user = authService.register("unnamed-user", "password123", null);
-		assertEquals("unnamed-user", user.name);
+		String username = unique("unnamed-user");
+		User user = authService.register(username, "password123", null);
+		assertEquals(username, user.name);
 	}
 
 	@Test
 	void registerDuplicateUsernameThrows() {
-		authService.register("dup-svc", "password123", null);
-		assertThrows(UsernameAlreadyExistsException.class, () -> authService.register("dup-svc", "password456", null));
+		String username = unique("dup-svc");
+		authService.register(username, "password123", null);
+		assertThrows(UsernameAlreadyExistsException.class, () -> authService.register(username, "password456", null));
 	}
 
 	@Test
 	void authenticateWithCorrectCredentials() {
-		authService.register("auth-ok", "secret123", "Auth");
-		Optional<User> result = authService.authenticate("auth-ok", "secret123");
+		String username = unique("auth-ok");
+		authService.register(username, "secret123", "Auth");
+		Optional<User> result = authService.authenticate(username, "secret123");
 		assertTrue(result.isPresent());
 	}
 
 	@Test
 	void authenticateWithWrongPassword() {
-		authService.register("auth-bad", "correct123", "Bad");
-		Optional<User> result = authService.authenticate("auth-bad", "wrongpass123");
+		String username = unique("auth-bad");
+		authService.register(username, "correct123", "Bad");
+		Optional<User> result = authService.authenticate(username, "wrongpass123");
 		assertTrue(result.isEmpty());
 	}
 
 	@Test
 	void authenticateNonExistentUser() {
-		Optional<User> result = authService.authenticate("ghost-user", "password123");
+		Optional<User> result = authService.authenticate(unique("ghost-user"), "password123");
 		assertTrue(result.isEmpty());
 	}
 
 	@Test
 	void authenticateInactiveUserReturnsEmpty() {
-		User user = authService.register("inactive-auth", "password123", "Inactive Auth");
+		String username = unique("inactive-auth");
+		User user = authService.register(username, "password123", "Inactive Auth");
 		deactivateUser(user);
 
-		Optional<User> result = authService.authenticate("inactive-auth", "password123");
+		Optional<User> result = authService.authenticate(username, "password123");
 		assertTrue(result.isEmpty());
 	}
 
 	@Test
 	void generateAccessTokenReturnsNonBlank() {
-		User user = authService.register("token-user", "password123", null);
+		User user = authService.register(unique("token-user"), "password123", null);
 		String token = authService.generateAccessToken(user);
 		assertNotNull(token);
 		assertFalse(token.isBlank());
@@ -87,7 +92,7 @@ class AuthServiceTest {
 
 	@Test
 	void createRefreshTokenReturnsNonBlank() {
-		User user = authService.register("refresh-svc-user", "password123", null);
+		User user = authService.register(unique("refresh-svc-user"), "password123", null);
 		String refreshToken = authService.createRefreshToken(user);
 		assertNotNull(refreshToken);
 		assertFalse(refreshToken.isBlank());
@@ -96,7 +101,7 @@ class AuthServiceTest {
 
 	@Test
 	void refreshReturnsNewTokenPair() {
-		User user = authService.register("refresh-svc-pair", "password123", null);
+		User user = authService.register(unique("refresh-svc-pair"), "password123", null);
 		String rawToken = authService.createRefreshToken(user);
 
 		var result = authService.refresh(rawToken);
@@ -107,7 +112,7 @@ class AuthServiceTest {
 
 	@Test
 	void refreshRevokesOldToken() {
-		User user = authService.register("refresh-svc-revoke", "password123", null);
+		User user = authService.register(unique("refresh-svc-revoke"), "password123", null);
 		String rawToken = authService.createRefreshToken(user);
 
 		assertTrue(authService.refresh(rawToken).isPresent());
@@ -116,7 +121,7 @@ class AuthServiceTest {
 
 	@Test
 	void refreshInactiveUserReturnsEmpty() {
-		User user = authService.register("refresh-svc-inactive", "password123", null);
+		User user = authService.register(unique("refresh-svc-inactive"), "password123", null);
 		String rawToken = authService.createRefreshToken(user);
 		deactivateUser(user);
 
@@ -125,7 +130,7 @@ class AuthServiceTest {
 
 	@Test
 	void logoutRevokesToken() {
-		User user = authService.register("refresh-svc-logout", "password123", null);
+		User user = authService.register(unique("refresh-svc-logout"), "password123", null);
 		String rawToken = authService.createRefreshToken(user);
 
 		assertTrue(authService.logout(rawToken));
@@ -135,6 +140,10 @@ class AuthServiceTest {
 	@Test
 	void logoutWithInvalidTokenReturnsFalse() {
 		assertFalse(authService.logout("nonexistent-token"));
+	}
+
+	private static String unique(String base) {
+		return base + "-" + java.util.UUID.randomUUID().toString().substring(0, 8);
 	}
 
 	private void deactivateUser(User user) {
