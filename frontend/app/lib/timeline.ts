@@ -183,6 +183,9 @@ export function formatDayLabel(dayKey: string, locale: Locale) {
     month: "long",
     day: "numeric",
     year: "numeric",
+    // dayKey is a calendar date; without an explicit UTC zone the label
+    // shifts one day back for viewers west of UTC.
+    timeZone: "UTC",
   }).format(new Date(`${dayKey}T00:00:00Z`));
 }
 
@@ -208,9 +211,11 @@ export function buildProportionalTimeline(
   >();
 
   for (const group of timelineGroups) {
-    const date = new Date(`${group.dayKey}T00:00:00Z`);
-    const year = date.getFullYear();
-    const month = date.getMonth();
+    // Parse the calendar parts from the dayKey string itself; going through a
+    // Date with local-time getters would bucket days into the previous
+    // year/month for viewers west of UTC.
+    const year = Number(group.dayKey.slice(0, 4));
+    const month = Number(group.dayKey.slice(5, 7)) - 1;
 
     if (!yearMap.has(year)) {
       yearMap.set(year, { count: 0, months: new Map() });
@@ -269,7 +274,10 @@ export function buildProportionalTimeline(
       markers.push({
         type: "month",
         key: `${year}-${month}`,
-        label: date.toLocaleDateString(locale, { month: "short" }),
+        label: date.toLocaleDateString(locale, {
+          month: "short",
+          timeZone: "UTC",
+        }),
         scrollToDayKey: sortedDays[0]?.dayKey,
         photoCount: monthEntry.count,
         position: monthPosition,
@@ -343,26 +351,24 @@ export function dateAtPosition(
   for (const group of timelineGroups) {
     cumulative += group.photos.length;
     if (cumulative >= targetCount) {
-      const date = new Date(`${group.dayKey}T00:00:00Z`);
       return {
-        label: date.toLocaleDateString(locale, {
-          month: "short",
-          day: "numeric",
-          year: "numeric",
-        }),
+        label: formatScrubLabel(group.dayKey, locale),
         dayKey: group.dayKey,
       };
     }
   }
 
   const last = timelineGroups[timelineGroups.length - 1]!;
-  const date = new Date(`${last.dayKey}T00:00:00Z`);
-  return {
-    label: date.toLocaleDateString(locale, {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    }),
-    dayKey: last.dayKey,
-  };
+  return { label: formatScrubLabel(last.dayKey, locale), dayKey: last.dayKey };
+}
+
+function formatScrubLabel(dayKey: string, locale: Locale): string {
+  // Formatted in UTC for the same reason as formatDayLabel: the dayKey is a
+  // calendar date, not an instant.
+  return new Date(`${dayKey}T00:00:00Z`).toLocaleDateString(locale, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  });
 }

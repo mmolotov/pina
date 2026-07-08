@@ -32,6 +32,8 @@ public class AuthService {
 	private static final int REFRESH_TOKEN_BYTES = 32;
 	private static final String INSTANCE_ADMIN_BOOTSTRAP_LOCK = "instance-admin-bootstrap";
 
+	private volatile String unknownUserPasswordHash;
+
 	@Inject
 	PersonalLibraryService personalLibraryService;
 
@@ -101,13 +103,16 @@ public class AuthService {
 		LinkedAccount account = LinkedAccount
 				.find("provider = ?1 and providerAccountId = ?2", AuthProvider.LOCAL, username).firstResult();
 		if (account == null) {
-			return Optional.empty();
-		}
-		if (!account.user.active) {
+			// Burn a bcrypt verification anyway so unknown and known usernames
+			// take comparable time (username-enumeration timing oracle).
+			BCrypt.verifyer().verify(password.toCharArray(), unknownUserHash());
 			return Optional.empty();
 		}
 		BCrypt.Result result = BCrypt.verifyer().verify(password.toCharArray(), account.credentials);
 		if (!result.verified) {
+			return Optional.empty();
+		}
+		if (!account.user.active) {
 			return Optional.empty();
 		}
 		return Optional.of(account.user);
@@ -267,6 +272,20 @@ public class AuthService {
 
 	private void lockLinkedAccount(AuthProvider provider, String providerAccountId) {
 		lockService.lock("linked-account", provider.name() + ":" + providerAccountId);
+	}
+
+	/**
+	 * A throwaway hash at the configured cost for equalizing the unknown-username
+	 * path in {@link #authenticate}. Lazily computed; a benign race may compute it
+	 * twice.
+	 */
+	private String unknownUserHash() {
+		String hash = unknownUserPasswordHash;
+		if (hash == null) {
+			hash = BCrypt.withDefaults().hashToString(bcryptCost, "pina-unknown-user-placeholder".toCharArray());
+			unknownUserPasswordHash = hash;
+		}
+		return hash;
 	}
 
 	private void enforceSelfSignupAllowed() {

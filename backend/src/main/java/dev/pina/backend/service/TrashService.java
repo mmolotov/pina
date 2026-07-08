@@ -47,6 +47,12 @@ public class TrashService {
 	@Inject
 	AlbumService albumService;
 
+	@Inject
+	MlAnalysisService mlAnalysisService;
+
+	@Inject
+	TransactionCallbacks transactionCallbacks;
+
 	public enum TrashKind {
 		ALL, PHOTO, ALBUM;
 
@@ -120,6 +126,15 @@ public class TrashService {
 			em.createNativeQuery(
 					"UPDATE photos SET deleted_at = NULL WHERE id IN (:ids) AND uploader_id = :ownerId AND deleted_at IS NOT NULL")
 					.setParameter("ids", photoIds).setParameter("ownerId", owner.id).executeUpdate();
+			// A photo trashed before the ML worker ran carries a terminally FAILED
+			// job; re-queue it so the restored photo still gets analyzed.
+			List<UUID> restoredIds = idColumn(em.createNativeQuery(
+					"SELECT id FROM photos WHERE id IN (:ids) AND uploader_id = :ownerId AND deleted_at IS NULL")
+					.setParameter("ids", photoIds).setParameter("ownerId", owner.id).getResultList());
+			if (!restoredIds.isEmpty()) {
+				mlAnalysisService.requeueRestoredPhotos(restoredIds);
+				transactionCallbacks.afterCommit(mlAnalysisService::pokeIfEnabled);
+			}
 		}
 		if (albumIds != null && !albumIds.isEmpty()) {
 			em.createNativeQuery(

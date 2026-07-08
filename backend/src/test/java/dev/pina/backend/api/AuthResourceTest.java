@@ -24,25 +24,28 @@ class AuthResourceTest {
 	@Test
 	void registerReturnsTokenAndUser() {
 		given().contentType(ContentType.JSON)
-				.body("{\"username\":\"reg-test\",\"password\":\"password123\",\"name\":\"Reg User\"}").when()
-				.post("/api/v1/auth/register").then().statusCode(201).body("accessToken", notNullValue())
+				.body("{\"username\":\"" + unique("reg-test")
+						+ "\",\"password\":\"password123\",\"name\":\"Reg User\"}")
+				.when().post("/api/v1/auth/register").then().statusCode(201).body("accessToken", notNullValue())
 				.body("refreshToken", notNullValue()).body("expiresIn", notNullValue())
 				.body("user.name", equalTo("Reg User")).body("user.id", notNullValue());
 	}
 
 	@Test
 	void registerWithoutNameUsesUsername() {
-		given().contentType(ContentType.JSON).body("{\"username\":\"nameless\",\"password\":\"password123\"}").when()
-				.post("/api/v1/auth/register").then().statusCode(201).body("user.name", equalTo("nameless"));
+		String username = unique("nameless");
+		given().contentType(ContentType.JSON).body("{\"username\":\"" + username + "\",\"password\":\"password123\"}")
+				.when().post("/api/v1/auth/register").then().statusCode(201).body("user.name", equalTo(username));
 	}
 
 	@Test
 	void registerDuplicateUsernameReturns409() {
-		given().contentType(ContentType.JSON).body("{\"username\":\"dup-user\",\"password\":\"password123\"}").when()
-				.post("/api/v1/auth/register").then().statusCode(201);
+		String username = unique("dup-user");
+		given().contentType(ContentType.JSON).body("{\"username\":\"" + username + "\",\"password\":\"password123\"}")
+				.when().post("/api/v1/auth/register").then().statusCode(201);
 
-		given().contentType(ContentType.JSON).body("{\"username\":\"dup-user\",\"password\":\"otherpass123\"}").when()
-				.post("/api/v1/auth/register").then().statusCode(409).body("error", equalTo("conflict"));
+		given().contentType(ContentType.JSON).body("{\"username\":\"" + username + "\",\"password\":\"otherpass123\"}")
+				.when().post("/api/v1/auth/register").then().statusCode(409).body("error", equalTo("conflict"));
 	}
 
 	@Test
@@ -65,22 +68,24 @@ class AuthResourceTest {
 
 	@Test
 	void loginWithValidCredentials() {
-		given().contentType(ContentType.JSON).body("{\"username\":\"login-user\",\"password\":\"password123\"}").when()
-				.post("/api/v1/auth/register").then().statusCode(201);
+		String username = unique("login-user");
+		given().contentType(ContentType.JSON).body("{\"username\":\"" + username + "\",\"password\":\"password123\"}")
+				.when().post("/api/v1/auth/register").then().statusCode(201);
 
-		given().contentType(ContentType.JSON).body("{\"username\":\"login-user\",\"password\":\"password123\"}").when()
-				.post("/api/v1/auth/login").then().statusCode(200).body("accessToken", notNullValue())
+		given().contentType(ContentType.JSON).body("{\"username\":\"" + username + "\",\"password\":\"password123\"}")
+				.when().post("/api/v1/auth/login").then().statusCode(200).body("accessToken", notNullValue())
 				.body("refreshToken", notNullValue()).body("expiresIn", notNullValue())
-				.body("user.name", equalTo("login-user"));
+				.body("user.name", equalTo(username));
 	}
 
 	@Test
 	void loginWithWrongPasswordReturns401() {
-		given().contentType(ContentType.JSON).body("{\"username\":\"wrong-pw\",\"password\":\"password123\"}").when()
-				.post("/api/v1/auth/register").then().statusCode(201);
+		String username = unique("wrong-pw");
+		given().contentType(ContentType.JSON).body("{\"username\":\"" + username + "\",\"password\":\"password123\"}")
+				.when().post("/api/v1/auth/register").then().statusCode(201);
 
-		given().contentType(ContentType.JSON).body("{\"username\":\"wrong-pw\",\"password\":\"wrongpass123\"}").when()
-				.post("/api/v1/auth/login").then().statusCode(401).body("error", equalTo("unauthorized"));
+		given().contentType(ContentType.JSON).body("{\"username\":\"" + username + "\",\"password\":\"wrongpass123\"}")
+				.when().post("/api/v1/auth/login").then().statusCode(401).body("error", equalTo("unauthorized"));
 	}
 
 	@Test
@@ -91,12 +96,13 @@ class AuthResourceTest {
 
 	@Test
 	void meWithValidTokenReturnsUser() {
+		String username = unique("me-user");
 		String token = given().contentType(ContentType.JSON)
-				.body("{\"username\":\"me-user\",\"password\":\"password123\"}").when().post("/api/v1/auth/register")
-				.then().statusCode(201).extract().path("accessToken");
+				.body("{\"username\":\"" + username + "\",\"password\":\"password123\"}").when()
+				.post("/api/v1/auth/register").then().statusCode(201).extract().path("accessToken");
 
 		given().header("Authorization", "Bearer " + token).when().get("/api/v1/auth/me").then().statusCode(200)
-				.body("name", equalTo("me-user")).body("id", notNullValue());
+				.body("name", equalTo(username)).body("id", notNullValue());
 	}
 
 	@Test
@@ -112,7 +118,7 @@ class AuthResourceTest {
 	@Test
 	void updateProfileChangesName() {
 		String token = given().contentType(ContentType.JSON)
-				.body("{\"username\":\"profile-user\",\"password\":\"password123\"}").when()
+				.body("{\"username\":\"" + unique("profile-user") + "\",\"password\":\"password123\"}").when()
 				.post("/api/v1/auth/register").then().statusCode(201).extract().path("accessToken");
 
 		given().header("Authorization", "Bearer " + token).contentType(ContentType.JSON)
@@ -205,6 +211,10 @@ class AuthResourceTest {
 
 		given().contentType(ContentType.JSON).body("{\"refreshToken\":\"" + refreshToken + "\"}").when()
 				.post("/api/v1/auth/refresh").then().statusCode(401).body("error", equalTo("unauthorized"));
+	}
+
+	private static String unique(String base) {
+		return base + "-" + UUID.randomUUID().toString().substring(0, 8);
 	}
 
 	private void deactivateUser(String userId) throws Exception {
