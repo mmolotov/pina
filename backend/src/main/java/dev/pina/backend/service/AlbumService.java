@@ -168,16 +168,24 @@ public class AlbumService {
 	 * Permanently remove trashed albums. Deletes their favorites and their rows;
 	 * PostgreSQL cascades the album_photos references and share links. Member
 	 * photos are never removed. Native SQL so trashed rows are visible; unknown ids
-	 * are skipped.
+	 * are skipped. Rows are locked and re-checked as still trashed so a concurrent
+	 * restore cannot have its album (or its favorites) deleted from under it.
 	 */
 	@Transactional
 	public void purge(Collection<UUID> ids) {
 		if (ids.isEmpty()) {
 			return;
 		}
-		List<UUID> idList = List.copyOf(ids);
-		favoriteService.removeForTargets(FavoriteTargetType.ALBUM, idList);
-		em.createNativeQuery("DELETE FROM albums WHERE id IN (:ids)").setParameter("ids", idList).executeUpdate();
+		@SuppressWarnings("unchecked")
+		List<UUID> trashedIds = em
+				.createNativeQuery("SELECT id FROM albums WHERE id IN (:ids) AND deleted_at IS NOT NULL FOR UPDATE",
+						UUID.class)
+				.setParameter("ids", List.copyOf(ids)).getResultList();
+		if (trashedIds.isEmpty()) {
+			return;
+		}
+		favoriteService.removeForTargets(FavoriteTargetType.ALBUM, trashedIds);
+		em.createNativeQuery("DELETE FROM albums WHERE id IN (:ids)").setParameter("ids", trashedIds).executeUpdate();
 		em.flush();
 	}
 

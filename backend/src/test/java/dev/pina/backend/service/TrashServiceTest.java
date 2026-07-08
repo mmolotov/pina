@@ -14,6 +14,7 @@ import dev.pina.backend.domain.User;
 import dev.pina.backend.domain.VariantType;
 import dev.pina.backend.storage.StoragePath;
 import dev.pina.backend.storage.StorageProvider;
+import io.quarkus.narayana.jta.QuarkusTransaction;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
 import jakarta.persistence.EntityManager;
@@ -38,6 +39,9 @@ class TrashServiceTest {
 
 	@Inject
 	PhotoService photoService;
+
+	@Inject
+	AlbumService albumService;
 
 	@Inject
 	FavoriteService favoriteService;
@@ -123,6 +127,43 @@ class TrashServiceTest {
 		trashPurgeJob.purgeExpired();
 
 		assertEquals(0, rowCount("photos", expired.id));
+	}
+
+	@Test
+	@Transactional
+	void purgeSkipsRowsThatAreNoLongerTrashed() throws IOException {
+		User user = TestUserHelper.createUser("trash-purge-live");
+		Photo photo = photoService.upload(jpegStream(Color.MAGENTA, 68, 68), "alive.jpg", "image/jpeg", user);
+		favoriteService.add(FavoriteTargetType.PHOTO, photo.id, user);
+		var album = albumService.create("Alive album", null, user);
+
+		// Live rows must survive a purge call: only still-trashed ids qualify.
+		// This is the guard against a restore racing the purge sweep.
+		photoService.purge(List.of(photo.id));
+		albumService.purge(List.of(album.id));
+
+		assertEquals(1, rowCount("photos", photo.id));
+		assertEquals(1, rowCount("albums", album.id));
+		assertEquals(1, rowCount("favorites", photo.id, "target_id"));
+	}
+
+	@Test
+	void restoreRequeuesFailedAnalysisJob() throws IOException {
+		User user = TestUserHelper.createUser("trash-restore-ml");
+		Photo photo = photoService.upload(jpegStream(Color.GRAY, 69, 69), "restored.jpg", "image/jpeg", user);
+		QuarkusTransaction.requiringNew()
+				.run(() -> em
+						.createNativeQuery("INSERT INTO photo_analysis_jobs (photo_id, status, attempts, last_error) "
+								+ "VALUES (:photoId, 'FAILED', 3, 'photo no longer exists')")
+						.setParameter("photoId", photo.id).executeUpdate());
+		photoService.delete(photo.id);
+
+		trashService.restore(user, List.of(photo.id), List.of());
+
+		Object status = QuarkusTransaction.requiringNew()
+				.call(() -> em.createNativeQuery("SELECT status FROM photo_analysis_jobs WHERE photo_id = :id")
+						.setParameter("id", photo.id).getSingleResult());
+		assertEquals("PENDING", status, "restore must re-queue a FAILED analysis job");
 	}
 
 	@Test

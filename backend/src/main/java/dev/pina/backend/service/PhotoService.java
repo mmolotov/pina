@@ -121,6 +121,11 @@ public class PhotoService {
 				return existing.get();
 			}
 
+			Optional<Photo> restored = restoreTrashedDuplicate(ingested.contentHash(), uploader.id);
+			if (restored.isPresent()) {
+				return restored.get();
+			}
+
 			try (PhotoUploadAdmission.Slot _ = uploadAdmission.acquire()) {
 				return runHeavyPhase(ingested, originalFilename, mimeType, uploader);
 			} catch (InterruptedException e) {
@@ -158,13 +163,19 @@ public class PhotoService {
 		} catch (PersistenceException persistFailure) {
 			// A same-uploader duplicate race is the common PersistenceException here,
 			// but not the only possible one. Clean up our stored files first, then
-			// return a winner only if a fresh read confirms that one exists.
+			// return a winner only if a fresh read confirms that one exists. The
+			// winner may also be a photo trashed after the dedup checks above ran —
+			// its row still holds the (uploader_id, content_hash) slot, so restore it.
 			variantGenerator.deleteStoredFiles(specs);
 			try {
 				Optional<Photo> winner = QuarkusTransaction.requiringNew().call(
 						() -> Photo.findByContentHashAndUploaderWithRelations(ingested.contentHash(), uploader.id));
 				if (winner.isPresent()) {
 					return winner.get();
+				}
+				Optional<Photo> restored = restoreTrashedDuplicate(ingested.contentHash(), uploader.id);
+				if (restored.isPresent()) {
+					return restored.get();
 				}
 			} catch (RuntimeException lookupFailure) {
 				persistFailure.addSuppressed(lookupFailure);
@@ -218,6 +229,34 @@ public class PhotoService {
 		return Photo.findByIdWithRelations(id);
 	}
 
+	/**
+	 * A re-upload of content that sits in the caller's trash restores the trashed
+	 * photo instead of inserting a new row: the (uploader_id, content_hash) unique
+	 * index still holds the trashed row, so a plain insert can never succeed, and
+	 * the entity mapping's {@code @SQLRestriction} hides it from the regular dedup
+	 * lookup. Native SQL for the same reason. Returns empty when no trashed
+	 * duplicate exists (or a concurrent purge removed it first — the caller then
+	 * proceeds with a fresh insert).
+	 */
+	private Optional<Photo> restoreTrashedDuplicate(String contentHash, UUID uploaderId) {
+		Optional<Photo> restored = QuarkusTransaction.requiringNew().call(() -> {
+			int updated = em
+					.createNativeQuery("UPDATE photos SET deleted_at = NULL, deleted_by = NULL "
+							+ "WHERE uploader_id = :uploaderId AND content_hash = :hash AND deleted_at IS NOT NULL")
+					.setParameter("uploaderId", uploaderId).setParameter("hash", contentHash).executeUpdate();
+			if (updated == 0) {
+				return Optional.<Photo>empty();
+			}
+			Optional<Photo> photo = Photo.findByContentHashAndUploaderWithRelations(contentHash, uploaderId);
+			photo.ifPresent(restoredPhoto -> mlAnalysisService.requeueRestoredPhotos(List.of(restoredPhoto.id)));
+			return photo;
+		});
+		if (restored.isPresent()) {
+			mlAnalysisService.pokeIfEnabled();
+		}
+		return restored;
+	}
+
 	@Transactional
 	public DeleteResult delete(UUID id) {
 		// Soft-delete: the photo moves to the trash. Its row, variants, album
@@ -240,20 +279,29 @@ public class PhotoService {
 	 * variants, album references, and ML rows. Stored variant files are removed
 	 * after the transaction commits. Trashed rows are invisible to the entity
 	 * mapping, so this reads and deletes them with native SQL; unknown ids are
-	 * skipped.
+	 * skipped. Rows are locked and re-checked as still trashed so a concurrent
+	 * restore (trash restore or a duplicate re-upload) cannot have its photo
+	 * hard-deleted from under it — live rows are left untouched.
 	 */
 	@Transactional
 	public void purge(Collection<UUID> ids) {
 		if (ids.isEmpty()) {
 			return;
 		}
-		List<UUID> idList = List.copyOf(ids);
+		@SuppressWarnings("unchecked")
+		List<UUID> trashedIds = em
+				.createNativeQuery("SELECT id FROM photos WHERE id IN (:ids) AND deleted_at IS NOT NULL FOR UPDATE",
+						UUID.class)
+				.setParameter("ids", List.copyOf(ids)).getResultList();
+		if (trashedIds.isEmpty()) {
+			return;
+		}
 		@SuppressWarnings("unchecked")
 		List<String> storagePaths = em
 				.createNativeQuery("SELECT pv.storage_path FROM photo_variants pv WHERE pv.photo_id IN (:ids)")
-				.setParameter("ids", idList).getResultList();
-		favoriteService.removeForTargets(FavoriteTargetType.PHOTO, idList);
-		em.createNativeQuery("DELETE FROM photos WHERE id IN (:ids)").setParameter("ids", idList).executeUpdate();
+				.setParameter("ids", trashedIds).getResultList();
+		favoriteService.removeForTargets(FavoriteTargetType.PHOTO, trashedIds);
+		em.createNativeQuery("DELETE FROM photos WHERE id IN (:ids)").setParameter("ids", trashedIds).executeUpdate();
 		em.flush();
 		transactionCallbacks.afterCommit(() -> deleteStoredVariants(storagePaths));
 	}

@@ -37,6 +37,7 @@ import java.io.InputStream;
 import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
@@ -122,6 +123,35 @@ public class MlAnalysisService {
 		} catch (RuntimeException e) {
 			LOG.log(Level.FINE, "ML worker poke rejected (shutting down?)", e);
 		}
+	}
+
+	/** {@link #poke()} unless ML is disabled; safe for after-commit callbacks. */
+	public void pokeIfEnabled() {
+		if (config.enabled()) {
+			poke();
+		}
+	}
+
+	/**
+	 * Re-queues analysis for photos that just returned from the trash, inside the
+	 * caller's transaction so the requeue is atomic with the restore. A photo
+	 * trashed before the worker ran ends up with a terminally FAILED job ("photo no
+	 * longer exists"); without this reset a restored photo would never be analyzed.
+	 * FAILED jobs go back to PENDING, photos without a job row get one, and
+	 * PENDING/COMPLETED jobs are left untouched. Callers should invoke
+	 * {@link #pokeIfEnabled()} once the surrounding transaction has committed.
+	 */
+	public void requeueRestoredPhotos(Collection<UUID> photoIds) {
+		if (photoIds.isEmpty()) {
+			return;
+		}
+		em.createNativeQuery("""
+				INSERT INTO photo_analysis_jobs (photo_id)
+				SELECT p.id FROM photos p WHERE p.id IN (:ids) AND p.deleted_at IS NULL
+				ON CONFLICT (photo_id) DO UPDATE
+				SET status = 'PENDING', attempts = 0, next_attempt_at = now(), last_error = NULL, updated_at = now()
+				WHERE photo_analysis_jobs.status = 'FAILED'
+				""").setParameter("ids", List.copyOf(photoIds)).executeUpdate();
 	}
 
 	@Scheduled(every = "{pina.ml.poll-interval}", concurrentExecution = Scheduled.ConcurrentExecution.SKIP)
