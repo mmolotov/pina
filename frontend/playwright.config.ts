@@ -4,11 +4,13 @@ export default defineConfig({
   testDir: "./e2e",
   fullyParallel: true,
   retries: 0,
+  reporter: [["list"], ["html", { open: "never" }]],
   snapshotPathTemplate:
     "{testDir}/{testFilePath}-snapshots/{platform}/{arg}-{projectName}{ext}",
   use: {
     baseURL: "http://127.0.0.1:4173",
-    trace: "on-first-retry",
+    trace: "retain-on-failure",
+    screenshot: "only-on-failure",
   },
   webServer: {
     command: "npm run preview:e2e",
