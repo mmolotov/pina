@@ -147,13 +147,15 @@ tasks.withType<Test> {
     }
 }
 
-// Coverage verification (run explicitly, not part of build)
+// Coverage tasks (run explicitly, not part of build). They depend on test so a
+// standalone invocation cannot report or verify against a stale exec file.
 val quarkusExecData = layout.buildDirectory.file("jacoco/jacoco-quarkus.exec")
 
 // Generated gRPC/protobuf classes are excluded from coverage accounting.
 val jacocoClassExcludes = listOf("dev/pina/ml/v1/**")
 
 tasks.jacocoTestReport {
+    dependsOn(tasks.test)
     executionData(quarkusExecData)
     classDirectories.setFrom(files(classDirectories.files.map { dir ->
         fileTree(dir) { exclude(jacocoClassExcludes) }
@@ -161,6 +163,7 @@ tasks.jacocoTestReport {
 }
 
 tasks.jacocoTestCoverageVerification {
+    dependsOn(tasks.test)
     executionData(quarkusExecData)
     classDirectories.setFrom(files(classDirectories.files.map { dir ->
         fileTree(dir) { exclude(jacocoClassExcludes) }

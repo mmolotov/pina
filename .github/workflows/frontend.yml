@@ -91,10 +91,9 @@ jobs:
       - name: Audit dependencies
         run: npm audit --audit-level=high
 
-      - name: Build
-        run: npm run build:app
-
       - name: Upload build artifact
+        # build/ comes from the test:e2e step (npm run build:app) — the same
+        # artifact the browser tests exercised; no second production build.
         uses: actions/upload-artifact@v7
         if: always()
         with:
