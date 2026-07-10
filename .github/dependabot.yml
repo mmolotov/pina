@@ -31,6 +31,11 @@ updates:
     commit-message:
       prefix: "deps(frontend):"
     open-pull-requests-limit: 10
+    # Node types must track the Node LTS the project runs on (currently 24),
+    # not the newest Node major.
+    ignore:
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
 
   # ML service (Python, uv.lock)
   - package-ecosystem: uv
