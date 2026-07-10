@@ -4,7 +4,17 @@ set -euo pipefail
 BASE_URL="${BASE_URL:-http://127.0.0.1:8080/api/v1}"
 RUN_ID="${RUN_ID:-manual_phase2_$(date +%s)}"
 JSON_HEADER="Content-Type: application/json"
-PHOTO_FILE="${PHOTO_FILE:-/tmp/pina-manual-${RUN_ID}.png}"
+# A caller-supplied PHOTO_FILE is read-only input: never overwritten, never deleted.
+if [ -n "${PHOTO_FILE:-}" ]; then
+  PHOTO_FILE_SUPPLIED=1
+  if [ ! -f "$PHOTO_FILE" ]; then
+    echo "PHOTO_FILE does not exist: $PHOTO_FILE" >&2
+    exit 1
+  fi
+else
+  PHOTO_FILE_SUPPLIED=0
+  PHOTO_FILE="/tmp/pina-manual-${RUN_ID}.png"
+fi
 OWNER_SHARED_SEARCH_FILE="/tmp/pina-owner-search-${RUN_ID}.png"
 GEO_PHOTO_INSIDE_FILE="/tmp/pina-manual-geo-inside-${RUN_ID}.jpg"
 GEO_PHOTO_OUTSIDE_FILE="/tmp/pina-manual-geo-outside-${RUN_ID}.jpg"
@@ -143,7 +153,9 @@ expect_jq_true() {
 }
 
 cleanup() {
-  rm -f "$PHOTO_FILE"
+  if [ "$PHOTO_FILE_SUPPLIED" -eq 0 ]; then
+    rm -f "$PHOTO_FILE"
+  fi
   rm -f "$OWNER_SHARED_SEARCH_FILE"
   rm -f "$GEO_PHOTO_INSIDE_FILE"
   rm -f "$GEO_PHOTO_OUTSIDE_FILE"
@@ -154,7 +166,9 @@ require_bin jq
 require_bin base64
 trap cleanup EXIT
 
-printf 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a7x8AAAAASUVORK5CYII=' | base64 -d > "$PHOTO_FILE"
+if [ "$PHOTO_FILE_SUPPLIED" -eq 0 ]; then
+  printf 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a7x8AAAAASUVORK5CYII=' | base64 -d > "$PHOTO_FILE"
+fi
 cp "$PHOTO_FILE" "$OWNER_SHARED_SEARCH_FILE"
 printf '%s' "$GEO_PHOTO_INSIDE_BASE64" | base64 -d > "$GEO_PHOTO_INSIDE_FILE"
 printf '%s' "$GEO_PHOTO_OUTSIDE_BASE64" | base64 -d > "$GEO_PHOTO_OUTSIDE_FILE"
