@@ -30,7 +30,7 @@ dev = [
     "grpcio-tools>=1.66",
     "ruff>=0.15.20",
     "onnx>=1.22.0",
-    "mypy>=1.13",
+    "mypy>=2.2.0",
     "types-pyyaml>=6.0",
 ]
 
