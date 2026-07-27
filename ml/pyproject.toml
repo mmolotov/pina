@@ -7,7 +7,7 @@ requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.139.0",
     "uvicorn>=0.50.1",
-    "grpcio>=1.82.1",
+    "grpcio>=1.83.0",
     "grpcio-health-checking>=1.66",
     "protobuf>=7.35.1",
     "pydantic-settings>=2.14.2",
