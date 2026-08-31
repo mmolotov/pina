@@ -61,7 +61,7 @@ jobs:
           openssl rsa -in dev-keys/privateKey.pem -pubout -out dev-keys/publicKey.pem
         working-directory: backend
 
-      - uses: actions/setup-java@v5
+      - uses: actions/setup-java@v6
         with:
           distribution: 'temurin'
           java-version: '25'
