@@ -48,7 +48,7 @@ dependencies {
 
     // Configuration
     implementation("io.quarkus:quarkus-arc")
-    implementation("com.github.ben-manes.caffeine:caffeine:3.2.4")
+    implementation("com.github.ben-manes.caffeine:caffeine:3.3.0")
 
     // Image processing (thumbnailator for thumbnails, metadata-extractor for EXIF)
     implementation("net.coobird:thumbnailator:0.4.21")
